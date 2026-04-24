@@ -1,0 +1,133 @@
+{
+  "welcome": "🛍 Welcome to our store, {name}!\n\n💰 Your balance: {balance} USDT (~{balanceRub} ₽)",
+  "welcome_back": "👋 Welcome back, {name}!\n\n💰 Your balance: {balance} USDT (~{balanceRub} ₽)",
+  "choose_language": "🌐 Choose language / Выберите язык:",
+  "language_set": "✅ Language set: English",
+
+  "btn_shop": "🛒 Shop",
+  "btn_topup": "💳 Top-up Wallet",
+  "btn_profile": "👤 My Profile",
+  "btn_support": "🆘 Support",
+  "btn_about": "🏪 About",
+  "btn_referral": "⭐ Refer & Earn",
+  "btn_back": "⬅️ Back",
+  "btn_refresh": "🔄 Refresh",
+  "btn_next": "➡️ Next",
+  "btn_prev": "⬅️ Prev",
+  "btn_buy": "🛒 Buy",
+  "btn_confirm": "✅ Confirm",
+  "btn_cancel": "❌ Cancel",
+  "btn_orders": "📋 My Orders",
+  "btn_change_lang": "🌐 Change Language",
+  "btn_sort_all": "Sort: All",
+
+  "shop_title": "🛒 Available Products:\n\n💡 Select a product for details",
+  "shop_empty": "😔 No products yet. Check back later!",
+  "shop_page": "Page {current}/{total}",
+  "shop_stock": "Stock: {stock}",
+  "shop_stock_inf": "Stock: ∞",
+  "shop_out_of_stock": "❌ Out of stock",
+
+  "product_card": "📦 {icon} <b>{name}</b>\n\n💰 Price: <b>{price} USDT</b> (~{priceRub} ₽)\n📦 Stock: {stock}\n\n📝 {description}",
+  "product_no_stock": "❌ Sorry, this product is out of stock.",
+  "product_buy_confirm": "✅ Purchase Confirmation\n\n📦 Product: <b>{name}</b>\n💰 Price: <b>{price} USDT</b> (~{priceRub} ₽)\n💳 Your balance: <b>{balance} USDT</b>\n💳 After purchase: <b>{newBalance} USDT</b>\n\nConfirm purchase?",
+  "product_not_enough": "❌ Insufficient funds!\n\n💰 Product price: {price} USDT\n💳 Your balance: {balance} USDT\n❗ Missing: {diff} USDT\n\nTop up balance?",
+
+  "order_created": "✅ Order created!\n\n📋 Order ID: <code>{orderId}</code>\n🔄 Status: Pending\n\n⏳ Our operator will contact you shortly.",
+  "order_awaiting_token": "📋 Order <code>{orderId}</code> created!\n\n🔑 To activate your <b>ChatGPT</b> subscription, we need your token.\n\n<b>How to get token:</b>\n1. Log in at <a href=\"https://chatgpt.com\">chatgpt.com</a>\n2. Visit: <a href=\"https://chatgpt.com/api/auth/session\">https://chatgpt.com/api/auth/session</a>\n3. Copy <b>all text</b> from the page and send it here\n\n⚠️ Token is valid for a few minutes, send quickly!",
+  "token_received": "✅ Token received! Waiting for operator confirmation.\n\n📋 Order: <code>{orderId}</code>",
+  "order_completed": "🎉 Your order is complete!\n\n📦 Product: <b>{name}</b>\n📋 Order: <code>{orderId}</code>\n\n✅ {result}",
+  "order_cancelled": "❌ Order cancelled\n\n📋 Order: <code>{orderId}</code>\n💬 Reason: {reason}\n\n💰 Funds returned: {price} USDT",
+  "order_failed": "❌ Activation error!\n\n📋 Order: <code>{orderId}</code>\n\n💬 {error}\n\n💰 Funds returned. Please contact support.",
+
+  "profile_title": "👤 <b>My Profile</b>\n\n🆔 ID: <code>{telegramId}</code>\n📛 Name: {firstName}\n\n💰 Balance: <b>{balance} USDT</b> (~{balanceRub} ₽)\n📦 Orders: {ordersCount}\n💸 Spent: {totalSpent} USDT (~{totalSpentRub} ₽)\n\n🔗 Referral code: <code>{referralCode}</code>\n👥 Invited: {referralsCount} people\n\n📅 Member since: {createdAt}",
+
+  "topup_enter_amount": "💳 Enter top-up amount in USDT\n\n📌 Minimum: {min} USDT\n\nExample: <code>5</code>",
+  "topup_invalid_amount": "❌ Invalid amount. Enter a number greater than {min}.",
+  "topup_instructions": "💳 <b>Balance Top-up</b>\n\n💰 Amount: <b>{amount} USDT</b> (~{amountRub} ₽)\n\n📤 Send to address:\n<code>{wallet}</code>\n🌐 Network: <b>{network}</b>\n\n📸 After sending, provide a screenshot or transaction hash for confirmation.",
+  "topup_proof_received": "✅ Top-up request received!\n\n💰 Amount: {amount} USDT\n📋 Waiting for operator confirmation.",
+  "topup_confirmed": "✅ Balance topped up!\n\n💰 Credited: +{amount} USDT (~{amountRub} ₽)\n💳 Current balance: {balance} USDT",
+  "topup_rejected": "❌ Top-up request rejected.\n\n💬 Reason: {reason}",
+
+  "referral_info": "⭐ <b>Referral Program</b>\n\n🔗 Your link:\n<code>{link}</code>\n\n🎁 For each invited friend you get <b>{bonus} USDT</b> (~{bonusRub} ₽)\n\n👥 Invited: {count} people\n💰 Earned: {earned} USDT",
+
+  "support_text": "🆘 <b>Support</b>\n\nIf you have any questions or problems, write to us.\n\n👤 An operator will respond shortly.",
+  "support_btn": "✉️ Contact Support",
+
+  "about_text": "🏪 <b>About Store</b>\n\nWe sell licensed digital keys and subscriptions at the best prices.\n\n✅ Instant delivery\n✅ Quality guarantee\n✅ 24/7 support",
+
+  "banned": "🚫 You are banned from this bot.",
+  "error": "❌ An error occurred. Please try again later.",
+  "cancelled": "❌ Action cancelled.",
+
+  "orders_list": "📋 <b>My Orders</b> (last {count}):",
+  "orders_empty": "📭 You have no orders yet.",
+  "order_status_pending": "⏳ Pending",
+  "order_status_awaiting_token": "🔑 Awaiting token",
+  "order_status_awaiting_confirmation": "👁 Under review",
+  "order_status_activating": "⚙️ Activating",
+  "order_status_completed": "✅ Completed",
+  "order_status_cancelled": "❌ Cancelled",
+  "order_status_failed": "💔 Failed",
+  "order_status_retry": "🔄 Retrying",
+
+  "level_new": "🌱 Newcomer",
+  "level_regular": "🥈 Regular",
+  "level_experienced": "🥇 Experienced",
+  "level_vip": "💎 VIP",
+
+  "profile_banner_unfinished": "⚠️ <b>Unfinished order!</b>\n{icon} {name}",
+  "profile_continue_activation": "▶️ Continue activation",
+  "profile_achievements_btn": "🏆 Achievements",
+  "profile_back_to_profile": "⬅️ Back to profile",
+
+  "orders_filter_all": "📋 All orders",
+  "orders_filter_active": "🔄 Active",
+  "orders_empty_active": "✅ <b>No active orders</b>\n\n<blockquote>All your orders are completed. 🎉\nWant to make another purchase?</blockquote>",
+  "orders_empty_all": "📭 <b>No orders yet</b>\n\n<blockquote>The shop has ChatGPT activations and other products — take a look!\n\n💡 The first order often comes with a discount or bonus.</blockquote>",
+  "orders_show_all": "📋 Show all orders",
+  "orders_to_shop": "🛒 To the shop",
+
+  "balance_header": "💳 <b>Balance:</b> {balance} USDT",
+
+  "shop_back_to_list": "⬅️ Back to list",
+  "shop_check_token": "🧪 Check your token (free)",
+  "shop_stock_low": "🔴 {count} pcs — last ones",
+  "shop_stock_medium": "🟡 {count} pcs — low",
+  "shop_stock_high": "🟢 {count} pcs",
+  "shop_stock_infinite": "♾️ Unlimited",
+  "shop_alert_high_demand": "🔥 <i>High demand: price temporarily increased.</i>",
+  "shop_alert_markdown": "📉 Auto-markdown applied.",
+
+  "copy_hint": "💡 <i>Tap the value to copy it.</i>",
+
+  "support_btn_contact": "🆘 Support",
+  "support_retry": "🔄 Try again",
+  "back_to_menu": "⬅️ To main menu",
+
+  "token_check_title": "🧪 <b>Token check (free)</b>",
+  "token_check_intro": "<blockquote>Send the contents of <code>/api/auth/session</code> page from your ChatGPT account.\n\nWe'll verify the token structure and expiration <b>without charging you</b>.\n\nThis answers: \"can I successfully activate a subscription with this token?\".</blockquote>",
+  "token_check_how_to": "📖 <b>How to get the token:</b>\n1️⃣ Log in at <a href=\"https://chatgpt.com\">chatgpt.com</a>\n2️⃣ Open <a href=\"https://chatgpt.com/api/auth/session\">chatgpt.com/api/auth/session</a>\n3️⃣ Copy the full page text and send it here",
+  "token_check_place_order": "🛒 Place order",
+  "token_check_try_another": "🔄 Check another token",
+  "token_check_back_to_product": "⬅️ To product",
+  "token_check_valid": "✅ <b>Token is valid!</b>",
+  "token_check_email": "📧 Account: <code>{email}</code>",
+  "token_check_ready": "<blockquote>🎯 Token is ready for activation. You can place the order — we'll use exactly this token.</blockquote>",
+
+  "achievements_title": "🏆 <b>Achievements</b>  ·  {unlocked}/{total}",
+  "achievements_empty": "🏆 <b>Achievements</b>\n\nThe list is empty.",
+  "achievements_unlocked_section": "<b>Unlocked:</b>",
+  "achievements_locked_section": "<b>In progress:</b>",
+  "achievements_reward": "💰 Reward: +{bonus} USDT",
+  "achievements_unlocked_msg": "🏆 <b>New achievement!</b>",
+  "achievements_unlocked_msg_many": "🏆 <b>New achievements!</b>",
+
+  "err_not_found": "❌ Not found",
+  "err_out_of_stock": "❌ Out of stock",
+  "err_insufficient_balance": "❌ Insufficient funds",
+
+  "sla_card_manual": "5–10 minutes",
+  "sla_crypto_auto": "up to 15 seconds",
+  "sla_crypto_manual": "5–10 minutes"
+}

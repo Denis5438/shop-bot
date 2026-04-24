@@ -1,0 +1,133 @@
+{
+  "welcome": "🎉 <b>Добро пожаловать, {name}!</b>\n\n<blockquote>💰 <b>{balance} USDT</b>  ≈  {balanceRub} ₽</blockquote>\n\n👇 Выберите нужный раздел:",
+  "welcome_back": "👋 <b>С возвращением, {name}!</b>\n\n<blockquote>💰 <b>{balance} USDT</b>  ≈  {balanceRub} ₽</blockquote>\n\n👇 Выберите нужный раздел:",
+  "choose_language": "🌐 Выберите язык / Choose language:",
+  "language_set": "✅ Язык установлен: Русский",
+
+  "btn_shop": "🛒 Магазин",
+  "btn_topup": "💳 Пополнить баланс",
+  "btn_profile": "👤 Мой профиль",
+  "btn_support": "🆘 Поддержка",
+  "btn_about": "ℹ️ О магазине",
+  "btn_referral": "🎁 Рефералы",
+  "btn_back": "⬅️ Назад",
+  "btn_refresh": "🔄 Обновить",
+  "btn_next": "➡️ Далее",
+  "btn_prev": "⬅️ Назад",
+  "btn_buy": "🛒 Купить",
+  "btn_confirm": "✅ Да, всё верно",
+  "btn_cancel": "⬅️ Отмена / Назад",
+  "btn_orders": "📋 Мои заказы",
+  "btn_change_lang": "🌐 Сменить язык",
+  "btn_sort_all": "Сортировка: Все",
+
+  "shop_title": "🛒 Доступные товары:\n\n💡 Выберите товар для подробностей",
+  "shop_empty": "😔 Товаров пока нет. Загляните позже!",
+  "shop_page": "Страница {current}/{total}",
+  "shop_stock": "Остаток: {stock}",
+  "shop_stock_inf": "Остаток: ∞",
+  "shop_out_of_stock": "❌ Нет в наличии",
+
+  "product_card": "📦 {icon} <b>{name}</b>\n\n💰 Цена: <b>{price} USDT</b> (~{priceRub} ₽)\n📦 Остаток: {stock}\n\n📝 {description}",
+  "product_no_stock": "❌ К сожалению, данный товар закончился.",
+  "product_buy_confirm": "🛒 <b>Подтверждение покупки</b>\n\n📦 Товар: <b>{name}</b>\n💰 Цена: <b>{price} USDT</b> (~{priceRub} ₽)\n\n💳 Ваш баланс: <b>{balance} USDT</b>\n📉 Остаток после: <b>{newBalance} USDT</b>\n\n⚡ Уверены, что хотите купить?",
+  "product_not_enough": "❌ Недостаточно средств!\n\n💰 Цена товара: {price} USDT\n💳 Ваш баланс: {balance} USDT\n❗ Не хватает: {diff} USDT\n\nПополнить баланс?",
+
+  "order_created": "✅ Заказ создан!\n\n📋 Номер заказа: <code>{orderId}</code>\n🔄 Статус: Ожидает обработки\n\n⏳ Наш оператор свяжется с вами в ближайшее время.",
+  "order_awaiting_token": "📋 Заказ <code>{orderId}</code> создан!\n\n🔑 Для активации подписки <b>ChatGPT</b> нам нужен ваш токен.\n\n<b>Как получить токен:</b>\n1. Войдите в аккаунт на <a href=\"https://chatgpt.com\">chatgpt.com</a>\n2. Перейдите по ссылке: <a href=\"https://chatgpt.com/api/auth/session\">https://chatgpt.com/api/auth/session</a>\n3. Скопируйте <b>весь текст</b> страницы и отправьте сюда\n\n⚠️ Токен действителен несколько минут, отправляйте быстро!",
+  "token_received": "✅ Токен получен! Ожидайте подтверждения от оператора.\n\n📋 Заказ: <code>{orderId}</code>",
+  "order_completed": "🎉 Ваш заказ выполнен!\n\n📦 Товар: <b>{name}</b>\n📋 Заказ: <code>{orderId}</code>\n\n✅ {result}",
+  "order_cancelled": "❌ Заказ отменён\n\n📋 Заказ: <code>{orderId}</code>\n💬 Причина: {reason}\n\n💰 Средства возвращены на баланс: {price} USDT",
+  "order_failed": "❌ Произошла ошибка при активации!\n\n📋 Заказ: <code>{orderId}</code>\n\n💬 {error}\n\n💰 Средства возвращены. Обратитесь в поддержку.",
+
+  "profile_title": "👤 <b>Мой профиль</b>\n\n🆔 ID: <code>{telegramId}</code>\n📛 Имя: {firstName}\n\n💰 Баланс: <b>{balance} USDT</b> (~{balanceRub} ₽)\n📦 Заказов: {ordersCount}\n💸 Потрачено: {totalSpent} USDT (~{totalSpentRub} ₽)\n\n🔗 Реферальный код: <code>{referralCode}</code>\n👥 Приглашено: {referralsCount} чел.\n\n📅 В магазине с: {createdAt}",
+
+  "topup_enter_amount": "💳 Введите сумму пополнения в USDT\n\n📌 Минимум: {min} USDT\n\nПример: <code>5</code>",
+  "topup_invalid_amount": "❌ Неверная сумма. Введите число больше {min}.",
+  "topup_instructions": "💳 <b>Пополнение баланса</b>\n\n💰 Сумма: <b>{amount} USDT</b> (~{amountRub} ₽)\n\n📤 Отправьте монеты на адрес:\n<code>{wallet}</code>\n🌐 Сеть: <b>{network}</b>\n\n📸 После отправки пришлите скриншот или хэш транзакции для подтверждения.",
+  "topup_proof_received": "✅ Заявка на пополнение получена!\n\n💰 Сумма: {amount} USDT\n📋 Ожидайте подтверждения оператора.",
+  "topup_confirmed": "✅ Баланс пополнен!\n\n💰 Зачислено: +{amount} USDT (~{amountRub} ₽)\n💳 Текущий баланс: {balance} USDT",
+  "topup_rejected": "❌ Заявка на пополнение отклонена.\n\n💬 Причина: {reason}",
+
+  "referral_info": "⭐ <b>Реферальная программа</b>\n\n🔗 Ваша ссылка:\n<code>{link}</code>\n\n🎁 За каждого приглашённого друга вы получите <b>{bonus} USDT</b> (~{bonusRub} ₽)\n\n👥 Приглашено: {count} чел.\n💰 Заработано: {earned} USDT",
+
+  "support_text": "🆘 <b>Поддержка</b>\n\nЕсли у вас возникли вопросы или проблемы, напишите нам.\n\n👤 Оператор ответит в ближайшее время.",
+  "support_btn": "✉️ Написать оператору",
+
+  "about_text": "🏪 <b>О магазине</b>\n\n<blockquote>Мы продаём лицензионные цифровые ключи и подписки по лучшим ценам.\n\n✅ Мгновенная доставка\n✅ Гарантия качества\n✅ Поддержка 24/7</blockquote>",
+
+  "banned": "🚫 Вы заблокированы в этом боте.",
+  "error": "❌ Произошла ошибка. Попробуйте позже.",
+  "cancelled": "❌ Действие отменено.",
+
+  "orders_list": "📋 <b>Мои заказы</b> (последние {count}):",
+  "orders_empty": "📭 У вас пока нет заказов.",
+  "order_status_pending": "⏳ Ожидает",
+  "order_status_awaiting_token": "🔑 Ожидает токен",
+  "order_status_awaiting_confirmation": "👁 На проверке",
+  "order_status_activating": "⚙️ Активируется",
+  "order_status_completed": "✅ Выполнен",
+  "order_status_cancelled": "❌ Отменён",
+  "order_status_failed": "💔 Ошибка",
+  "order_status_retry": "🔄 Повторная попытка",
+
+  "level_new": "🌱 Новичок",
+  "level_regular": "🥈 Постоянный",
+  "level_experienced": "🥇 Опытный",
+  "level_vip": "💎 VIP",
+
+  "profile_banner_unfinished": "⚠️ <b>Незавершённый заказ!</b>\n{icon} {name}",
+  "profile_continue_activation": "▶️ Продолжить активацию",
+  "profile_achievements_btn": "🏆 Достижения",
+  "profile_back_to_profile": "⬅️ Назад в профиль",
+
+  "orders_filter_all": "📋 Все заказы",
+  "orders_filter_active": "🔄 Активные",
+  "orders_empty_active": "✅ <b>Нет активных заказов</b>\n\n<blockquote>Все ваши заказы обработаны. 🎉\nХотите совершить ещё одну покупку?</blockquote>",
+  "orders_empty_all": "📭 <b>Заказов пока нет</b>\n\n<blockquote>В магазине есть активации ChatGPT и другие товары — загляните!\n\n💡 Первый заказ часто сопровождается скидкой или бонусом.</blockquote>",
+  "orders_show_all": "📋 Показать все заказы",
+  "orders_to_shop": "🛒 В магазин",
+
+  "balance_header": "💳 <b>Баланс:</b> {balance} USDT",
+
+  "shop_back_to_list": "⬅️ Назад к списку",
+  "shop_check_token": "🧪 Проверить свой токен (бесплатно)",
+  "shop_stock_low": "🔴 {count} шт. — последние",
+  "shop_stock_medium": "🟡 {count} шт. — мало",
+  "shop_stock_high": "🟢 {count} шт.",
+  "shop_stock_infinite": "♾️ Неограниченно",
+  "shop_alert_high_demand": "🔥 <i>Высокий спрос: цена временно повышена.</i>",
+  "shop_alert_markdown": "📉 Сработала автоуценка.",
+
+  "copy_hint": "💡 <i>Нажмите на значение — оно скопируется.</i>",
+
+  "support_btn_contact": "🆘 Поддержка",
+  "support_retry": "🔄 Попробовать снова",
+  "back_to_menu": "⬅️ В главное меню",
+
+  "token_check_title": "🧪 <b>Проверка токена (бесплатно)</b>",
+  "token_check_intro": "<blockquote>Пришлите содержимое страницы <code>/api/auth/session</code> со своего аккаунта ChatGPT.\n\nМы проверим структуру и срок действия токена <b>без списания денег</b>.\n\nЭто ответит на вопрос: «можно ли с этим токеном успешно активировать подписку?».</blockquote>",
+  "token_check_how_to": "📖 <b>Как получить токен:</b>\n1️⃣ Войдите в <a href=\"https://chatgpt.com\">chatgpt.com</a>\n2️⃣ Откройте <a href=\"https://chatgpt.com/api/auth/session\">chatgpt.com/api/auth/session</a>\n3️⃣ Скопируйте весь текст страницы и пришлите сюда",
+  "token_check_place_order": "🛒 Оформить заказ",
+  "token_check_try_another": "🔄 Проверить другой токен",
+  "token_check_back_to_product": "⬅️ К товару",
+  "token_check_valid": "✅ <b>Токен валиден!</b>",
+  "token_check_email": "📧 Аккаунт: <code>{email}</code>",
+  "token_check_ready": "<blockquote>🎯 Токен готов к активации. Можете оформлять заказ — мы используем именно этот токен.</blockquote>",
+
+  "achievements_title": "🏆 <b>Достижения</b>  ·  {unlocked}/{total}",
+  "achievements_empty": "🏆 <b>Достижения</b>\n\nСписок пуст.",
+  "achievements_unlocked_section": "<b>Разблокировано:</b>",
+  "achievements_locked_section": "<b>В процессе:</b>",
+  "achievements_reward": "💰 Награда: +{bonus} USDT",
+  "achievements_unlocked_msg": "🏆 <b>Новое достижение!</b>",
+  "achievements_unlocked_msg_many": "🏆 <b>Новые достижения!</b>",
+
+  "err_not_found": "❌ Не найдено",
+  "err_out_of_stock": "❌ Товар закончился",
+  "err_insufficient_balance": "❌ Недостаточно средств",
+
+  "sla_card_manual": "5–10 минут",
+  "sla_crypto_auto": "до 15 секунд",
+  "sla_crypto_manual": "5–10 минут"
+}

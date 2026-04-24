@@ -1,0 +1,42 @@
+# === СЕКРЕТЫ (НИКОГДА НЕ КОММИТИТЬ!) ===
+.env
+.env.local
+.env.production
+.env.*.local
+*.pem
+*.key
+
+# === Node ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# === Логи ===
+logs/
+*.log
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# === OS / Временные ===
+*.tmp
+*.temp
+.cache/
+
+# === Локальные скрипты для отладки (не для продакшна) ===
+find_tx.js
+reset_txids.js
+test_bsc.js
+test_bybit.js
+
+# === Build / deploy артефакты ===
+dist/
+build/
+coverage/
