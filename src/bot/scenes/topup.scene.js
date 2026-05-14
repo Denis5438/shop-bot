@@ -319,7 +319,7 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
     if (!net || !topupAddr) {
       await ctx.reply('❌ Реквизиты для выбранной сети не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('⬅️ К сетям Bybit', 'topup:method:bybit')],
+          [Markup.button.callback('⬅️ К сетям Bybit', 'topup:pay:bybit')],
           [Markup.button.callback('🆘 Поддержка', 'menu:support')],
         ]),
       });
@@ -451,21 +451,6 @@ const handleTopupProof = async (ctx) => {
   const isAutoCrypto = method === 'bybit';
   const blockchain = require('../../services/blockchain.service');
 
-  // Дедупликация: проверяем, нет ли уже pending-заявки от этого пользователя
-  // с той же суммой и методом (защита от повторной отправки одного чека)
-  const duplicateRequest = await TopupRequest.findOne({
-    userId: user._id,
-    status: 'pending',
-    method: method,
-    amount: { $gte: amountUSDT * 0.99, $lte: amountUSDT * 1.01 },
-  });
-  if (duplicateRequest) {
-    const errTxt = '❌ У вас уже есть заявка на пополнение с такой же суммой. Дождитесь подтверждения оператором.';
-    const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]) };
-    if (topup.msgId) { await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts)); } else { await ctx.reply(errTxt, errOpts); }
-    return true;
-  }
-
   let requestStatus = 'pending';
   let finalAmountUSDT = amountUSDT;
   let checkingMsgId = null;
@@ -585,12 +570,43 @@ const handleTopupProof = async (ctx) => {
       } else {
         statusReason = `⚠️ Сумма в блокчейне (${bResult.amount} USDT) меньше заявленной (${amountUSDT} USDT).`;
       }
+    } else if (bResult.blocked) {
+      // Bybit/RPC заблокировал запрос (CloudFront 403, rate-limit, сеть). API сейчас
+      // недоступен — отправляем заявку на ручную проверку оператором.
+      statusReason = `⚠️ ${bResult.reason || 'Авто-проверка временно недоступна.'}`;
+      requestStatus = 'pending';
     } else {
       statusReason = `⚠️ Ошибка авто-проверки: ${bResult.reason}.`;
     }
 
     // UX-16: останавливаем прогресс-анимацию — дальше финальный editMessageText сам перепишет msg.
-    if (progress) progress.stop('⏳ Формирую ответ...').catch?.(() => {});
+    if (progress) progress.stop('⏳ Формирую ответ...').catch(() => {});
+  }
+
+  // Дедупликация: после автопроверки (или если её не было) сверяем по финальной
+  // сумме. Раньше было до API, что давало погрешность при коррекции суммы.
+  // Сравниваем pending-заявки (та же сумма ±1%) — защищает от двойной отправки чека.
+  {
+    const dupAmount = finalAmountUSDT;
+    const duplicateRequest = await TopupRequest.findOne({
+      userId: user._id,
+      status: 'pending',
+      method: method,
+      amount: { $gte: dupAmount * 0.99, $lte: dupAmount * 1.01 },
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    });
+    if (duplicateRequest) {
+      const errTxt = '❌ У вас уже есть заявка на пополнение с такой же суммой. Дождитесь подтверждения оператором.';
+      const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]) };
+      if (checkingMsgId) {
+        await ctx.telegram.editMessageText(ctx.chat.id, checkingMsgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts));
+      } else if (topup.msgId) {
+        await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts));
+      } else {
+        await ctx.reply(errTxt, errOpts);
+      }
+      return true;
+    }
   }
 
   ctx.session.topup = null;

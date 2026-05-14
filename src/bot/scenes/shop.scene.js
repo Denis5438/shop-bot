@@ -202,17 +202,18 @@ const confirmPurchase = async (ctx, productId, fromPage = 1) => {
 
   const effectivePrice = await getEffectivePrice(product, stock);
   if (user.balance < effectivePrice) {
-    const diff = (effectivePrice - user.balance).toFixed(2);
+    const diff = parseFloat((effectivePrice - user.balance).toFixed(2));
     const text =
       `❌ <b>Недостаточно средств</b>\n\n` +
       `💰 Цена: ${effectivePrice} USDT\n` +
       `💳 Баланс: ${user.balance.toFixed(2)} USDT\n` +
-      `➖ Не хватает: ${diff} USDT (~${toRub(parseFloat(diff))} ₽)`;
+      `➖ Не хватает: ${diff} USDT (~${toRub(diff)} ₽)`;
 
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('💳 Пополнить баланс', 'menu:topup')],
+        [Markup.button.callback(`💰 Пополнить на ${diff} USDT`, `topup:quick:${diff}`)],
+        [Markup.button.callback('💳 Другая сумма', 'menu:topup')],
         [Markup.button.callback('⬅️ Назад', `shop:product:${productId}:${safePage}`)],
       ]),
     }).catch(() => {});

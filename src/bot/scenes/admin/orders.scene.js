@@ -201,26 +201,49 @@ const confirmAndActivate = async (ctx, orderId) => {
 
   const provider = resolveOrderProvider(order, order.productId);
 
-  if (order.status !== 'awaiting_confirmation') {
-    return ctx.answerCbQuery('⚠️ Заказ уже обработан', { show_alert: true });
+  // Атомарно «займём» заказ: статус awaiting_confirmation -> activating.
+  // Если два админа кликнут одновременно — один получит null и получит alert,
+  // вместо того чтобы оба зарезервировали по ключу.
+  const claimed = await Order.findOneAndUpdate(
+    { _id: order._id, status: 'awaiting_confirmation' },
+    {
+      $set: {
+        status: 'activating',
+        provider,
+        adminId: ctx.user._id,
+        confirmedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
+
+  if (!claimed) {
+    return ctx.answerCbQuery('⚠️ Заказ уже обработан другим администратором', { show_alert: true });
   }
 
   const key = await Key.findOneAndUpdate(
     buildKeyQueryForProduct(order.productId, { isUsed: false }),
-    { isUsed: true, usedAt: new Date(), usedByOrder: order._id },
+    { isUsed: true, usedAt: new Date(), usedByOrder: claimed._id },
     { new: true }
   );
 
   if (!key) {
+    // Откатываем статус — иначе заказ застрянет в activating без ключа.
+    await Order.updateOne(
+      { _id: claimed._id, status: 'activating' },
+      { $set: { status: 'awaiting_confirmation', adminId: null, confirmedAt: null } }
+    );
     return ctx.answerCbQuery('❌ Нет свободных ключей', { show_alert: true });
   }
 
-  order.keyId = key._id;
+  claimed.keyId = key._id;
+  await claimed.save();
+  // Возвращаем «обновлённый» order для дальнейших шагов с populate-данными
+  order.status = claimed.status;
+  order.keyId = claimed.keyId;
   order.provider = provider;
-  order.status = 'activating';
-  order.adminId = ctx.user._id;
-  order.confirmedAt = new Date();
-  await order.save();
+  order.adminId = claimed.adminId;
+  order.confirmedAt = claimed.confirmedAt;
 
   await ctx.answerCbQuery('⚙️ Запускаю активацию...');
   await ctx.editMessageText(

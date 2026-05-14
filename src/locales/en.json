@@ -129,5 +129,19 @@
 
   "sla_card_manual": "5–10 minutes",
   "sla_crypto_auto": "up to 15 seconds",
-  "sla_crypto_manual": "5–10 minutes"
+  "sla_crypto_manual": "5–10 minutes",
+
+  "tos_welcome_title": "👋 <b>Welcome!</b>",
+  "tos_intro": "Before you start, please review our documents and confirm your consent:",
+  "tos_privacy": "📄 Privacy Policy",
+  "tos_agreement": "📋 Terms of Service",
+  "tos_accept": "✅ I agree, continue",
+  "tos_decline": "❌ I don't agree",
+  "tos_declined": "❌ Without accepting the documents, the bot cannot be used.\n\nYou can return and accept at any time — send /start.",
+  "tos_required": "⚠️ To use the bot, you must accept the Privacy Policy and Terms of Service. Send /start.",
+  "tos_accepted_alert": "✅ Thanks! You can now use the bot.",
+  "btn_documents": "📄 Documents & Rules",
+  "documents_title": "📄 <b>Documents & Rules</b>",
+  "documents_text": "Current documents that govern the use of the shop:",
+  "documents_accepted_at": "✅ Accepted on: {date}"
 }

@@ -15,6 +15,11 @@ const userSchema = new mongoose.Schema({
   isBanned: { type: Boolean, default: false },
   takeoverBy: { type: Number, default: null },
   takeoverAt: { type: Date, default: null },
+  // ToS-гейт: пользователь должен принять Политику конфиденциальности и
+  // Пользовательское соглашение перед использованием бота. Без согласия
+  // tosMiddleware блокирует все действия кроме /start и tos:* колбэков.
+  acceptedToS: { type: Boolean, default: false },
+  acceptedToSAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 
   // №20 Достижения: массив ID разблокированных ачивок и дата получения.

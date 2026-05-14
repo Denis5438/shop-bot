@@ -4,10 +4,20 @@ const crypto = require('crypto');
 
 /**
  * Валидация внутреннего перевода по UID пользователя (Bybit API v5)
+ *
+ * Возвращает:
+ *   - { success: true, matches: [...] }                — найдены подтверждённые переводы.
+ *   - { success: false, reason }                       — переводов нет.
+ *   - { success: false, blocked: true, reason, code }  — Bybit заблокировал запрос
+ *     (часто 403 от CloudFront по гео-фильтру или rate-limit). Вызывающий код
+ *     должен в этом случае не показывать пользователю «соединение упало», а
+ *     перевести заявку на ручную проверку.
  */
 const verifyUidUsdt = async (senderUid) => {
   const { BYBIT_API_KEY, BYBIT_API_SECRET } = require('../config');
-  if (!BYBIT_API_KEY || !BYBIT_API_SECRET) return { success: false, reason: 'API ключи не настроены (Обратитесь к администратору)' };
+  if (!BYBIT_API_KEY || !BYBIT_API_SECRET) {
+    return { success: false, reason: 'API ключи не настроены (Обратитесь к администратору)' };
+  }
 
   // Нормализуем ввод: обрезаем пробелы и невидимые символы, UID — это цифры.
   const uidClean = String(senderUid || '').trim();
@@ -26,16 +36,78 @@ const verifyUidUsdt = async (senderUid) => {
   try {
     const res = await axios.get(`https://api.bybit.com/v5/asset/deposit/query-internal-record?${qs}`, {
       headers: {
+        // Bybit's CloudFront отбивает запросы без User-Agent с 403 — добавляем явный UA.
+        'User-Agent': 'shop-bot/1.0 (+https://t.me/Tigrano_o)',
+        'Accept': 'application/json',
         'X-BAPI-API-KEY': BYBIT_API_KEY,
         'X-BAPI-TIMESTAMP': timestamp,
         'X-BAPI-SIGN': signature,
-        'X-BAPI-RECV-WINDOW': recvWindow
+        'X-BAPI-SIGN-TYPE': '2',
+        'X-BAPI-RECV-WINDOW': recvWindow,
       },
-      timeout: 10000
+      timeout: 10000,
+      // Не выкидываем исключение по 4xx/5xx — нам нужно тело для диагностики.
+      validateStatus: () => true,
     });
 
-    if (res.data?.retCode !== 0) {
-      return { success: false, reason: res.data?.retMsg || 'Ошибка API Bybit' };
+    const status = res.status;
+
+    // 403 от Bybit чаще всего значит блокировку региона на уровне CloudFront
+    // (для RU IP это почти всегда так). API при этом не отрабатывает, нужно
+    // gracefully сдавать на ручную проверку.
+    if (status === 403 || status === 451) {
+      logger.warn(`[Bybit] HTTP ${status} (geo/WAF block) UID=${uidClean}`);
+      return {
+        success: false,
+        blocked: true,
+        code: status,
+        reason: 'Bybit API недоступен с текущего IP (региональная блокировка). Заявка отправлена на ручную проверку.',
+      };
+    }
+
+    if (status === 429) {
+      logger.warn(`[Bybit] HTTP 429 (rate limit) UID=${uidClean}`);
+      return {
+        success: false,
+        blocked: true,
+        code: 429,
+        reason: 'Bybit API перегружен. Заявка отправлена на ручную проверку.',
+      };
+    }
+
+    if (status === 401 || res.data?.retCode === 10003 || res.data?.retCode === 10004) {
+      logger.error(`[Bybit] auth error UID=${uidClean} retCode=${res.data?.retCode} msg=${res.data?.retMsg}`);
+      return {
+        success: false,
+        blocked: true,
+        code: status,
+        reason: 'Ошибка авторизации Bybit API. Заявка отправлена на ручную проверку.',
+      };
+    }
+
+    if (status >= 500) {
+      logger.warn(`[Bybit] HTTP ${status} (server error) UID=${uidClean}`);
+      return {
+        success: false,
+        blocked: true,
+        code: status,
+        reason: 'Bybit API временно недоступен. Заявка отправлена на ручную проверку.',
+      };
+    }
+
+    if (status !== 200 || !res.data) {
+      logger.warn(`[Bybit] unexpected HTTP ${status} UID=${uidClean} body=${JSON.stringify(res.data).slice(0, 200)}`);
+      return {
+        success: false,
+        blocked: true,
+        code: status,
+        reason: `Неожиданный ответ Bybit API (HTTP ${status}). Заявка отправлена на ручную проверку.`,
+      };
+    }
+
+    if (res.data.retCode !== 0) {
+      logger.warn(`[Bybit] retCode=${res.data.retCode} msg=${res.data.retMsg}`);
+      return { success: false, reason: res.data.retMsg || 'Ошибка API Bybit' };
     }
 
     const rows = res.data.result?.rows || [];
@@ -53,8 +125,18 @@ const verifyUidUsdt = async (senderUid) => {
 
     return { success: false, reason: 'Перевод не найден или ещё в обработке' };
   } catch (err) {
-    logger.error(`[Bybit] Ошибка проверки UID ${senderUid}: ${err.message}`);
-    return { success: false, reason: 'Ошибка соединения с API Bybit' };
+    // Сюда попадаем при сетевых ошибках (DNS, timeout, ECONNRESET).
+    const code = err.code || 'UNKNOWN';
+    const isNetwork = ['ENOTFOUND', 'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ECONNABORTED'].includes(code);
+    logger.error(`[Bybit] network error UID ${senderUid}: ${code} ${err.message}`);
+    return {
+      success: false,
+      blocked: isNetwork,
+      code,
+      reason: isNetwork
+        ? 'Сеть до Bybit API недоступна. Заявка отправлена на ручную проверку.'
+        : 'Ошибка соединения с API Bybit',
+    };
   }
 };
 

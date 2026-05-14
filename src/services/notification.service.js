@@ -82,6 +82,18 @@ const notifyAdminTopupRequest = async (request, user, method = 'unknown', networ
     uid:   '🆔 Bybit UID',
   };
 
+  // Дайджест: сворачиваем «обычные» pending-заявки в сводку. Подтверждённые
+  // (status=confirmed) уходят сразу — это деньги уже на балансе, админу важно
+  // увидеть их в реальном времени.
+  if (request?.status === 'pending') {
+    const amountStr = amounts
+      ? `${amounts.amountUSDT.toFixed(2)} USDT (~${amounts.amountRUB.toFixed(0)} ₽)`
+      : (request.amount ? `${request.amount.toFixed(2)} USDT` : '? USDT');
+    const digestLine = `@${user.username || user.telegramId} — ${amountStr} · ${methodLabels[method] || method}` +
+      (network ? ` · ${networkLabels[network] || network}` : '');
+    if (digest.queue('NEW_TOPUP', digestLine)) return;
+  }
+
   // Строка с суммой
   let amountLine = '';
   if (amounts) {

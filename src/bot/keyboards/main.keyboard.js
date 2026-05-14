@@ -15,6 +15,9 @@ const mainKeyboard = (t) =>
     [
       Markup.button.callback(t('btn_referral'), 'menu:referral')
     ],
+    [
+      Markup.button.callback(t('btn_documents'), 'menu:documents')
+    ],
   ]);
 
 // Кнопка "Назад в главное меню"

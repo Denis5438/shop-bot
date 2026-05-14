@@ -40,7 +40,17 @@ const showKeysList = async (ctx) => {
 
   buttons.push([Markup.button.callback('⬅️ Назад', 'admin:main')]);
 
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } catch (err) {
+    // «message is not modified» — нормальное состояние после clearUsedKeys,
+    // когда ничего не изменилось. Не ломаем поток.
+    if (err.description?.includes('message is not modified')) {
+      return ctx.answerCbQuery('✅ Уже актуально').catch(() => {});
+    }
+    // Все прочие — fallback на новое сообщение.
+    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
+  }
 };
 
 const askKeysAfterCreate = async (ctx, product) => {

@@ -9,6 +9,7 @@ const tokenCollectionScene = require('./scenes/token_collection.scene');
 const userMiddleware = require('./middlewares/user');
 const i18nMiddleware = require('./middlewares/i18n');
 const { authMiddleware, adminMiddleware } = require('./middlewares/auth');
+const { tosMiddleware, tosGateKeyboard, tosGateText, PRIVACY_URL, AGREEMENT_URL } = require('./middlewares/tos');
 
 // Keyboards
 const { mainKeyboard, languageKeyboard } = require('./keyboards/main.keyboard');
@@ -85,6 +86,9 @@ const createBot = () => {
   bot.use(userMiddleware);
   bot.use(i18nMiddleware);
   bot.use(authMiddleware);
+  // ToS-гейт: должен идти ПОСЛЕ user/i18n (чтобы знать ctx.user и ctx.t)
+  // и ДО любых сцен/обработчиков, иначе пользователь без согласия пройдёт мимо.
+  bot.use(tosMiddleware);
 
   bot.use(async (ctx, next) => {
     const callbackData = ctx.callbackQuery?.data;
@@ -240,8 +244,61 @@ const createBot = () => {
   }, 60_000));
 
   // ─────────────────── RETRY АКТИВАЦИИ ───────────────────
-  // Каждую минуту проверяем заказы в статусе retry с наступившим nextRetryAt
+  // Каждую минуту проверяем заказы в статусе retry с наступившим nextRetryAt.
+  // Внутренний хелпер атомарно делает rollback (статус→failed, возврат
+  // баланса, проводка Transaction, освобождение ключа) одной транзакцией —
+  // защищает от частичных state'ов при падении процесса между шагами.
+  const failOrderWithRefund = async (orderId, reason, txDescription) => {
+    let cancelledOrder = null;
+    let user = null;
+
+    await withTransaction(async (session) => {
+      const sessionOptions = session ? { session } : undefined;
+
+      cancelledOrder = await Order.findOneAndUpdate(
+        { _id: orderId, status: { $nin: ['completed', 'cancelled', 'failed'] } },
+        {
+          $set: {
+            status: 'failed',
+            activationResult: reason,
+            nextRetryAt: null,
+          },
+        },
+        { new: true, ...sessionOptions }
+      );
+
+      if (!cancelledOrder) return;
+
+      user = await User.findById(cancelledOrder.userId, null, sessionOptions);
+      if (user) {
+        user.balance = parseFloat((user.balance + cancelledOrder.price).toFixed(8));
+        await user.save(sessionOptions);
+      }
+
+      await new Transaction({
+        userId: cancelledOrder.userId,
+        type: 'refund',
+        amount: cancelledOrder.price,
+        orderId: cancelledOrder._id,
+        description: txDescription,
+      }).save(sessionOptions);
+
+      await Key.updateOne(
+        { usedByOrder: cancelledOrder._id },
+        { $set: { isUsed: false, usedByOrder: null, usedAt: null } },
+        sessionOptions
+      );
+    });
+
+    return { cancelledOrder, user };
+  };
+
+  // Guard: предотвращаем наложение итераций retry-крона при лагах БД/API.
+  // Если предыдущий тик ещё работает — пропускаем текущий.
+  let retryCronBusy = false;
   cronHandles.push(setInterval(async () => {
+    if (retryCronBusy) return;
+    retryCronBusy = true;
     try {
       if (mongoose.connection.readyState !== 1) return;
       const MAX_RETRIES = 3;
@@ -259,49 +316,31 @@ const createBot = () => {
         const provider = resolveOrderProvider(fresh, fresh.productId);
 
         const key = await Key.findById(fresh.keyId);
-        if (!key || !fresh.tokenRaw) {
-          // Нет ключа или токена — фейлим
-          fresh.status = 'failed';
-          fresh.activationResult = 'Retry: потерян ключ или токен';
-          fresh.nextRetryAt = null;
-          await fresh.save();
 
-          const user = await User.findById(fresh.userId);
+        // Нет ключа или токена — фейлим атомарно
+        if (!key || !fresh.tokenRaw) {
+          const { user } = await failOrderWithRefund(
+            fresh._id,
+            'Retry: потерян ключ или токен',
+            'Автовозврат: потерян ключ при retry'
+          );
           if (user) {
-            user.balance = parseFloat((user.balance + fresh.price).toFixed(8));
-            await user.save();
-            await new Transaction({
-              userId: user._id, type: 'refund', amount: fresh.price,
-              orderId: fresh._id, description: 'Автовозврат: потерян ключ при retry',
-            }).save();
             bot.telegram.sendMessage(
               user.telegramId,
               `❌ <b>Ошибка активации</b>\n\nЗаказ <code>${fresh._id}</code> не удалось активировать. Средства возвращены.`,
               { parse_mode: 'HTML' }
             ).catch(() => {});
           }
-          if (key) { key.isUsed = false; key.usedByOrder = null; await key.save(); }
           continue;
         }
 
-        // Пробуем finishActivation — apiOrderId сохранён в заказе
+        // Нет apiOrderId — нельзя повторить шаг 2, фейлим
         if (!fresh.apiOrderId) {
-          // Нет apiOrderId — нельзя повторить шаг 2, фейлим
-          fresh.status = 'failed';
-          fresh.activationResult = `Retry: нет api_order_id для повторной попытки`;
-          fresh.nextRetryAt = null;
-          await fresh.save();
-
-          const user = await User.findById(fresh.userId);
-          if (user) {
-            user.balance = parseFloat((user.balance + fresh.price).toFixed(8));
-            await user.save();
-            await new Transaction({
-              userId: user._id, type: 'refund', amount: fresh.price,
-              orderId: fresh._id, description: 'Автовозврат: нет api_order_id при retry',
-            }).save();
-          }
-          if (key) { key.isUsed = false; key.usedByOrder = null; await key.save(); }
+          await failOrderWithRefund(
+            fresh._id,
+            `Retry: нет api_order_id для повторной попытки`,
+            'Автовозврат: нет api_order_id при retry'
+          );
           continue;
         }
 
@@ -329,22 +368,12 @@ const createBot = () => {
             // Снова ошибка — увеличиваем retryCount
             const canRetry = result.retryable !== false;
             if (!canRetry || fresh.retryCount >= MAX_RETRIES) {
-              // Исчерпаны попытки — откатываем
-              if (key) { key.isUsed = false; key.usedByOrder = null; await key.save(); }
-
-              fresh.status = 'failed';
-              fresh.activationResult = `После ${MAX_RETRIES} попыток (retry): ${result.message}`;
-              fresh.nextRetryAt = null;
-              await fresh.save();
-
-              const user = await User.findById(fresh.userId);
+              const { user } = await failOrderWithRefund(
+                fresh._id,
+                `После ${MAX_RETRIES} попыток (retry): ${result.message}`,
+                `Автовозврат: ${MAX_RETRIES} retry попыток исчерпаны`
+              );
               if (user) {
-                user.balance = parseFloat((user.balance + fresh.price).toFixed(8));
-                await user.save();
-                await new Transaction({
-                  userId: user._id, type: 'refund', amount: fresh.price,
-                  orderId: fresh._id, description: `Автовозврат: ${MAX_RETRIES} retry попыток исчерпаны`,
-                }).save();
                 bot.telegram.sendMessage(
                   user.telegramId,
                   `❌ <b>Ошибка активации</b>\n\nЗаказ <code>${fresh._id}</code> не удалось активировать после ${MAX_RETRIES} попыток. Средства возвращены.`,
@@ -362,23 +391,14 @@ const createBot = () => {
           }
         } catch (err) {
           logger.error(`[Retry] Критическая ошибка для заказа ${fresh._id}: ${err.message}`);
-          fresh.retryCount += 1;
-          if (fresh.retryCount >= MAX_RETRIES) {
-            // Исчерпаны попытки — откатываем
-            if (key) { key.isUsed = false; key.usedByOrder = null; await key.save(); }
-            fresh.status = 'failed';
-            fresh.activationResult = `После ${MAX_RETRIES} попыток (retry exception): ${err.message}`;
-            fresh.nextRetryAt = null;
-            await fresh.save();
-
-            const user = await User.findById(fresh.userId);
+          const nextCount = (fresh.retryCount || 0) + 1;
+          if (nextCount >= MAX_RETRIES) {
+            const { user } = await failOrderWithRefund(
+              fresh._id,
+              `После ${MAX_RETRIES} попыток (retry exception): ${err.message}`,
+              `Автовозврат: ${MAX_RETRIES} retry попыток исчерпаны (exception)`
+            );
             if (user) {
-              user.balance = parseFloat((user.balance + fresh.price).toFixed(8));
-              await user.save();
-              await new Transaction({
-                userId: user._id, type: 'refund', amount: fresh.price,
-                orderId: fresh._id, description: `Автовозврат: ${MAX_RETRIES} retry попыток исчерпаны (exception)`,
-              }).save();
               bot.telegram.sendMessage(
                 user.telegramId,
                 `❌ <b>Ошибка активации</b>\n\nЗаказ <code>${fresh._id}</code> не удалось активировать. Средства возвращены.`,
@@ -387,6 +407,7 @@ const createBot = () => {
             }
           } else {
             // Откладываем retry
+            fresh.retryCount = nextCount;
             fresh.nextRetryAt = new Date(Date.now() + 5 * 60 * 1000);
             await fresh.save();
           }
@@ -394,6 +415,8 @@ const createBot = () => {
       }
     } catch (err) {
       logger.error(`Ошибка retry-крона: ${err.message}`);
+    } finally {
+      retryCronBusy = false;
     }
   }, 60_000));
 
@@ -439,6 +462,12 @@ const createBot = () => {
       return ctx.reply('⚠️ Не удалось загрузить профиль. Попробуйте позже или обратитесь в поддержку.').catch(() => {});
     }
 
+    // ToS-гейт: пока не принял — показываем экран согласия. Админы пропущены
+    // на уровне tosMiddleware, но дублируем условие здесь для надёжности.
+    if (!user.acceptedToS && user.role !== 'admin') {
+      return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
+    }
+
     const isNew = Date.now() - new Date(user.createdAt).getTime() < 5000;
 
     if (isNew) {
@@ -449,6 +478,73 @@ const createBot = () => {
       t('welcome_back', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
       { parse_mode: 'HTML', ...mainKeyboard(t) }
     );
+  });
+
+  // ─────────────────── ToS: согласие / отказ ───────────────────
+  bot.action('tos:accept', async (ctx) => {
+    const t = ctx.t;
+    if (ctx.user && !ctx.user.acceptedToS) {
+      ctx.user.acceptedToS = true;
+      ctx.user.acceptedToSAt = new Date();
+      await ctx.user.save().catch((err) => logger.error(`tos:accept save: ${err.message}`));
+    }
+    await ctx.answerCbQuery(t('tos_accepted_alert')).catch(() => {});
+    try {
+      await ctx.editMessageText(
+        t('welcome_back', {
+          name: escapeHtml(ctx.user.firstName),
+          balance: ctx.user.balance.toFixed(2),
+          balanceRub: toRub(ctx.user.balance),
+        }),
+        { parse_mode: 'HTML', ...mainKeyboard(t) }
+      );
+    } catch (_) {
+      await ctx.reply(
+        t('welcome_back', {
+          name: escapeHtml(ctx.user.firstName),
+          balance: ctx.user.balance.toFixed(2),
+          balanceRub: toRub(ctx.user.balance),
+        }),
+        { parse_mode: 'HTML', ...mainKeyboard(t) }
+      ).catch(() => {});
+    }
+  });
+
+  bot.action('tos:decline', async (ctx) => {
+    const t = ctx.t;
+    await ctx.answerCbQuery().catch(() => {});
+    try {
+      await ctx.editMessageText(t('tos_declined'), { parse_mode: 'HTML' });
+    } catch (_) {
+      await ctx.reply(t('tos_declined'), { parse_mode: 'HTML' }).catch(() => {});
+    }
+  });
+
+  // ─────────────────── ДОКУМЕНТЫ ───────────────────
+  bot.action('menu:documents', async (ctx) => {
+    const t = ctx.t;
+    await ctx.answerCbQuery().catch(() => {});
+    const lines = [
+      t('documents_title'),
+      '',
+      t('documents_text'),
+    ];
+    if (ctx.user?.acceptedToSAt) {
+      lines.push('');
+      lines.push(t('documents_accepted_at', {
+        date: new Date(ctx.user.acceptedToSAt).toLocaleString('ru-RU'),
+      }));
+    }
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.url(t('tos_privacy'), PRIVACY_URL)],
+      [Markup.button.url(t('tos_agreement'), AGREEMENT_URL)],
+      [Markup.button.callback(t('btn_back'), 'menu:main')],
+    ]);
+    try {
+      await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...keyboard });
+    } catch (_) {
+      await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+    }
   });
 
   bot.command('admin', adminMiddleware, async (ctx) => {
