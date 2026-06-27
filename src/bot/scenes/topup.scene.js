@@ -674,6 +674,6 @@ module.exports = {
   showCardDetails,
   handleAmountInput,
   handleTopupProof,
-  cancelTopup,
+  handleEnterTxid,
   handlePresetAmount,
 };
