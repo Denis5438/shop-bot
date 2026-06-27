@@ -200,7 +200,10 @@ const showSellersList = async (ctx) => {
     const text = `👥 <b>Продавцы</b>\n\n📭 Продавцов пока нет.`;
     const opts = {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:main')]]),
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('➕ Добавить продавца', 'admin:sellers:add')],
+        [Markup.button.callback('⬅️ Назад', 'admin:main')]
+      ]),
     };
     try {
       await ctx.editMessageText(text, opts);
