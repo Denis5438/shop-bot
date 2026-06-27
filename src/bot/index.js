@@ -1190,6 +1190,14 @@ const createBot = () => {
     await sellerWithdrawalsScene.toggleSeller(ctx, ctx.match[1]);
   });
 
+  bot.action(/^admin:sellers:balance:(.+)$/, adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.startEditSellerBalance(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:sellers:delete:(.+)$/, adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.deleteSeller(ctx, ctx.match[1]);
+  });
+
   // ─── ADMIN: Назначение продавца на товар ───
   bot.action(/^admin:product:seller:(.{24})$/, adminMiddleware, async (ctx) => {
     await productsScene.askSellerForProduct(ctx, ctx.match[1]);
@@ -1533,6 +1541,9 @@ const createBot = () => {
 
     // Добавление продавца (admin)
     if (await sellerWithdrawalsScene.handleAddSellerInput(ctx)) return;
+
+    // Изменение баланса продавца (admin)
+    if (await sellerWithdrawalsScene.handleEditSellerBalanceInput(ctx)) return;
 
     // Seller: доставка заказа (текст)
     if (await sellerScene.handleSellerDelivery(ctx)) return;

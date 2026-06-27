@@ -330,6 +330,10 @@ const showSellerProfile = async (ctx, sellerId) => {
 
   const buttons = [
     [
+      Markup.button.callback('💰 Изменить баланс', `admin:sellers:balance:${sellerId}`),
+      Markup.button.callback('🗑 Удалить продавца', `admin:sellers:delete:${sellerId}`),
+    ],
+    [
       seller.isActive
         ? Markup.button.callback('🔴 Заблокировать', `admin:sellers:toggle:${sellerId}`)
         : Markup.button.callback('✅ Разблокировать', `admin:sellers:toggle:${sellerId}`),
@@ -355,6 +359,80 @@ const toggleSeller = async (ctx, sellerId) => {
 
   await ctx.answerCbQuery(seller.isActive ? '✅ Разблокирован' : '🔴 Заблокирован');
   await showSellerProfile(ctx, sellerId);
+};
+
+// ─── Изменение баланса продавца ──────────────────────────────────────────────
+const startEditSellerBalance = async (ctx, sellerId) => {
+  const seller = await Seller.findById(sellerId);
+  if (!seller) return ctx.answerCbQuery('❌ Продавец не найден', { show_alert: true });
+
+  ctx.session = ctx.session || {};
+  ctx.session.adminAction = 'edit_seller_balance';
+  ctx.session.editSellerId = sellerId;
+
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.reply(
+    `💰 <b>Изменение баланса</b>\n\n` +
+    `Продавец: @${escapeHtml(seller.username)}\n` +
+    `Текущий баланс: <b>${seller.balance.toFixed(2)} USDT</b>\n\n` +
+    `Введите сумму для <b>добавления</b> (например: <code>10</code>) или <b>списания</b> (например: <code>-5</code>):`,
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:sellers:view:${sellerId}`)]]),
+    }
+  );
+};
+
+const handleEditSellerBalanceInput = async (ctx) => {
+  const session = ctx.session || {};
+  if (session.adminAction !== 'edit_seller_balance' || !session.editSellerId) return false;
+
+  const rawText = ctx.message?.text?.trim() || '';
+  const amount = parseFloat(rawText.replace(',', '.'));
+
+  if (Number.isNaN(amount)) {
+    await ctx.reply('❌ Некорректная сумма. Введите число (например, 10 или -5):');
+    return true;
+  }
+
+  const seller = await Seller.findById(session.editSellerId);
+  if (!seller) {
+    ctx.session.adminAction = null;
+    await ctx.reply('❌ Продавец не найден.');
+    return true;
+  }
+
+  seller.balance = parseFloat((seller.balance + amount).toFixed(8));
+  if (seller.balance < 0) seller.balance = 0;
+  
+  if (amount > 0) {
+    seller.totalEarned = parseFloat((seller.totalEarned + amount).toFixed(8));
+  }
+  
+  await seller.save();
+
+  if (ctx.message && ctx.message.message_id) {
+    ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+  }
+
+  ctx.session.adminAction = null;
+  ctx.session.editSellerId = null;
+
+  await ctx.reply(`✅ Баланс продавца @${seller.username} успешно изменён!\nНовый баланс: ${seller.balance.toFixed(2)} USDT`, {
+    ...Markup.inlineKeyboard([[Markup.button.callback('👤 Профиль', `admin:sellers:view:${seller._id}`)]])
+  });
+
+  return true;
+};
+
+// ─── Удаление продавца ───────────────────────────────────────────────────────
+const deleteSeller = async (ctx, sellerId) => {
+  const seller = await Seller.findById(sellerId);
+  if (!seller) return ctx.answerCbQuery('❌ Продавец не найден', { show_alert: true });
+
+  await Seller.deleteOne({ _id: sellerId });
+  await ctx.answerCbQuery('✅ Продавец удалён', { show_alert: true });
+  await showSellersList(ctx, 1);
 };
 
 // ─── История выплат ───────────────────────────────────────────────────────────
@@ -408,4 +486,7 @@ module.exports = {
   showSellerProfile,
   toggleSeller,
   showWithdrawalsHistory,
+  startEditSellerBalance,
+  handleEditSellerBalanceInput,
+  deleteSeller,
 };
