@@ -728,11 +728,7 @@ const createBot = () => {
     await topupScene.showBybitNetwork(ctx, ctx.match[1]);
   });
 
-  // Выбор валюты ввода (USDT или рубли)
-  bot.action(/^topup:currency:(usdt|rub)$/, async (ctx) => {
-    await ctx.answerCbQuery();
-    await topupScene.handleCurrencyChoice(ctx, ctx.match[1]);
-  });
+
 
   // UX-1: быстрые пресеты сумм на экране ввода.
   bot.action(/^topup:preset:(usdt|rub):(\d+(?:\.\d+)?)$/, async (ctx) => {

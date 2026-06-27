@@ -77,33 +77,53 @@ const showDirectOptions = async (ctx) => {
   );
 };
 
-// ─── Выбор валюты ввода ───────────────────────────────────────────────────────
-const askCurrencyChoice = async (ctx, method, network = null) => {
+// ─── Ввод суммы (только USDT) ───────────────────────────────────────────────────────
+const askTopupAmount = async (ctx, method, network = null) => {
   const prevQuickAmount = ctx.session?.topup?.quickAmount || null;
-  ctx.session.topup = { method, network, step: 'currency', msgId: null, quickAmount: prevQuickAmount };
+  ctx.session.topup = { method, network, step: 'amount', currency: 'usdt', msgId: null, quickAmount: prevQuickAmount };
+
+  if (prevQuickAmount) {
+    return await handleAmountInput(ctx, String(prevQuickAmount));
+  }
 
   const rate = getRate();
   const currencyLine = `💱 Курс: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`;
+  const hint = `Например: <code>5</code> — это ~${(5 * rate).toFixed(0)} ₽`;
 
-  const sent = await ctx.editMessageText(
-    `💬 <b>В какой валюте введёте сумму?</b>\n\n${currencyLine}`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [
-          Markup.button.callback('💵 Доллары (USDT)', `topup:currency:usdt`),
-          Markup.button.callback('₽ Рубли', `topup:currency:rub`),
-        ],
-        [Markup.button.callback('⬅️ Назад', method === 'card' ? 'topup:method:direct' : 'topup:pay:bybit')],
-      ]),
-    }
+  const presets = [5, 10, 20, 50, 100];
+  const presetLabel = 'USDT';
+
+  const presetRow1 = presets.slice(0, 3).map((v) =>
+    Markup.button.callback(`${v} ${presetLabel}`, `topup:preset:usdt:${v}`)
   );
-  ctx.session.topup.msgId = sent?.message_id || null;
+  const presetRow2 = presets.slice(3).map((v) =>
+    Markup.button.callback(`${v} ${presetLabel}`, `topup:preset:usdt:${v}`)
+  );
+
+  const text =
+    `💬 <b>Введите сумму в USDT:</b>\n\n` +
+    `${currencyLine}\n` +
+    `${hint}\n\n` +
+    `<blockquote>💡 Или выберите частую сумму одной кнопкой ниже.</blockquote>`;
+
+  const opts = {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([
+      presetRow1,
+      presetRow2,
+      [Markup.button.callback('❌ Отмена', method === 'card' ? 'topup:method:direct' : 'topup:pay:bybit')],
+    ]),
+  };
+
+  const sent = await ctx.editMessageText(text, opts).catch(() => ctx.reply(text, opts));
+  if (sent) {
+    ctx.session.topup.msgId = sent.message_id;
+  }
 };
 
 // ─── Шаг 3а: Карта ───────────────────────────────────────────────────────────
 const showCardDetails = async (ctx) => {
-  await askCurrencyChoice(ctx, 'card', null);
+  await askTopupAmount(ctx, 'card', null);
 };
 
 // ─── Шаг 3б: Bybit — выбор сети ──────────────────────────────────────────────
@@ -141,68 +161,7 @@ const getBybitAddresses = async () => {
 };
 
 const showBybitNetwork = async (ctx, network) => {
-  await askCurrencyChoice(ctx, 'bybit', network);
-};
-
-// ─── Валюта выбрана → спрашиваем сумму ───────────────────────────────────────
-const handleCurrencyChoice = async (ctx, currency) => {
-  const topup = ctx.session?.topup;
-  if (!topup || topup.step !== 'currency') return;
-
-  topup.currency = currency;
-
-  // Если это быстрое пополнение (из карточки товара) — пропускаем ввод суммы
-  if (topup.quickAmount) {
-    topup.step = 'amount';
-    const amountStr = currency === 'usdt'
-      ? String(topup.quickAmount)
-      : String(Math.ceil(topup.quickAmount * getRate()));
-    return await handleAmountInput(ctx, amountStr);
-  }
-
-  topup.step = 'amount';
-
-  const currencyLabel = currency === 'usdt' ? 'USDT' : '₽';
-  const rate = getRate();
-  const hint = currency === 'usdt'
-    ? `Например: <code>5</code> — это ~${(5 * rate).toFixed(0)} ₽`
-    : `Например: <code>500</code> — это ~${(500 / rate).toFixed(2)} USDT`;
-
-  // UX-1: Пресеты сумм для быстрого выбора (1 клик вместо набора цифр).
-  // Показываем 5 самых частых номиналов в строке + кнопку отмены.
-  const presets = currency === 'usdt'
-    ? [5, 10, 20, 50, 100]
-    : [500, 1000, 2000, 5000, 10000];
-  const presetLabel = currency === 'usdt' ? 'USDT' : '₽';
-
-  const presetRow1 = presets.slice(0, 3).map((v) =>
-    Markup.button.callback(`${v} ${presetLabel}`, `topup:preset:${currency}:${v}`)
-  );
-  const presetRow2 = presets.slice(3).map((v) =>
-    Markup.button.callback(`${v} ${presetLabel}`, `topup:preset:${currency}:${v}`)
-  );
-
-  const opts = {
-    parse_mode: 'HTML',
-    ...Markup.inlineKeyboard([
-      presetRow1,
-      presetRow2,
-      [Markup.button.callback('❌ Отмена', 'menu:topup')],
-    ]),
-  };
-
-  const text =
-    `💬 <b>Введите сумму в ${currencyLabel}:</b>\n\n` +
-    `${hint}\n\n` +
-    `<blockquote>💡 Или выберите частую сумму одной кнопкой ниже.</blockquote>`;
-
-  if (topup.msgId) {
-    await ctx.telegram.editMessageText(
-      ctx.chat.id, topup.msgId, null, text, opts
-    ).catch(() => ctx.reply(text, opts));
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await askTopupAmount(ctx, 'bybit', network);
 };
 
 // UX-1: Обработчик кнопки-пресета. Подставляем сумму как будто её ввели вручную
@@ -710,12 +669,11 @@ module.exports = {
   startTopup,
   startTopupWithAmount,
   showDirectOptions,
-  showCardDetails,
   showBybitOptions,
   showBybitNetwork,
-  handleCurrencyChoice,
+  showCardDetails,
   handleAmountInput,
-  handlePresetAmount,
   handleTopupProof,
-  handleEnterTxid,
+  cancelTopup,
+  handlePresetAmount,
 };
