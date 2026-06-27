@@ -23,6 +23,8 @@ const settingsSchema = new mongoose.Schema({
   // в почасовую сводку, критичные уходят сразу как раньше.
   adminDigestEnabled: { type: Boolean, default: false },
   adminDigestIntervalMinutes: { type: Number, default: 60 },
+  // Продавцы
+  minSellerWithdraw: { type: Number, default: 5 },
 }, {
   timestamps: true
 });

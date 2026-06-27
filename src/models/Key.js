@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const keySchema = new mongoose.Schema({
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-  provider: { type: String, enum: ['local', 'u1traby', 'chatgptconnect'], default: 'local' },
+  provider: { type: String, enum: ['local', 'u1traby'], default: 'local' },
   value: { type: String, required: true },
   isUsed: { type: Boolean, default: false },
   usedAt: { type: Date, default: null },

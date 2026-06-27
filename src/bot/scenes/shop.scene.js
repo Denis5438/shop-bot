@@ -12,6 +12,7 @@ const {
   resolveProductProvider,
 } = require('../../services/provider.service');
 const notif = require('../../services/notification.service');
+const Seller = require('../../models/Seller');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
 const { balanceHeader, errorScreen, escapeHtml } = require('../utils/ui');
 
@@ -384,6 +385,32 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
 
   if (product.type !== 'key') {
     await notif.notifyAdminNewOrder(order, ctx.user, product);
+  }
+
+  // ─── Начисление продавцу ─────────────────────────────────────────────────
+  if (product.sellerId && product.sellerPrice > 0) {
+    try {
+      const seller = await Seller.findById(product.sellerId);
+      if (seller && seller.isActive) {
+        const payout = parseFloat(product.sellerPrice.toFixed(8));
+        seller.balance = parseFloat((seller.balance + payout).toFixed(8));
+        seller.totalEarned = parseFloat((seller.totalEarned + payout).toFixed(8));
+        await seller.save();
+
+        // Обновляем заказ — сохраняем сумму выплаты продавцу
+        await Order.updateOne(
+          { _id: order._id },
+          { $set: { sellerId: seller._id, sellerPayout: payout, sellerPaidAt: new Date() } }
+        );
+
+        // Уведомляем продавца (только если он зарегистрирован в боте)
+        await notif.notifySellerNewOrder(seller, { ...order.toObject(), sellerPayout: payout }, product, ctx.user);
+      }
+    } catch (sellerErr) {
+      // Не ломаем основной flow при ошибке начисления продавцу
+      const logger = require('../../config/logger');
+      logger.error(`[Seller payout] Ошибка начисления продавцу: ${sellerErr.message}`);
+    }
   }
 
   if (product.type === 'gpt_activation') {

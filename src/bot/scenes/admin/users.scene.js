@@ -8,6 +8,64 @@ const { escapeHtml } = require('../../utils/ui');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const PAGE_SIZE = 12;
+
+// ─── Список всех пользователей с пагинацией ─────────────────────────────────
+const showAllUsers = async (ctx, page = 1) => {
+  await ctx.answerCbQuery().catch(() => {});
+
+  const total = await User.countDocuments();
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+
+  const users = await User.find()
+    .sort({ createdAt: -1 })
+    .skip((safePage - 1) * PAGE_SIZE)
+    .limit(PAGE_SIZE);
+
+  // Быстрая статистика
+  const banned = await User.countDocuments({ isBanned: true });
+  const admins = await User.countDocuments({ role: 'admin' });
+
+  let text =
+    `👥 <b>Все пользователи</b> (${total} чел., стр. ${safePage}/${totalPages})
+
+` +
+    `<blockquote>🚫 Забанено: ${banned} | 🔧 Админов: ${admins}</blockquote>
+
+`;
+
+  const buttons = [];
+
+  for (const user of users) {
+    const statusIcon = user.isBanned ? '🚫' : user.role === 'admin' ? '🔧' : '👤';
+    const name = escapeHtml(
+      (user.firstName || '') + (user.username ? ` (@${user.username})` : ` [${user.telegramId}]`)
+    ).substring(0, 28);
+    buttons.push([
+      Markup.button.callback(`${statusIcon} ${name}`, `admin:user:view:${user._id}`),
+    ]);
+  }
+
+  // Пагинация
+  const navRow = [];
+  if (safePage > 1) navRow.push(Markup.button.callback('⬅️', `admin:users:page:${safePage - 1}`));
+  if (safePage < totalPages) navRow.push(Markup.button.callback('➡️', `admin:users:page:${safePage + 1}`));
+  if (navRow.length) buttons.push(navRow);
+
+  buttons.push([
+    Markup.button.callback('🔍 Поиск', 'admin:search'),
+    Markup.button.callback('⬅️ Назад', 'admin:main'),
+  ]);
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  try {
+    await ctx.editMessageText(text, opts);
+  } catch (_) {
+    await ctx.reply(text, opts).catch(() => {});
+  }
+};
+
 // Глобальный поиск
 const showGlobalSearch = async (ctx) => {
   ctx.session = ctx.session || {};
@@ -121,7 +179,7 @@ const showUserProfile = async (ctx, userId) => {
     [Markup.button.callback('🕹 Перехватить управление', `admin:takeover:start:${user._id}`)],
     [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)],
     [Markup.button.callback('📨 Написать', `admin:msg:user:${user.telegramId}`)],
-    [Markup.button.callback('⬅️ Назад', 'admin:users')],
+    [Markup.button.callback('⬅️ К пользователям', 'admin:users')],
   ];
 
   // editMessageText сработает только если это callback-ctx; для text-ctx
@@ -293,6 +351,7 @@ const stopTakeover = async (ctx, userId) => {
 };
 
 module.exports = {
+  showAllUsers,
   showGlobalSearch,
   handleGlobalSearch,
   showUserProfile,

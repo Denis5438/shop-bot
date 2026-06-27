@@ -9,11 +9,6 @@ const PROVIDERS = {
     label: '🌐 U1traby',
     shortLabel: 'U1traby',
   },
-  chatgptconnect: {
-    id: 'chatgptconnect',
-    label: '🧩 ChatGPTConnect',
-    shortLabel: 'ChatGPTConnect',
-  },
 };
 
 const FALLBACK_PROVIDER_BY_TYPE = {
@@ -25,9 +20,9 @@ const FALLBACK_PROVIDER_BY_TYPE = {
 const getProvidersForProductType = (type) => {
   switch (type) {
     case 'gpt_activation':
-      return ['u1traby', 'chatgptconnect'];
+      return ['u1traby'];
     case 'key':
-      return ['local', 'u1traby', 'chatgptconnect'];
+      return ['local', 'u1traby'];
     case 'manual':
     default:
       return ['local'];
@@ -73,7 +68,7 @@ const buildKeyQueryForProduct = (product, extra = {}) => ({
 });
 
 const providerRequiresUserConfirmation = (provider) => provider === 'u1traby';
-const providerSupportsActivation = (provider) => provider === 'u1traby' || provider === 'chatgptconnect';
+const providerSupportsActivation = (provider) => provider === 'u1traby';
 
 module.exports = {
   PROVIDERS,

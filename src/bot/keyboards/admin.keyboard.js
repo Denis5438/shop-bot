@@ -1,9 +1,10 @@
 const { Markup } = require('telegraf');
 
 // Главная клавиатура администратора
-const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0 }) => {
+const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pendingSellerWithdrawals: 0 }) => {
   const ordersBadge = counts.pendingOrders > 0 ? ` (🔴 ${counts.pendingOrders})` : '';
   const paymentsBadge = counts.pendingPayments > 0 ? ` (🔴 ${counts.pendingPayments})` : '';
+  const sellersBadge = counts.pendingSellerWithdrawals > 0 ? ` (🔴 ${counts.pendingSellerWithdrawals})` : '';
 
   return Markup.inlineKeyboard([
     [
@@ -22,6 +23,7 @@ const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0 }) =>
       Markup.button.callback('📈 Логистика', 'admin:logistics'),
       Markup.button.callback('📉 Графики продаж', 'admin:chart'),
     ],
+    [Markup.button.callback(`💸 Продавцы${sellersBadge}`, 'admin:sellers:withdrawals')],
     [Markup.button.callback('⚙️ Настройки', 'admin:settings')],
     [Markup.button.callback('🔍 Глобальный Поиск', 'admin:search')],
   ]);

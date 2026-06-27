@@ -11,7 +11,7 @@ const productSchema = new mongoose.Schema({
   type: { type: String, enum: ['key', 'gpt_activation', 'manual'], default: 'key' },
   provider: {
     type: String,
-    enum: ['local', 'u1traby', 'chatgptconnect'],
+    enum: ['local', 'u1traby'],
     default() {
       return this.type === 'gpt_activation' ? 'u1traby' : 'local';
     },
@@ -31,6 +31,12 @@ const productSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   lastSoldAt: { type: Date, default: Date.now },
   lowStockNotifiedAt: { type: Date, default: null },
+
+  // ─── Seller-система ───────────────────────────────────────────────────────
+  // Привязанный продавец (только для товаров типа manual)
+  sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },
+  // Сколько из цены продажи идёт продавцу (в USDT)
+  sellerPrice: { type: Number, default: 0 },
 });
 
 module.exports = mongoose.model('Product', productSchema);

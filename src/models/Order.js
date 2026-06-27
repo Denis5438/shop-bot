@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const orderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-  provider: { type: String, enum: ['local', 'u1traby', 'chatgptconnect'], default: undefined },
+  provider: { type: String, enum: ['local', 'u1traby'], default: undefined },
   status: {
     type: String,
     enum: ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'completed', 'cancelled', 'failed', 'retry'],
@@ -21,10 +21,17 @@ const orderSchema = new mongoose.Schema({
   retryCount: { type: Number, default: 0 },
   nextRetryAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
+
+  // ─── Seller-система ───────────────────────────────────────────────────────
+  sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },
+  // Сколько начислено продавцу
+  sellerPayout: { type: Number, default: 0 },
+  sellerPaidAt: { type: Date, default: null },
 });
 
 orderSchema.index({ status: 1, createdAt: 1 });
 orderSchema.index({ status: 1, nextRetryAt: 1 });
 orderSchema.index({ userId: 1 });
+orderSchema.index({ sellerId: 1, status: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);

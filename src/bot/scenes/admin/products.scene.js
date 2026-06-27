@@ -2,12 +2,13 @@ const { Markup } = require('telegraf');
 const Product = require('../../../models/Product');
 const Key = require('../../../models/Key');
 const Order = require('../../../models/Order');
+const Seller = require('../../../models/Seller');
 const keysScene = require('./keys.scene');
+const notif = require('../../../services/notification.service');
 const { escapeHtml } = require('../../utils/ui');
 const {
   buildKeyQueryForProduct,
   getProviderLabel,
-  getProvidersForProductType,
   normalizeProviderForType,
   resolveProductProvider,
 } = require('../../../services/provider.service');
@@ -40,10 +41,9 @@ const showProductsList = async (ctx) => {
       ? '∞'
       : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
     const status = product.isActive ? '✅' : '🔴';
-    const provider = getProviderLabel(resolveProductProvider(product));
+    const sellerTag = product.sellerId ? ' 👤' : '';
 
-    text += `${status} ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)} — ${product.price} USDT | Остаток: ${stock}\n`;
-    text += `   <i>${escapeHtml(provider)}</i>\n`;
+    text += `${status} ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)} — ${product.price} USDT | Остаток: ${stock}${sellerTag}\n`;
     buttons.push([Markup.button.callback(`✏️ ${product.name.substring(0, 25)}`, `admin:product:edit:${product._id}`)]);
   }
 
@@ -54,7 +54,7 @@ const showProductsList = async (ctx) => {
 };
 
 const showProductEdit = async (ctx, productId) => {
-  const product = await Product.findById(productId);
+  const product = await Product.findById(productId).populate('sellerId');
   if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
 
   const stock = product.type === 'manual'
@@ -65,7 +65,9 @@ const showProductEdit = async (ctx, productId) => {
     ? '📦 Готовый аккаунт'
     : '🔑 Активация на своём аккаунте';
 
-  const providerLabel = getProviderLabel(resolveProductProvider(product));
+  const sellerLine = product.sellerId
+    ? `👤 Продавец: @${escapeHtml(product.sellerId.username)} (${product.sellerPrice} USDT)`
+    : '👤 Продавец: не назначен';
 
   const text =
     `✏️ <b>Редактирование товара</b>\n\n` +
@@ -73,31 +75,39 @@ const showProductEdit = async (ctx, productId) => {
     `💰 Цена продажи: ${product.price} USDT\n` +
     `💸 Закупочная цена: ${product.costPrice || 0} USDT\n` +
     `🔑 Тип: ${escapeHtml(TYPE_LABELS[product.type] || product.type)}\n` +
-    `🧩 Поставщик: ${escapeHtml(providerLabel)}\n` +
     `🚚 Выдача: ${deliveryLabel}\n` +
     `📦 Остаток ключей: ${stock}\n` +
+    `${sellerLine}\n` +
     `🔘 Статус: ${product.isActive ? '✅ Активен' : '🔴 Скрыт'}`;
+
+  const buttons = [
+    [Markup.button.callback('✏️ Изменить название', `admin:product:field:name:${productId}`)],
+    [Markup.button.callback('✏️ Название (EN)', `admin:product:field:nameEn:${productId}`)],
+    [Markup.button.callback('💰 Изменить цену', `admin:product:field:price:${productId}`)],
+    [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}`)],
+    [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}`)],
+    [Markup.button.callback('📝 Описание (EN)', `admin:product:field:descriptionEn:${productId}`)],
+    [Markup.button.callback('🔑 Добавить ключи', `admin:keys:add:${productId}`)],
+    [Markup.button.callback('📣 Разослать', `admin:product:broadcast:${productId}`)],
+    [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
+  ];
+
+  // Кнопка управления продавцом (только для ручных товаров)
+  if (product.type === 'manual') {
+    buttons.push([Markup.button.callback('👤 Назначить продавца', `admin:product:seller:${productId}`)]);
+  }
+
+  buttons.push([
+    product.isActive
+      ? Markup.button.callback('🔴 Скрыть', `admin:product:toggle:${productId}`)
+      : Markup.button.callback('✅ Показать', `admin:product:toggle:${productId}`),
+    Markup.button.callback('🗑 Удалить', `admin:product:delete_confirm:${productId}`),
+  ]);
+  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:products')]);
 
   await ctx.editMessageText(text, {
     parse_mode: 'HTML',
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback('✏️ Изменить название', `admin:product:field:name:${productId}`)],
-      [Markup.button.callback('✏️ Название (EN)', `admin:product:field:nameEn:${productId}`)],
-      [Markup.button.callback('💰 Изменить цену', `admin:product:field:price:${productId}`)],
-      [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}`)],
-      [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}`)],
-      [Markup.button.callback('📝 Описание (EN)', `admin:product:field:descriptionEn:${productId}`)],
-      [Markup.button.callback('🔑 Добавить ключи', `admin:keys:add:${productId}`)],
-      [Markup.button.callback('📣 Разослать', `admin:product:broadcast:${productId}`)],
-      [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
-      [
-        product.isActive
-          ? Markup.button.callback('🔴 Скрыть', `admin:product:toggle:${productId}`)
-          : Markup.button.callback('✅ Показать', `admin:product:toggle:${productId}`),
-        Markup.button.callback('🗑 Удалить', `admin:product:delete_confirm:${productId}`),
-      ],
-      [Markup.button.callback('⬅️ Назад', 'admin:products')],
-    ]),
+    ...Markup.inlineKeyboard(buttons),
   });
   await ctx.answerCbQuery().catch(() => {});
 };
@@ -125,36 +135,107 @@ const startAddProduct = async (ctx) => {
   );
 };
 
-const askProviderForNewProduct = async (ctx, type) => {
-  const buttons = getProvidersForProductType(type).map((provider) => [
-    Markup.button.callback(getProviderLabel(provider), `admin:product:provider:${provider}`),
-  ]);
-
-  buttons.push([Markup.button.callback('⬅️ Назад к типу', 'admin:product:add')]);
-
-  await ctx.editMessageText(
-    `✅ Тип: <b>${escapeHtml(TYPE_LABELS[type] || type)}</b>\n\n` +
-    `Теперь выберите <b>поставщика / источник</b> для этого товара:`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard(buttons),
-    }
-  ).catch(() => {});
-};
-
-const askNameForNewProduct = async (ctx, type, provider) => {
+const askNameForNewProduct = async (ctx, type) => {
   const typeLabel = TYPE_LABELS[type] || type;
-  const providerLabel = getProviderLabel(provider);
 
   await ctx.editMessageText(
-    `✅ Тип: <b>${escapeHtml(typeLabel)}</b>\n` +
-    `🧩 Поставщик: <b>${escapeHtml(providerLabel)}</b>\n\n` +
-    `Теперь введите <b>название</b> товара:`,
+    `✅ Тип: <b>${escapeHtml(typeLabel)}</b>\n\n` +
+    `Введите <b>название</b> товара:`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:products')]]),
     }
   ).catch(() => {});
+};
+
+// ─── Назначение продавца на товар ────────────────────────────────────────────
+const askSellerForProduct = async (ctx, productId) => {
+  const product = await Product.findById(productId).populate('sellerId');
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  const currentSeller = product.sellerId
+    ? `\n\n👤 Текущий продавец: @${escapeHtml(product.sellerId.username)} (цена: ${product.sellerPrice} USDT)`
+    : '';
+
+  // Загружаем всех существующих продавцов
+  const sellers = await Seller.find({ isActive: true }).sort({ username: 1 }).limit(20);
+
+  await ctx.answerCbQuery().catch(() => {});
+
+  const buttons = [];
+
+  if (sellers.length > 0) {
+    for (const seller of sellers) {
+      const isCurrently = product.sellerId?.toString() === seller._id.toString();
+      const label = `${isCurrently ? '✅ ' : ''}@${seller.username}`;
+      buttons.push([Markup.button.callback(label, `admin:product:seller:pick:${productId}:${seller._id}`)]);
+    }
+  }
+
+  buttons.push([Markup.button.callback('✏️ Ввести @username вручную', `admin:product:seller:manual:${productId}`)]);
+
+  if (product.sellerId) {
+    buttons.push([Markup.button.callback('🗑 Убрать продавца', `admin:product:seller:remove:${productId}`)]);
+  }
+
+  buttons.push([Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]);
+
+  const sellerListText = sellers.length > 0
+    ? `Выберите продавца из списка или введите вручную:`
+    : `Продавцов пока нет. Введите @username:` ;
+
+  const text =
+    `👤 <b>Назначить продавца</b>${currentSeller}\n\n` +
+    sellerListText;
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } catch (_) {
+    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  }
+};
+
+// ─── Быстрый выбор продавца по кнопке ──────────────────────────────────────
+const pickSellerForProduct = async (ctx, productId, sellerId) => {
+  const product = await Product.findById(productId);
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  const seller = await Seller.findById(sellerId);
+  if (!seller) return ctx.answerCbQuery('❌ Продавец не найден', { show_alert: true });
+
+  // Просим цену продавца
+  ctx.session = ctx.session || {};
+  ctx.session.adminAction = 'set_product_seller_price';
+  ctx.session.productId = productId;
+  ctx.session.sellerIdForProduct = seller._id.toString();
+
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.reply(
+    `👤 Продавец: @${escapeHtml(seller.username)}\n\n` +
+    `Введите сколько USDT из цены товара получает продавец:\n` +
+    `<i>Цена товара: ${product.price} USDT — введите меньше этой суммы.</i>`,
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]])  ,
+    }
+  );
+};
+
+// ─── Ручной ввод @username продавца ──────────────────────────────────────────
+const askManualSellerInput = async (ctx, productId) => {
+  ctx.session = ctx.session || {};
+  ctx.session.adminAction = 'set_product_seller';
+  ctx.session.productId = productId;
+
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.reply(
+    `✏️ Введите @username продавца (без @):\n` +
+    `<i>Если продавец ещё не зарегистрирован в боте — запись будет создана автоматически.</i>`,
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+    }
+  );
 };
 
 const handleProductInput = async (ctx) => {
@@ -164,14 +245,98 @@ const handleProductInput = async (ctx) => {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
   }
 
+  // ─── Назначение продавца ──────────────────────────────────────────────────
+  if (session.adminAction === 'set_product_seller') {
+    const { productId } = session;
+    const username = (ctx.message?.text || '').trim().replace(/^@/, '');
+
+    if (!username || username.length < 2) {
+      await ctx.reply('❌ Некорректный username. Введите без @:');
+      return true;
+    }
+
+    // Ищем продавца в базе
+    let seller = await Seller.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
+
+    if (!seller) {
+      // Продавца нет — создаём запись (без telegramId, он не зарегистрирован в боте)
+      seller = new Seller({ username: username.toLowerCase(), displayName: username });
+      await seller.save();
+      // Отправляем уведомление (оно сработает, когда telegramId появится, но пока его нет)
+      // На самом деле, мы можем уведомить его только когда он зайдёт в бота, или сейчас если он уже есть в User
+      const User = require('../../../models/User');
+      const user = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
+      if (user) {
+        seller.telegramId = user.telegramId;
+        await seller.save();
+        await notif.notifySellerWelcome(seller);
+      }
+    }
+
+    // Переходим к вводу цены продавца
+    ctx.session.sellerIdForProduct = seller._id.toString();
+    ctx.session.adminAction = 'set_product_seller_price';
+
+    await ctx.reply(
+      `👤 Продавец: @${escapeHtml(seller.username)}\n\n` +
+      `Введите сколько USDT из цены товара идёт продавцу:\n` +
+      `<i>Например, если цена товара 3 USDT, введите 2 — и 2 USDT идут продавцу, 1 вам.</i>`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+      }
+    );
+    return true;
+  }
+
+  // ─── Цена продавца ────────────────────────────────────────────────────────
+  if (session.adminAction === 'set_product_seller_price') {
+    const { productId, sellerIdForProduct } = session;
+    const sellerPrice = parseFloat((ctx.message?.text || '').replace(',', '.'));
+
+    if (Number.isNaN(sellerPrice) || sellerPrice < 0) {
+      await ctx.reply('❌ Введите корректную сумму (например: 2 или 1.5):');
+      return true;
+    }
+
+    const product = await Product.findById(productId);
+    if (!product) {
+      await ctx.reply('❌ Товар не найден.');
+      ctx.session.adminAction = null;
+      return true;
+    }
+
+    if (sellerPrice >= product.price) {
+      await ctx.reply(`❌ Цена продавца (${sellerPrice}) не может быть >= цены товара (${product.price}). Введите меньшее значение:`);
+      return true;
+    }
+
+    product.sellerId = sellerIdForProduct;
+    product.sellerPrice = sellerPrice;
+    await product.save();
+
+    ctx.session.adminAction = null;
+    ctx.session.productId = null;
+    ctx.session.sellerIdForProduct = null;
+
+    const seller = await Seller.findById(sellerIdForProduct);
+    await ctx.reply(
+      `✅ <b>Продавец назначен!</b>\n\n` +
+      `👤 @${escapeHtml(seller?.username || '?')}\n` +
+      `💰 Получает: <b>${sellerPrice} USDT</b> из ${product.price} USDT\n` +
+      `💵 Ваша доля: <b>${(product.price - sellerPrice).toFixed(2)} USDT</b>`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('📦 К товарам', 'admin:products')]]),
+      }
+    );
+    return true;
+  }
+
   if (session.adminAction === 'add_product') {
     const np = session.newProduct || {};
 
     if (!np.type) return true;
-
-    if (np.type !== 'manual' && !np.provider) {
-      return true;
-    }
 
     if (!np.name) {
       np.name = ctx.message.text.trim();
@@ -233,7 +398,7 @@ const handleProductInput = async (ctx) => {
     if (!np.icon) {
       np.icon = ctx.message.text.trim();
 
-      const provider = normalizeProviderForType(np.type, np.provider || 'local');
+      const provider = normalizeProviderForType(np.type, 'local');
       const product = new Product({
         name: np.name,
         nameEn: np.nameEn,
@@ -254,11 +419,14 @@ const handleProductInput = async (ctx) => {
       if (np.type === 'key' || np.type === 'gpt_activation') {
         await keysScene.askKeysAfterCreate(ctx, product);
       } else {
+        // Для ручного товара — предлагаем сразу назначить продавца
         await ctx.reply(
-          `✅ <b>Товар «${escapeHtml(product.name)}» создан!</b>\n📦 Тип: ✋ Ручной\n🧩 Поставщик: ${escapeHtml(getProviderLabel(provider))}`,
+          `✅ <b>Товар «${escapeHtml(product.name)}» создан!</b>\n📦 Тип: ✋ Ручной\n\n` +
+          `Хотите назначить продавца на этот товар?`,
           {
             parse_mode: 'HTML',
             ...Markup.inlineKeyboard([
+              [Markup.button.callback('👤 Назначить продавца', `admin:product:seller:${product._id}`)],
               [Markup.button.callback('📣 Разослать всем', `admin:product:broadcast:${product._id}`)],
               [Markup.button.callback('📦 К товарам', 'admin:products')],
             ]),
@@ -397,21 +565,32 @@ const cloneProduct = async (ctx, productId) => {
     descriptionEn: original.descriptionEn,
     icon: original.icon,
     isActive: false,
+    // Seller не клонируем — назначать нужно явно
   });
 
   await clone.save();
   await showProductEdit(ctx, clone._id);
 };
 
+// ─── Убрать продавца с товара ─────────────────────────────────────────────────
+const removeSellerFromProduct = async (ctx, productId) => {
+  await Product.findByIdAndUpdate(productId, { $set: { sellerId: null, sellerPrice: 0 } });
+  await ctx.answerCbQuery('✅ Продавец снят').catch(() => {});
+  await showProductEdit(ctx, productId);
+};
+
 module.exports = {
   showProductsList,
   showProductEdit,
   startAddProduct,
-  askProviderForNewProduct,
   askNameForNewProduct,
   handleProductInput,
   toggleProduct,
   confirmDeleteProduct,
   deleteProduct,
   cloneProduct,
+  askSellerForProduct,
+  pickSellerForProduct,
+  askManualSellerInput,
+  removeSellerFromProduct,
 };

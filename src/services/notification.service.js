@@ -13,6 +13,31 @@ const h = (value, fallback = '') => escapeHtml(value ?? fallback);
 
 const setBot = (bot) => { botInstance = bot; };
 
+// ─── Уведомление продавцу о назначении ───────────────────────────────────────
+const notifySellerWelcome = async (seller) => {
+  if (!botInstance || !seller?.telegramId) return;
+  try {
+    await botInstance.telegram.sendMessage(
+      seller.telegramId,
+      `🎉 <b>Вы стали продавцом!</b>\n\n` +
+      `Используйте команду /seller для доступа к вашему кабинету.\n\n` +
+      `<blockquote>В кабинете вы можете:\n` +
+      `💳 Привязать USDT кошелёк\n` +
+      `📦 Видеть ваши заказы\n` +
+      `💸 Запрашивать вывод средств</blockquote>\n\n` +
+      `Минимальная сумма вывода устанавливается администратором.`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: '🏪 Открыть кабинет', callback_data: 'seller:cabinet' }]],
+        },
+      }
+    );
+  } catch (err) {
+    logger.warn(`❌ Не удалось отправить welcome продавцу ${seller.telegramId}: ${err.message}`);
+  }
+};
+
 const sendToAdmins = async (message, extra = {}) => {
   if (!botInstance) return;
   for (const adminId of ADMIN_IDS) {
@@ -79,7 +104,6 @@ const notifyAdminTopupRequest = async (request, user, method = 'unknown', networ
   const networkLabels = {
     trc20: '🔴 TRC-20 (Tron)',
     bep20: '🟡 BEP-20 (BSC)',
-    uid:   '🆔 Bybit UID',
   };
 
   // Дайджест: сворачиваем «обычные» pending-заявки в сводку. Подтверждённые
@@ -353,6 +377,84 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
   return { sent, failed };
 };
 
+// ─── Уведомление продавцу о новом заказе ─────────────────────────────────────
+const notifySellerNewOrder = async (seller, order, product, buyer) => {
+  if (!botInstance || !seller?.telegramId) return;
+
+  const buyerTag = buyer?.username ? `@${h(buyer.username)}` : `ID ${h(buyer?.telegramId)}`;
+
+  const msg =
+    `📦 <b>Новый заказ!</b>\n\n` +
+    `${h(product?.icon || '📦')} <b>${h(product?.name, 'Товар')}</b>\n` +
+    `📋 Заказ: <code>${order._id}</code>\n` +
+    `👤 Покупатель: ${buyerTag}\n` +
+    `💰 Ваш доход: <b>+${order.sellerPayout.toFixed(2)} USDT</b>\n\n` +
+    `<blockquote>Выполните заказ и нажмите кнопку ниже.</blockquote>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '✅ Выполнил заказ', callback_data: `seller:order:complete:${order._id}` }],
+    ],
+  };
+
+  try {
+    await botInstance.telegram.sendMessage(seller.telegramId, msg, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  } catch (err) {
+    logger.warn(`❌ Не удалось уведомить продавца ${seller.telegramId}: ${err.message}`);
+  }
+};
+
+// ─── Уведомление продавцу о результате заявки на вывод ───────────────────────
+const notifySellerWithdrawalResult = async (seller, withdrawal, result) => {
+  if (!botInstance || !seller?.telegramId) return;
+
+  const NETWORK_LABELS = { trc20: 'TRC-20 (Tron)', bep20: 'BEP-20 (BSC)' };
+  const networkLabel = NETWORK_LABELS[withdrawal.network] || withdrawal.network;
+
+  let msg;
+  if (result === 'confirmed') {
+    msg =
+      `✅ <b>Выплата подтверждена!</b>\n\n` +
+      `💰 Сумма: <b>${withdrawal.amount.toFixed(2)} USDT</b>\n` +
+      `🌐 Сеть: ${networkLabel}\n` +
+      `💳 Кошелёк: <code>${h(withdrawal.walletAddress)}</code>\n\n` +
+      `Средства отправлены на ваш кошелёк.`;
+  } else {
+    msg =
+      `❌ <b>Заявка на вывод отклонена</b>\n\n` +
+      `💰 Сумма: ${withdrawal.amount.toFixed(2)} USDT\n\n` +
+      `Средства возвращены на ваш баланс. Обратитесь к администратору.`;
+  }
+
+  try {
+    await botInstance.telegram.sendMessage(seller.telegramId, msg, { parse_mode: 'HTML' });
+  } catch (err) {
+    logger.warn(`❌ Не удалось уведомить продавца ${seller.telegramId}: ${err.message}`);
+  }
+};
+
+// ─── Уведомление всех администраторов о заявке продавца на вывод ─────────────
+const notifyAdminSellerWithdrawal = async (seller, withdrawal) => {
+  if (!botInstance) return;
+
+  const NETWORK_LABELS = { trc20: '🔴 TRC-20 (Tron)', bep20: '🟡 BEP-20 (BSC)' };
+  const networkLabel = NETWORK_LABELS[withdrawal.network] || withdrawal.network;
+
+  const msg =
+    `💸 <b>Запрос на вывод от продавца!</b>\n\n` +
+    `👤 Продавец: @${h(seller?.username || '?')}\n` +
+    `💰 Сумма: <b>${withdrawal.amount.toFixed(2)} USDT</b>\n` +
+    `🌐 Сеть: ${networkLabel}\n` +
+    `💳 Кошелёк:\n<code>${h(withdrawal.walletAddress)}</code>\n` +
+    `📅 Дата: ${new Date().toLocaleString('ru-RU')}\n\n` +
+    `✅ Зайдите в <b>/admin → 💸 Продавцы</b> для подтверждения`;
+
+  await sendToAdmins(msg);
+};
+
 module.exports = {
   setBot,
   sendToAdmins,
@@ -366,6 +468,11 @@ module.exports = {
   notifyUserTopupRejected,
   notifyAdminLowStock,
   broadcastNewProduct,
+  // Seller-система
+  notifySellerNewOrder,
+  notifySellerWithdrawalResult,
+  notifyAdminSellerWithdrawal,
+  notifySellerWelcome,
   // №16 Сегментация
   buildSegmentQuery,
   countSegment,

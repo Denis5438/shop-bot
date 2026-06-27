@@ -30,6 +30,10 @@ const usersScene = require('./scenes/admin/users.scene');
 const paymentsScene = require('./scenes/admin/payments.scene');
 const statsScene = require('./scenes/admin/stats.scene');
 const settingsScene = require('./scenes/admin/settings.scene');
+const sellerWithdrawalsScene = require('./scenes/admin/seller_withdrawals.scene');
+
+// User Seller cabinet
+const sellerScene = require('./scenes/seller.scene');
 
 // Services
 const notif = require('../services/notification.service');
@@ -551,6 +555,58 @@ const createBot = () => {
     await adminScene.showAdminMain(ctx);
   });
 
+  // ─── SELLER: Кабинет продавца ───
+  bot.command('seller', async (ctx) => {
+    await sellerScene.showSellerCabinet(ctx);
+  });
+
+  bot.action('seller:cabinet', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerCabinet(ctx);
+  });
+
+  bot.action('seller:orders', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerOrders(ctx, 'active');
+  });
+
+  bot.action('seller:orders:active', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerOrders(ctx, 'active');
+  });
+
+  bot.action('seller:orders:history', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerOrders(ctx, 'history');
+  });
+
+  bot.action(/^seller:order:complete:(.+)$/, async (ctx) => {
+    await sellerScene.completeSellerOrder(ctx, ctx.match[1]);
+  });
+
+  bot.action('seller:wallet:setup', async (ctx) => {
+    await sellerScene.startWalletSetup(ctx);
+  });
+
+  bot.action(/^seller:wallet:net:(.+)$/, async (ctx) => {
+    await sellerScene.handleWalletNetworkChoice(ctx, ctx.match[1]);
+  });
+
+  bot.action('seller:withdraw:start', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.startWithdraw(ctx);
+  });
+
+  bot.action('seller:withdraw:all', async (ctx) => {
+    await sellerScene.handleWithdrawAll(ctx);
+  });
+
+  bot.action(/^seller:withdraw:confirm:([\d.]+)$/, async (ctx) => {
+    await sellerScene.confirmWithdraw(ctx, ctx.match[1]);
+  });
+
+  bot.action('seller:noop', (ctx) => ctx.answerCbQuery());
+
   // ─────────────────── ЯЗЫК ───────────────────
   bot.action('lang:ru', async (ctx) => {
     ctx.user.language = 'ru';
@@ -974,28 +1030,8 @@ const createBot = () => {
     }
     const type = ctx.match[1];
     ctx.session.newProduct.type = type;
-
-    if (type === 'manual') {
-      ctx.session.newProduct.provider = 'local';
-      await productsScene.askNameForNewProduct(ctx, type, 'local');
-      return;
-    }
-
-    delete ctx.session.newProduct.provider;
-    await productsScene.askProviderForNewProduct(ctx, type);
-  });
-
-  bot.action(/^admin:product:provider:(\w+)$/, adminMiddleware, async (ctx) => {
-    await ctx.answerCbQuery();
-    if (!ctx.session.newProduct?.type) {
-      await ctx.answerCbQuery('⚠️ Сессия устарела', { show_alert: true }).catch(() => {});
-      return;
-    }
-
-    const { type } = ctx.session.newProduct;
-    const provider = ctx.match[1];
-    ctx.session.newProduct.provider = provider;
-    await productsScene.askNameForNewProduct(ctx, type, provider);
+    // Поставщик выбирается автоматически в handleProductInput — шаг выбора убран
+    await productsScene.askNameForNewProduct(ctx, type);
   });
 
   // ─── ADMIN: Ключи ───
@@ -1043,10 +1079,16 @@ const createBot = () => {
 
   // ─── ADMIN: Пользователи ───
   bot.action('admin:users', adminMiddleware, async (ctx) => {
-    await ctx.answerCbQuery();
-    await usersScene.showGlobalSearch(ctx);
+    // Показываем список всех пользователей
+    await usersScene.showAllUsers(ctx, 1);
   });
 
+  // Пагинация списка пользователей
+  bot.action(/^admin:users:page:(\d+)$/, adminMiddleware, async (ctx) => {
+    await usersScene.showAllUsers(ctx, parseInt(ctx.match[1]));
+  });
+
+  // Глобальный поиск (отдельная кнопка)
   bot.action('admin:search', adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     await usersScene.showGlobalSearch(ctx);
@@ -1106,6 +1148,63 @@ const createBot = () => {
 
   bot.action(/^admin:payment:reject:(.+)$/, adminMiddleware, async (ctx) => {
     await paymentsScene.rejectPayment(ctx, ctx.match[1]);
+  });
+
+  // ─── ADMIN: Продавцы ───
+  bot.action('admin:sellers:withdrawals', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery();
+    await sellerWithdrawalsScene.showWithdrawalsList(ctx);
+  });
+
+  bot.action('admin:sellers:withdrawals:history', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery();
+    await sellerWithdrawalsScene.showWithdrawalsHistory(ctx);
+  });
+
+  bot.action(/^admin:sellers:withdrawal:(.{24})$/, adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.showWithdrawalDetail(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:sellers:withdrawal:confirm:(.+)$/, adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.confirmWithdrawal(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:sellers:withdrawal:reject:(.+)$/, adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.rejectWithdrawal(ctx, ctx.match[1]);
+  });
+
+  bot.action('admin:sellers:list', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery();
+    await sellerWithdrawalsScene.showSellersList(ctx);
+  });
+
+  bot.action('admin:sellers:add', adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.startAddSeller(ctx);
+  });
+
+  bot.action(/^admin:sellers:view:(.+)$/, adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.showSellerProfile(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:sellers:toggle:(.+)$/, adminMiddleware, async (ctx) => {
+    await sellerWithdrawalsScene.toggleSeller(ctx, ctx.match[1]);
+  });
+
+  // ─── ADMIN: Назначение продавца на товар ───
+  bot.action(/^admin:product:seller:(.{24})$/, adminMiddleware, async (ctx) => {
+    await productsScene.askSellerForProduct(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:product:seller:pick:(.+):(.+)$/, adminMiddleware, async (ctx) => {
+    await productsScene.pickSellerForProduct(ctx, ctx.match[1], ctx.match[2]);
+  });
+
+  bot.action(/^admin:product:seller:manual:(.+)$/, adminMiddleware, async (ctx) => {
+    await productsScene.askManualSellerInput(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:product:seller:remove:(.+)$/, adminMiddleware, async (ctx) => {
+    await productsScene.removeSellerFromProduct(ctx, ctx.match[1]);
   });
 
   // ─── ADMIN: Статистика ───
@@ -1423,11 +1522,20 @@ const createBot = () => {
     // Изменение баланса (admin)
     if (await usersScene.handleBalanceChange(ctx)) return;
 
-    // Добавление товара (admin)
+    // Добавление товара (admin) — включает назначение продавца
     if (await productsScene.handleProductInput(ctx)) return;
 
     // Добавление ключей (admin)
     if (await keysScene.handleKeysInput(ctx)) return;
+
+    // Seller: привязка кошелька (адрес)
+    if (await sellerScene.handleWalletAddressInput(ctx)) return;
+
+    // Добавление продавца (admin)
+    if (await sellerWithdrawalsScene.handleAddSellerInput(ctx)) return;
+
+    // Seller: ввод суммы вывода
+    if (await sellerScene.handleWithdrawAmountInput(ctx)) return;
 
     // Сумма пополнения (пользователь вводит число)
     if (await topupScene.handleAmountInput(ctx)) return;
