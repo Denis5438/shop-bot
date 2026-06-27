@@ -1534,6 +1534,9 @@ const createBot = () => {
     // Добавление продавца (admin)
     if (await sellerWithdrawalsScene.handleAddSellerInput(ctx)) return;
 
+    // Seller: доставка заказа (текст)
+    if (await sellerScene.handleSellerDelivery(ctx)) return;
+
     // Seller: ввод суммы вывода
     if (await sellerScene.handleWithdrawAmountInput(ctx)) return;
 
@@ -1546,10 +1549,12 @@ const createBot = () => {
     return next();
   });
 
-  // Фото/документ: подтверждение оплаты или txt-файл с ключами
+  // Фото/документ: подтверждение оплаты, файлы ключей или данные от продавца
   bot.on(['photo', 'document'], async (ctx, next) => {
     // Сначала проверяем документ = txt-файл с ключами (админ)
     if (ctx.message?.document && await keysScene.handleKeysInput(ctx)) return;
+    // Доставка заказа продавцом (если он прислал файл или фото)
+    if (await sellerScene.handleSellerDelivery(ctx)) return;
     // Потом остальное (фото-чек пополнения)
     if (await topupScene.handleTopupProof(ctx)) return;
     return next();

@@ -191,7 +191,7 @@ const showSellerOrders = async (ctx, filter = 'active') => {
   }
 };
 
-// ─── Выполнить заказ ─────────────────────────────────────────────────────────
+// ─── Выполнить заказ (Шаг 1: запрос данных) ──────────────────────────────────
 const completeSellerOrder = async (ctx, orderId) => {
   const seller = await findSeller(ctx);
   if (!seller) return ctx.answerCbQuery('❌ Нет доступа', { show_alert: true });
@@ -200,47 +200,113 @@ const completeSellerOrder = async (ctx, orderId) => {
     _id: orderId,
     sellerId: seller._id,
     status: 'pending',
-  }).populate('productId').populate('userId');
+  }).populate('productId');
 
   if (!order) {
     return ctx.answerCbQuery('❌ Заказ не найден или уже закрыт', { show_alert: true });
   }
 
-  order.status = 'completed';
-  order.confirmedAt = new Date();
-  order.activationResult = 'Выполнено продавцом';
-  await order.save();
+  ctx.session = ctx.session || {};
+  ctx.session.sellerAction = 'deliver_order';
+  ctx.session.deliverOrderId = orderId;
 
-  const buyer = order.userId;
-  if (buyer) {
-    await notif.notifyUserOrderCompleted(buyer, order, order.productId, 'Ваш заказ выполнен продавцом!').catch(() => {});
-  }
-
-  // Перечитываем актуальный баланс
-  const freshSeller = await Seller.findById(seller._id);
-
-  await ctx.answerCbQuery('✅ Заказ закрыт!');
+  await ctx.answerCbQuery().catch(() => {});
 
   const text =
-    `✅ <b>Заказ выполнен!</b>\n\n` +
-    `📦 Товар: ${escapeHtml(order.productId?.name || 'Товар')}\n` +
-    `💰 Доход: <b>+${(order.sellerPayout || 0).toFixed(2)} USDT</b>\n\n` +
-    `Ваш текущий баланс: <b>${(freshSeller?.balance || seller.balance).toFixed(2)} USDT</b>`;
+    `📦 <b>Выполнение заказа</b>\n\n` +
+    `Товар: <b>${escapeHtml(order.productId?.name || 'Товар')}</b>\n\n` +
+    `Пожалуйста, отправьте <b>данные от аккаунта</b> (логин:пароль, ссылку или любой текст).\n` +
+    `<i>Вы также можете отправить файл или фото.</i>\n\n` +
+    `Эти данные будут пересланы покупателю, после чего заказ закроется и вы получите оплату.`;
 
   try {
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('📦 К заказам', 'seller:orders')],
-        [Markup.button.callback('🏪 Кабинет', 'seller:cabinet')],
-      ]),
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'seller:orders')]]),
     });
   } catch (_) {
     await ctx.reply(text, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🏪 Кабинет', 'seller:cabinet')]]),
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'seller:orders')]]),
     });
   }
+};
+
+// ─── Выполнить заказ (Шаг 2: получение данных и отправка покупателю) ───────
+const handleSellerDelivery = async (ctx) => {
+  const session = ctx.session || {};
+  if (session.sellerAction !== 'deliver_order' || !session.deliverOrderId) return false;
+
+  const seller = await findSeller(ctx);
+  if (!seller) return false;
+
+  const order = await Order.findOne({
+    _id: session.deliverOrderId,
+    sellerId: seller._id,
+    status: 'pending',
+  }).populate('productId').populate('userId');
+
+  if (!order) {
+    ctx.session.sellerAction = null;
+    ctx.session.deliverOrderId = null;
+    await ctx.reply('❌ Заказ не найден или уже закрыт.', {
+      ...Markup.inlineKeyboard([[Markup.button.callback('📦 К заказам', 'seller:orders')]]),
+    });
+    return true;
+  }
+
+  const buyer = order.userId;
+
+  // Если нет покупателя (вдруг удалён), заказ всё равно закроем
+  if (buyer) {
+    // Формируем сообщение для покупателя
+    let deliveryText = `✅ Ваш заказ <b>${escapeHtml(order.productId?.name || 'Товар')}</b> выполнен продавцом!\n\n`;
+    
+    // Пересылаем данные покупателю
+    try {
+      if (ctx.message.text) {
+        deliveryText += `<b>Данные заказа:</b>\n<code>${escapeHtml(ctx.message.text)}</code>`;
+        await notif.sendToUser(buyer.telegramId, deliveryText);
+      } else if (ctx.message.photo || ctx.message.document) {
+        await notif.sendToUser(buyer.telegramId, deliveryText);
+        await ctx.telegram.copyMessage(buyer.telegramId, ctx.chat.id, ctx.message.message_id);
+      } else {
+        await ctx.reply('❌ Пожалуйста, отправьте текст, фото или документ.');
+        return true;
+      }
+    } catch (err) {
+      // Если бот не смог отправить (пользователь заблокировал бота)
+    }
+  }
+
+  order.status = 'completed';
+  order.confirmedAt = new Date();
+  order.activationResult = 'Выдано продавцом вручную';
+  await order.save();
+
+  // Очищаем сессию
+  ctx.session.sellerAction = null;
+  ctx.session.deliverOrderId = null;
+
+  // Перечитываем актуальный баланс
+  const freshSeller = await Seller.findById(seller._id);
+
+  const text =
+    `✅ <b>Заказ успешно выполнен!</b>\n\n` +
+    `📦 Товар: ${escapeHtml(order.productId?.name || 'Товар')}\n` +
+    `💰 Доход: <b>+${(order.sellerPayout || 0).toFixed(2)} USDT</b>\n\n` +
+    `Ваш текущий баланс: <b>${(freshSeller?.balance || seller.balance).toFixed(2)} USDT</b>\n` +
+    `<i>Данные были успешно отправлены покупателю.</i>`;
+
+  await ctx.reply(text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('📦 К заказам', 'seller:orders')],
+      [Markup.button.callback('🏪 Кабинет', 'seller:cabinet')],
+    ]),
+  });
+
+  return true;
 };
 
 // ─── Настройка кошелька — шаг 1: ввод адреса ─────────────────────────────────
@@ -562,4 +628,5 @@ module.exports = {
   handleWithdrawAmountInput,
   confirmWithdraw,
   findSeller,
+  handleSellerDelivery,
 };
