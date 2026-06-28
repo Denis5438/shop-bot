@@ -106,14 +106,15 @@ const showDirectOptions = async (ctx) => {
 const askTopupAmount = async (ctx, method, network = null) => {
   const prevQuickAmount = ctx.session?.topup?.quickAmount || null;
   ctx.session.topup = { method, network, step: 'amount', currency: 'usdt', msgId: null, quickAmount: prevQuickAmount };
+  const lang = ctx.user?.language || 'ru';
 
   if (prevQuickAmount) {
     return await handleAmountInput(ctx, String(prevQuickAmount));
   }
 
   const rate = getRate();
-  const currencyLine = `💱 Курс: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`;
-  const hint = `Например: <code>5</code> — это ~${(5 * rate).toFixed(0)} ₽`;
+  const currencyLine = lang === 'en' ? `💱 Rate: <b>1 USDT = ${rate.toFixed(2)} ₽</b>` : `💱 Курс: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`;
+  const hint = lang === 'en' ? `Example: <code>5</code> — is ~${(5 * rate).toFixed(0)} ₽` : `Например: <code>5</code> — это ~${(5 * rate).toFixed(0)} ₽`;
 
   const presets = [5, 10, 20, 50, 100];
   const presetLabel = 'USDT';
@@ -125,18 +126,22 @@ const askTopupAmount = async (ctx, method, network = null) => {
     Markup.button.callback(`${v} ${presetLabel}`, `topup:preset:usdt:${v}`)
   );
 
-  const text =
-    `💬 <b>Введите сумму в USDT:</b>\n\n` +
-    `${currencyLine}\n` +
-    `${hint}\n\n` +
-    `<blockquote>💡 Или выберите частую сумму одной кнопкой ниже.</blockquote>`;
+  const text = lang === 'en'
+    ? `💬 <b>Enter amount in USDT:</b>\n\n` +
+      `${currencyLine}\n` +
+      `${hint}\n\n` +
+      `<blockquote>💡 Or choose a common amount using the buttons below.</blockquote>`
+    : `💬 <b>Введите сумму в USDT:</b>\n\n` +
+      `${currencyLine}\n` +
+      `${hint}\n\n` +
+      `<blockquote>💡 Или выберите частую сумму одной кнопкой ниже.</blockquote>`;
 
   const opts = {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
       presetRow1,
       presetRow2,
-      [Markup.button.callback('❌ Отмена', method === 'card' ? 'topup:method:direct' : 'topup:pay:bybit')],
+      [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', method === 'card' ? 'topup:method:direct' : 'topup:pay:bybit')],
     ]),
   };
 
@@ -198,14 +203,15 @@ const showBybitNetwork = async (ctx, network) => {
 // и прогоняем через тот же flow — это даёт -1 клик в типичном сценарии.
 const handlePresetAmount = async (ctx, currency, amountStr) => {
   const topup = ctx.session?.topup;
+  const lang = ctx.user?.language || 'ru';
   if (!topup || topup.step !== 'amount') {
-    return ctx.answerCbQuery('⚠️ Шаг устарел, начните заново', { show_alert: true }).catch(() => null);
+    return ctx.answerCbQuery(lang === 'en' ? '⚠️ Step expired, start again' : '⚠️ Шаг устарел, начните заново', { show_alert: true }).catch(() => null);
   }
 
   // Синхронизируем валюту (на случай если юзер нажал пресет в «чужой» валюте).
   topup.currency = currency;
 
-  await ctx.answerCbQuery(`💵 Сумма: ${amountStr} ${currency === 'usdt' ? 'USDT' : '₽'}`).catch(() => null);
+  await ctx.answerCbQuery(lang === 'en' ? `💵 Amount: ${amountStr} ${currency === 'usdt' ? 'USDT' : '₽'}` : `💵 Сумма: ${amountStr} ${currency === 'usdt' ? 'USDT' : '₽'}`).catch(() => null);
 
   return handleAmountInput(ctx, String(amountStr));
 };
@@ -214,16 +220,18 @@ const handlePresetAmount = async (ctx, currency, amountStr) => {
 const handleAmountInput = async (ctx, rawAmount = null) => {
   const topup = ctx.session?.topup;
   if (!topup || topup.step !== 'amount') return false;
+  const lang = ctx.user?.language || 'ru';
 
   // Human-friendly парсинг: понимает "5.5", "5,5", "1 000", "5 USDT", "500 руб"
   const parsed = parseAmount(rawAmount ?? ctx.message?.text ?? '');
 
   if (!parsed.ok) {
+    const errorMsg = lang === 'en' && parsed.reason.includes('Некорректная') ? 'Invalid amount format' : parsed.reason;
     await ctx.reply(
-      `❌ ${parsed.reason}`,
+      `❌ ${errorMsg}`,
       {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'menu:topup')]]),
+        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')]]),
       }
     );
     return true;
@@ -257,11 +265,11 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
   if (amountUSDT < minTopup) {
     const minRub = Math.ceil(minTopup * getRate());
     const errMsg = currency === 'usdt'
-      ? `❌ <b>Минимальная сумма пополнения — ${minTopup} USDT</b>\n\nВведите сумму ещё раз:`
-      : `❌ <b>Минимальная сумма пополнения — ${minRub} ₽</b> (~${minTopup} USDT)\n\nВведите сумму ещё раз:`;
+      ? (lang === 'en' ? `❌ <b>Minimum top-up amount — ${minTopup} USDT</b>\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения — ${minTopup} USDT</b>\n\nВведите сумму ещё раз:`)
+      : (lang === 'en' ? `❌ <b>Minimum top-up amount — ${minRub} ₽</b> (~${minTopup} USDT)\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения — ${minRub} ₽</b> (~${minTopup} USDT)\n\nВведите сумму ещё раз:`);
     await ctx.reply(errMsg, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'menu:topup')]]),
+      ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')]]),
     });
     return true;
   }
@@ -283,39 +291,42 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
     const cardNumber = String(settings?.cardNumber || '').trim();
     const cardHolder = String(settings?.cardHolder || '').trim();
     if (!cardNumber || !cardHolder) {
-      await ctx.reply('❌ Реквизиты карты не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
+      await ctx.reply(lang === 'en' ? '❌ Card details are not configured. Contact support or choose another payment method.' : '❌ Реквизиты карты не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('⬅️ К способам оплаты', 'topup:method:direct')],
-          [Markup.button.callback('🆘 Поддержка', 'menu:support')],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:method:direct')],
+          [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
         ]),
       });
       return true;
     }
 
-    reqs =
-      `<blockquote>🏦 <b>Реквизиты карты:</b>\n\n` +
-      `💳 Номер карты:\n<code>${escapeHtml(cardNumber)}</code>\n\n` +
-      `👤 Получатель:\n<code>${escapeHtml(cardHolder)}</code></blockquote>` +
-      copyHint();
+    reqs = lang === 'en'
+      ? `<blockquote>🏦 <b>Card details:</b>\n\n` +
+        `💳 Card number:\n<code>${escapeHtml(cardNumber)}</code>\n\n` +
+        `👤 Recipient:\n<code>${escapeHtml(cardHolder)}</code></blockquote>` + copyHint(lang)
+      : `<blockquote>🏦 <b>Реквизиты карты:</b>\n\n` +
+        `💳 Номер карты:\n<code>${escapeHtml(cardNumber)}</code>\n\n` +
+        `👤 Получатель:\n<code>${escapeHtml(cardHolder)}</code></blockquote>` + copyHint(lang);
   } else {
     const bybitAddresses = await getBybitAddresses();
     net = bybitAddresses[network];
     topupAddr = network === 'trc20' && settings?.topupWallet ? settings.topupWallet : net.address;
     topupAddr = String(topupAddr || '').trim();
     if (!net || !topupAddr) {
-      await ctx.reply('❌ Реквизиты для выбранной сети не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
+      await ctx.reply(lang === 'en' ? '❌ Details for the selected network are not configured. Contact support or choose another payment method.' : '❌ Реквизиты для выбранной сети не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('⬅️ К сетям Bybit', 'topup:pay:bybit')],
-          [Markup.button.callback('🆘 Поддержка', 'menu:support')],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Bybit networks' : '⬅️ К сетям Bybit', 'topup:pay:bybit')],
+          [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
         ]),
       });
       return true;
     }
 
-    reqs =
-      `<blockquote>${net.icon} <b>Bybit · ${net.label}:</b>\n\n` +
-      `📬 ${network === 'uid' ? 'UID' : 'Адрес'}:\n<code>${escapeHtml(topupAddr)}</code></blockquote>` +
-      copyHint();
+    reqs = lang === 'en'
+      ? `<blockquote>${net.icon} <b>Bybit · ${net.label}:</b>\n\n` +
+        `📬 ${network === 'uid' ? 'UID' : 'Address'}:\n<code>${escapeHtml(topupAddr)}</code></blockquote>` + copyHint(lang)
+      : `<blockquote>${net.icon} <b>Bybit · ${net.label}:</b>\n\n` +
+        `📬 ${network === 'uid' ? 'UID' : 'Адрес'}:\n<code>${escapeHtml(topupAddr)}</code></blockquote>` + copyHint(lang);
   }
 
   // Если это авто-крипта, ждем нажатия кнопки 'Я отправил', иначе 'proof' (скриншот)
@@ -329,32 +340,44 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
     const coin = 'USDT';
     const icon = isBsc ? '🟡' : '🔴';
 
-    // Переопределяем текст на 100% соответствующий скриншоту
-    text =
-      `🌐 <b>Пополнение USDT (${network.toUpperCase()})</b>\n\n` +
-      `🪙 Монета: ${coin}\n` +
-      `🔗 Блокчейн: ${label}\n` +
-      `📉 Минимум: ${minTopup.toFixed(3)} ${coin}\n\n` +
-      `① Отправьте <b>${amountUSDT.toFixed(2)} USDT</b> на этот адрес:\n` +
-      `<code>${escapeHtml(topupAddr)}</code>` + copyHint() + `\n\n` +
-      `② После отправки нажмите кнопку ниже и вставьте TXID.\n\n` +
-      `⚠️ НЕ используйте другие сети — средства будут потеряны.\n` +
-      `⚠️ Убедитесь, что это ${label} и ${coin}.`;
+    text = lang === 'en'
+      ? `🌐 <b>Top Up USDT (${network.toUpperCase()})</b>\n\n` +
+        `🪙 Coin: ${coin}\n` +
+        `🔗 Network: ${label}\n` +
+        `📉 Minimum: ${minTopup.toFixed(3)} ${coin}\n\n` +
+        `① Send <b>${amountUSDT.toFixed(2)} USDT</b> to this address:\n` +
+        `<code>${escapeHtml(topupAddr)}</code>` + copyHint(lang) + `\n\n` +
+        `② After sending, click the button below and paste the TXID.\n\n` +
+        `⚠️ DO NOT use other networks — funds will be lost.\n` +
+        `⚠️ Make sure it is ${label} and ${coin}.`
+      : `🌐 <b>Пополнение USDT (${network.toUpperCase()})</b>\n\n` +
+        `🪙 Монета: ${coin}\n` +
+        `🔗 Блокчейн: ${label}\n` +
+        `📉 Минимум: ${minTopup.toFixed(3)} ${coin}\n\n` +
+        `① Отправьте <b>${amountUSDT.toFixed(2)} USDT</b> на этот адрес:\n` +
+        `<code>${escapeHtml(topupAddr)}</code>` + copyHint(lang) + `\n\n` +
+        `② После отправки нажмите кнопку ниже и вставьте TXID.\n\n` +
+        `⚠️ НЕ используйте другие сети — средства будут потеряны.\n` +
+        `⚠️ Убедитесь, что это ${label} и ${coin}.`;
   } else {
-    text =
-      `${reqs}\n\n` +
-      `<blockquote>💵 <b>Сумма перевода:</b> ${transferAmount}\n` +
-      `💱 Курс: 1 USDT = ${rate.toFixed(2)} ₽</blockquote>\n\n` +
-      `📸 Переведите и нажмите «Я оплатил», затем пришлите <b>скриншот чека</b>.`;
+    text = lang === 'en'
+      ? `${reqs}\n\n` +
+        `<blockquote>💵 <b>Transfer amount:</b> ${transferAmount}\n` +
+        `💱 Rate: 1 USDT = ${rate.toFixed(2)} ₽</blockquote>\n\n` +
+        `📸 Transfer the funds and click "I paid", then send a <b>screenshot of the receipt</b>.`
+      : `${reqs}\n\n` +
+        `<blockquote>💵 <b>Сумма перевода:</b> ${transferAmount}\n` +
+        `💱 Курс: 1 USDT = ${rate.toFixed(2)} ₽</blockquote>\n\n` +
+        `📸 Переведите и нажмите «Я оплатил», затем пришлите <b>скриншот чека</b>.`;
   }
 
   const buttons = [];
   if (isAutoCrypto) {
-    buttons.push([Markup.button.callback(network === 'uid' ? '🔎 Я перевёл — отправить UID' : '🔎 Я отправил — ввести TXID', 'topup:enter_txid')]);
-    buttons.push([Markup.button.callback('⬅️ Назад', 'topup:pay:bybit')]);
+    buttons.push([Markup.button.callback(network === 'uid' ? (lang === 'en' ? '🔎 I sent it — enter UID' : '🔎 Я перевёл — отправить UID') : (lang === 'en' ? '🔎 I sent it — enter TXID' : '🔎 Я отправил — ввести TXID'), 'topup:enter_txid')]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]);
   } else {
-    buttons.push([Markup.button.callback('✅ Я оплатил', 'topup:card_paid')]);
-    buttons.push([Markup.button.callback('❌ Отмена', 'menu:topup')]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '✅ I paid' : '✅ Я оплатил', 'topup:card_paid')]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')]);
   }
 
   const opts = {
@@ -374,18 +397,19 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 // Обработчик кнопки "Ввести TXID"
 const handleEnterTxid = async (ctx) => {
   const topup = ctx.session?.topup;
+  const lang = ctx.user?.language || 'ru';
   if (!topup || topup.step !== 'waiting_txid_btn') {
-    return ctx.answerCbQuery('❌ Сначала введите сумму или вы уже перешли к отправке', { show_alert: true }).catch(() => null);
+    return ctx.answerCbQuery(lang === 'en' ? '❌ First enter the amount or you have already proceeded to send' : '❌ Сначала введите сумму или вы уже перешли к отправке', { show_alert: true }).catch(() => null);
   }
 
   topup.step = 'proof'; // Разрешаем ввод текста
 
   const isUid = topup.network === 'uid';
   const text = isUid 
-    ? '👇 Пожалуйста, <b>отправьте ваш Bybit UID</b> (С которого вы перевели средства):'
-    : '👇 Пожалуйста, <b>отправьте ваш TXID (Хэш транзакции) в этот чат</b> следующим сообщением:';
+    ? (lang === 'en' ? '👇 Please, <b>send your Bybit UID</b> (From which you transferred the funds):' : '👇 Пожалуйста, <b>отправьте ваш Bybit UID</b> (С которого вы перевели средства):')
+    : (lang === 'en' ? '👇 Please, <b>send your TXID (Transaction Hash) to this chat</b> in the next message:' : '👇 Пожалуйста, <b>отправьте ваш TXID (Хэш транзакции) в этот чат</b> следующим сообщением:');
     
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'topup:pay:bybit')]]) };
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
 
   await ctx.answerCbQuery().catch(() => null);
 
@@ -406,6 +430,7 @@ const handleTopupProof = async (ctx) => {
 
   const { method, network, amountUSDT, amountRUB } = topup;
   const user = ctx.user;
+  const lang = user?.language || 'ru';
   const rate = getRate();
 
   let proofText = null;
@@ -419,8 +444,8 @@ const handleTopupProof = async (ctx) => {
   } else if (ctx.message?.text) {
     proofText = ctx.message.text.trim();
   } else {
-    const errText = '❌ Пришлите скриншот чека или хэш транзакции (TXID).';
-    const errOpts = { ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]) };
+    const errText = lang === 'en' ? '❌ Please send a screenshot of the receipt or transaction hash (TXID).' : '❌ Пришлите скриншот чека или хэш транзакции (TXID).';
+    const errOpts = { ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню', 'menu:main')]]) };
     if (topup.msgId) {
        await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errText, errOpts).catch(()=>ctx.reply(errText, errOpts));
     } else {
@@ -450,8 +475,8 @@ const handleTopupProof = async (ctx) => {
     if (network !== 'uid') {
       const exists = await TopupRequest.findOne({ txid: proofText });
       if (exists) {
-        const errTxt = '❌ Этот TXID уже был использован для пополнения!';
-        const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'topup:pay:bybit')]]) };
+        const errTxt = lang === 'en' ? '❌ This TXID has already been used for top-up!' : '❌ Этот TXID уже был использован для пополнения!';
+        const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
         if (topup.msgId) { await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(()=>ctx.reply(errTxt, errOpts)); } else { await ctx.reply(errTxt, errOpts); }
         return true;
       }
@@ -470,11 +495,10 @@ const handleTopupProof = async (ctx) => {
 
       if (user.bybitUid && user.bybitUid !== uidInput) {
         const mask = `***${String(user.bybitUid).slice(-4)}`;
-        const errTxt =
-          `❌ <b>UID не совпадает с вашим</b>\n\n` +
-          `К вашему аккаунту уже привязан UID: <code>${mask}</code>.\n` +
-          `Если вы сменили Bybit-аккаунт — обратитесь в поддержку.`;
-        const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'topup:pay:bybit')]]) };
+        const errTxt = lang === 'en'
+          ? `❌ <b>UID does not match yours</b>\n\nUID <code>${mask}</code> is already linked to your account.\nIf you changed your Bybit account — contact support.`
+          : `❌ <b>UID не совпадает с вашим</b>\n\nК вашему аккаунту уже привязан UID: <code>${mask}</code>.\nЕсли вы сменили Bybit-аккаунт — обратитесь в поддержку.`;
+        const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
         if (topup.msgId) { await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts)); } else { await ctx.reply(errTxt, errOpts); }
         return true;
       }
@@ -482,8 +506,10 @@ const handleTopupProof = async (ctx) => {
       if (!user.bybitUid) {
         const claimedByOther = await User.findOne({ bybitUid: uidInput, _id: { $ne: user._id } }).select('_id').lean();
         if (claimedByOther) {
-          const errTxt = '❌ <b>Этот UID уже привязан к другому аккаунту.</b>\n\nЕсли это ошибка — напишите в поддержку.';
-          const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'topup:pay:bybit')]]) };
+          const errTxt = lang === 'en' 
+            ? '❌ <b>This UID is already linked to another account.</b>\n\nIf this is an error, please contact support.'
+            : '❌ <b>Этот UID уже привязан к другому аккаунту.</b>\n\nЕсли это ошибка — напишите в поддержку.';
+          const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
           if (topup.msgId) { await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts)); } else { await ctx.reply(errTxt, errOpts); }
           return true;
         }
@@ -496,10 +522,10 @@ const handleTopupProof = async (ctx) => {
     const net = bybitAddresses[network];
     const topupAddr = String((network === 'trc20' && settings?.topupWallet ? settings.topupWallet : net?.address) || '').trim();
     if (!net || !topupAddr) {
-      await ctx.reply('❌ Реквизиты для выбранной сети сейчас не настроены. Обратитесь в поддержку.', {
+      await ctx.reply(lang === 'en' ? '❌ Details for the selected network are not configured right now. Contact support.' : '❌ Реквизиты для выбранной сети сейчас не настроены. Обратитесь в поддержку.', {
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('🆘 Поддержка', 'menu:support')],
-          [Markup.button.callback('⬅️ В меню', 'menu:main')],
+          [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Menu' : '⬅️ В меню', 'menu:main')],
         ]),
       });
       return true;
@@ -507,12 +533,12 @@ const handleTopupProof = async (ctx) => {
 
     // UX-16: анимированный прогресс с реалистичными шагами вместо статичного "⏳ Проверяю...".
     const progress = await startProgress(ctx, {
-      title: '🔎 <b>Проверяю транзакцию</b>',
+      title: lang === 'en' ? '🔎 <b>Checking transaction</b>' : '🔎 <b>Проверяю транзакцию</b>',
       steps: [
-        { label: '🔗 Подключаюсь к блокчейну', pct: 25 },
-        { label: `🔍 Ищу транзакцию в сети ${network.toUpperCase()}`, pct: 55 },
-        { label: '💰 Сверяю сумму и адрес получателя', pct: 80 },
-        { label: '⏳ Финализация', pct: 95 },
+        { label: lang === 'en' ? '🔗 Connecting to blockchain' : '🔗 Подключаюсь к блокчейну', pct: 25 },
+        { label: lang === 'en' ? `🔍 Searching transaction in ${network.toUpperCase()}` : `🔍 Ищу транзакцию в сети ${network.toUpperCase()}`, pct: 55 },
+        { label: lang === 'en' ? '💰 Verifying amount and recipient' : '💰 Сверяю сумму и адрес получателя', pct: 80 },
+        { label: lang === 'en' ? '⏳ Finalizing' : '⏳ Финализация', pct: 95 },
       ],
       intervalMs: 1500,
       editMessageId: topup.msgId || null,
@@ -542,7 +568,7 @@ const handleTopupProof = async (ctx) => {
         }
         if (!foundUnclaimed) {
           bResult.success = false;
-          bResult.reason = 'Все переводы с этого UID уже были зачислены ранее. Новых переводов не найдено.';
+          bResult.reason = lang === 'en' ? 'All transfers from this UID have already been credited. No new transfers found.' : 'Все переводы с этого UID уже были зачислены ранее. Новых переводов не найдено.';
         }
       }
     }
@@ -554,19 +580,19 @@ const handleTopupProof = async (ctx) => {
         requestStatus = 'confirmed';
         finalAmountUSDT = bResult.amount; // Засчитываем реальную сумму
       } else {
-        statusReason = `⚠️ Сумма в блокчейне (${bResult.amount} USDT) меньше заявленной (${amountUSDT} USDT).`;
+        statusReason = lang === 'en' ? `⚠️ Amount in blockchain (${bResult.amount} USDT) is less than declared (${amountUSDT} USDT).` : `⚠️ Сумма в блокчейне (${bResult.amount} USDT) меньше заявленной (${amountUSDT} USDT).`;
       }
     } else if (bResult.blocked) {
       // Bybit/RPC заблокировал запрос (CloudFront 403, rate-limit, сеть). API сейчас
       // недоступен — отправляем заявку на ручную проверку оператором.
-      statusReason = `⚠️ ${bResult.reason || 'Авто-проверка временно недоступна.'}`;
+      statusReason = `⚠️ ${bResult.reason || (lang === 'en' ? 'Auto-check temporarily unavailable.' : 'Авто-проверка временно недоступна.')}`;
       requestStatus = 'pending';
     } else {
-      statusReason = `⚠️ Ошибка авто-проверки: ${bResult.reason}.`;
+      statusReason = lang === 'en' ? `⚠️ Auto-check error: ${bResult.reason}.` : `⚠️ Ошибка авто-проверки: ${bResult.reason}.`;
     }
 
     // UX-16: останавливаем прогресс-анимацию — дальше финальный editMessageText сам перепишет msg.
-    if (progress) progress.stop('⏳ Формирую ответ...').catch(() => {});
+    if (progress) progress.stop(lang === 'en' ? '⏳ Generating response...' : '⏳ Формирую ответ...').catch(() => {});
   }
 
   // Дедупликация: после автопроверки (или если её не было) сверяем по финальной
@@ -582,8 +608,8 @@ const handleTopupProof = async (ctx) => {
       createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     });
     if (duplicateRequest) {
-      const errTxt = '❌ У вас уже есть заявка на пополнение с такой же суммой. Дождитесь подтверждения оператором.';
-      const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]) };
+      const errTxt = lang === 'en' ? '❌ You already have a top-up request with the same amount. Wait for operator confirmation.' : '❌ У вас уже есть заявка на пополнение с такой же суммой. Дождитесь подтверждения оператором.';
+      const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню', 'menu:main')]]) };
       if (checkingMsgId) {
         await ctx.telegram.editMessageText(ctx.chat.id, checkingMsgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts));
       } else if (topup.msgId) {
@@ -616,7 +642,7 @@ const handleTopupProof = async (ctx) => {
   let replyText = '';
   const opts = {
     parse_mode: 'HTML',
-    ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]])
+    ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню', 'menu:main')]])
   };
 
   if (requestStatus === 'confirmed') {
@@ -646,7 +672,7 @@ const handleTopupProof = async (ctx) => {
           type: 'topup',
           amount: finalAmountUSDT,
           orderId: request._id,
-          description: `Авто-пополнение ${network.toUpperCase()}`
+          description: lang === 'en' ? `Auto-topup ${network.toUpperCase()}` : `Авто-пополнение ${network.toUpperCase()}`
         }).save(session ? { session } : undefined);
       });
     } catch (err) {
@@ -665,23 +691,29 @@ const handleTopupProof = async (ctx) => {
     }
 
     if (uidBindingFailed) {
-      replyText =
-        `⚠️ <b>Переводим заявку на ручную проверку</b>\n\n` +
-        `Возникла проблема с привязкой UID. Оператор свяжется с вами в ближайшее время.`;
+      replyText = lang === 'en'
+        ? `⚠️ <b>Switching to manual verification</b>\n\nThere was an issue linking the UID. An operator will contact you shortly.`
+        : `⚠️ <b>Переводим заявку на ручную проверку</b>\n\nВозникла проблема с привязкой UID. Оператор свяжется с вами в ближайшее время.`;
       await notif.notifyAdminTopupRequest(request, user, method, network, { amountUSDT, amountRUB, rate });
     } else {
-      replyText = `✅ <b>Успешно!</b>\n\nТранзакция найдена. Ваш баланс пополнен на <b>${finalAmountUSDT.toFixed(2)} USDT</b>.`;
+      replyText = lang === 'en'
+        ? `✅ <b>Success!</b>\n\nTransaction found. Your balance has been topped up by <b>${finalAmountUSDT.toFixed(2)} USDT</b>.`
+        : `✅ <b>Успешно!</b>\n\nТранзакция найдена. Ваш баланс пополнен на <b>${finalAmountUSDT.toFixed(2)} USDT</b>.`;
       // Тихое уведомление админу
       await notif.notifyAdminTopupRequest(request, user, method, network, { amountUSDT: finalAmountUSDT, amountRUB, rate });
     }
   } else {
     // Честный SLA зависит от способа оплаты (карта медленнее, крипта быстрее).
     const slaText = method === 'card' ? SLA.CARD_MANUAL_REVIEW : SLA.CRYPTO_MANUAL;
-    replyText =
-      `✅ <b>Заявка принята!</b>\n\n` +
-      (statusReason ? `${statusReason}\n\n` : '') +
-      `💵 Сумма: <b>${amountUSDT.toFixed(2)} USDT</b> (~${amountRUB.toFixed(0)} ₽)\n` +
-      `⏳ Среднее время обработки: <b>${slaText}</b>.`;
+    replyText = lang === 'en'
+      ? `✅ <b>Request accepted!</b>\n\n` +
+        (statusReason ? `${statusReason}\n\n` : '') +
+        `💵 Amount: <b>${amountUSDT.toFixed(2)} USDT</b> (~${amountRUB.toFixed(0)} ₽)\n` +
+        `⏳ Average processing time: <b>${slaText}</b>.`
+      : `✅ <b>Заявка принята!</b>\n\n` +
+        (statusReason ? `${statusReason}\n\n` : '') +
+        `💵 Сумма: <b>${amountUSDT.toFixed(2)} USDT</b> (~${amountRUB.toFixed(0)} ₽)\n` +
+        `⏳ Среднее время обработки: <b>${slaText}</b>.`;
 
     await notif.notifyAdminTopupRequest(request, user, method, network, { amountUSDT, amountRUB, rate });
   }
