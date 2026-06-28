@@ -18,19 +18,15 @@ const setBot = (bot) => { botInstance = bot; };
 const notifySellerWelcome = async (seller) => {
   if (!botInstance || !seller?.telegramId) return;
   try {
+    const sellerUser = await User.findOne({ telegramId: seller.telegramId });
+    const lang = sellerUser?.language || 'ru';
     await botInstance.telegram.sendMessage(
       seller.telegramId,
-      `🎉 <b>Вы стали продавцом!</b>\n\n` +
-      `Используйте команду /seller для доступа к вашему кабинету.\n\n` +
-      `<blockquote>В кабинете вы можете:\n` +
-      `💳 Привязать USDT кошелёк\n` +
-      `📦 Видеть ваши заказы\n` +
-      `💸 Запрашивать вывод средств</blockquote>\n\n` +
-      `Минимальная сумма вывода устанавливается администратором.`,
+      i18n.translate(lang, 'seller_welcome'),
       {
         parse_mode: 'HTML',
         reply_markup: {
-          inline_keyboard: [[{ text: '🏪 Открыть кабинет', callback_data: 'seller:cabinet' }]],
+          inline_keyboard: [[{ text: i18n.translate(lang, 'seller_welcome_btn'), callback_data: 'seller:cabinet' }]],
         },
       }
     );
@@ -181,15 +177,16 @@ const notifyAdminTopupRequest = async (request, user, method = 'unknown', networ
 // Заказ выполнен — уведомление пользователю
 const notifyUserOrderCompleted = async (user, order, product, result) => {
   const productId = product?._id || order.productId;
-  const msg =
-    `🎉 <b>Ваш заказ выполнен!</b>\n\n` +
-    `📦 Товар: ${product?.icon || '📦'} ${h(product?.name, 'Товар')}\n` +
-    `📋 Заказ: <code>${order._id}</code>\n\n` +
-    `✅ ${h(result || 'Активация выполнена успешно!')}`;
+  const lang = user?.language || 'ru';
+  const msg = i18n.translate(lang, 'order_completed', {
+    name: h(product?.name, 'Товар'),
+    orderId: order._id,
+    result: h(result || 'Активация выполнена успешно!')
+  });
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔄 Купить ещё', `shop:product:${productId}`)],
-    [Markup.button.callback('⬅️ В главное меню', 'menu:main')],
+    [Markup.button.callback(i18n.translate(lang, 'btn_buy') + ' 🔄', `shop:product:${productId}`)],
+    [Markup.button.callback(i18n.translate(lang, 'btn_back'), 'menu:main')],
   ]);
 
   await sendToUser(user.telegramId, msg, keyboard);
@@ -197,12 +194,13 @@ const notifyUserOrderCompleted = async (user, order, product, result) => {
 
 // Заказ отменён — уведомление пользователю
 const notifyUserOrderCancelled = async (user, order, product, reason) => {
-  const msg =
-    `❌ <b>Заказ отменён</b>\n\n` +
-    `📦 Товар: ${product?.icon || '📦'} ${h(product?.name, 'Товар')}\n` +
-    `📋 Заказ: <code>${order._id}</code>\n` +
-    `💬 Причина: ${h(reason || 'не указана')}\n\n` +
-    `💰 Средства возвращены: +${order.price} USDT`;
+  const lang = user?.language || 'ru';
+  const msg = i18n.translate(lang, 'order_cancelled', {
+    name: h(product?.name, 'Товар'),
+    orderId: order._id,
+    reason: h(reason || 'не указана'),
+    price: order.price
+  });
 
   await sendToUser(user.telegramId, msg);
 };
@@ -210,22 +208,22 @@ const notifyUserOrderCancelled = async (user, order, product, reason) => {
 // Баланс пополнен — уведомление пользователю
 const notifyUserTopupConfirmed = async (user, amount) => {
   const fmt = parseFloat(amount).toFixed(2);
-  const msg =
-    `✅ <b>Баланс пополнен!</b>\n\n` +
-    `💰 Зачислено: <b>+${fmt} USDT</b> (~${toRub(amount)} ₽)\n` +
-    `💳 Текущий баланс: <b>${user.balance.toFixed(2)} USDT</b>`;
+  const lang = user?.language || 'ru';
+  const msg = i18n.translate(lang, 'topup_confirmed', {
+    amount: fmt,
+    amountRub: toRub(amount),
+    balance: user.balance.toFixed(2)
+  });
 
   await sendToUser(user.telegramId, msg);
 };
 
 // Заявка на пополнение отклонена
 const notifyUserTopupRejected = async (user, amount, reason) => {
-  const fmt = amount > 0 ? `${parseFloat(amount).toFixed(2)} USDT` : 'не указана';
-  const msg =
-    `❌ <b>Заявка на пополнение отклонена</b>\n\n` +
-    `💰 Сумма: ${fmt}\n` +
-    `💬 Причина: ${h(reason || 'не указана')}\n\n` +
-    `Если вопросы — обращайтесь в поддержку.`;
+  const lang = user?.language || 'ru';
+  const msg = i18n.translate(lang, 'topup_rejected', {
+    reason: h(reason || 'не указана')
+  });
 
   await sendToUser(user.telegramId, msg);
 };
@@ -323,43 +321,43 @@ const SEGMENTS = [
 const broadcastNewProduct = async (product, stock, segment = 'all') => {
   if (!botInstance) return { sent: 0, failed: 0 };
 
-  const stockLine = stock === '∞' || stock === null
-    ? `♾️ Без ограничений`
-    : stock > 0
-      ? `🗄 В наличии: <b>${stock} шт.</b>`
-      : `🔜 <b>Скоро в наличии</b>`;
-
-  const text =
-    `🆕 <b>Новый товар в магазине!</b>\n\n` +
-    `${h(product.icon || '📦')} <b>${h(product.name)}</b>\n\n` +
-    `${product.description ? `📝 ${h(product.description)}\n\n` : ''}` +
-    `💰 Цена: <b>${product.price} USDT</b> (~${toRub(product.price)} ₽)\n` +
-    `${stockLine}\n\n` +
-    `👇 Нажмите чтобы купить:`;
-
-  const keyboard = {
-    inline_keyboard: [
-      [{ text: `${product.icon} Купить — ${product.price} USDT`, callback_data: `menu:shop` }],
-    ],
-  };
-
   const { query } = await buildSegmentQuery(segment);
 
   let sent = 0;
   let failed = 0;
-
-  // Пагинация по 100 пользователей — не грузим всех в память
   let skip = 0;
   const batchSize = 100;
   let batch;
   do {
     batch = await User.find(query)
-      .select('telegramId')
+      .select('telegramId language')
       .lean()
       .skip(skip)
       .limit(batchSize);
 
     for (const user of batch) {
+      const lang = user.language || 'ru';
+      const stockLine = stock === '∞' || stock === null
+        ? i18n.translate(lang, 'broadcast_stock_unlimited')
+        : stock > 0
+          ? i18n.translate(lang, 'broadcast_stock_count', { count: stock })
+          : i18n.translate(lang, 'broadcast_stock_soon');
+
+      const text = i18n.translate(lang, 'broadcast_new_product', {
+        icon: h(product.icon || '📦'),
+        name: h(product.name),
+        description: product.description ? `📝 ${h(product.description)}` : '',
+        price: product.price,
+        priceRub: toRub(product.price),
+        stockLine
+      });
+
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: i18n.translate(lang, 'broadcast_btn_buy', { icon: product.icon || '📦', price: product.price }), callback_data: `menu:shop` }],
+        ],
+      };
+
       try {
         await botInstance.telegram.sendMessage(user.telegramId, text, {
           parse_mode: 'HTML',
@@ -369,7 +367,6 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
       } catch (_) {
         failed++;
       }
-      // Пауза 50мс между отправками — не превышаем лимит Telegram (30 msg/sec)
       await new Promise(r => setTimeout(r, 50));
     }
     skip += batchSize;
@@ -417,20 +414,21 @@ const notifySellerWithdrawalResult = async (seller, withdrawal, result) => {
 
   const NETWORK_LABELS = { trc20: 'TRC-20 (Tron)', bep20: 'BEP-20 (BSC)' };
   const networkLabel = NETWORK_LABELS[withdrawal.network] || withdrawal.network;
+  
+  const sellerUser = await User.findOne({ telegramId: seller.telegramId });
+  const lang = sellerUser?.language || 'ru';
 
   let msg;
   if (result === 'confirmed') {
-    msg =
-      `✅ <b>Выплата подтверждена!</b>\n\n` +
-      `💰 Сумма: <b>${withdrawal.amount.toFixed(2)} USDT</b>\n` +
-      `🌐 Сеть: ${networkLabel}\n` +
-      `💳 Кошелёк: <code>${h(withdrawal.walletAddress)}</code>\n\n` +
-      `Средства отправлены на ваш кошелёк.`;
+    msg = i18n.translate(lang, 'seller_withdrawal_confirmed', {
+      amount: withdrawal.amount.toFixed(2),
+      network: networkLabel,
+      wallet: h(withdrawal.walletAddress)
+    });
   } else {
-    msg =
-      `❌ <b>Заявка на вывод отклонена</b>\n\n` +
-      `💰 Сумма: ${withdrawal.amount.toFixed(2)} USDT\n\n` +
-      `Средства возвращены на ваш баланс. Обратитесь к администратору.`;
+    msg = i18n.translate(lang, 'seller_withdrawal_rejected', {
+      amount: withdrawal.amount.toFixed(2)
+    });
   }
 
   try {
