@@ -29,15 +29,23 @@ const fmtRUB = (rub) => {
 const startTopup = async (ctx) => {
   ctx.session = ctx.session || {};
   ctx.session.topup = null;
+  const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
+
+  const title = lang === 'en' ? 'Balance Top Up' : 'Пополнение баланса';
+  const choose = lang === 'en' ? 'Choose a convenient method:' : 'Выберите удобный способ:';
+  const directLabel = lang === 'en' ? '💳 Direct Transfer' : '💳 Прямой перевод';
+  const autoLabel = lang === 'en' ? '🤖 Auto-payment · soon' : '🤖 Авто-оплата · скоро';
+  const backLabel = t('btn_back');
 
   await editOrReply(ctx,
-    `💳 <b>Пополнение баланса</b>\n\nВыберите удобный способ:`,
+    `💳 <b>${title}</b>\n\n${choose}`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('💳 Прямой перевод', 'topup:method:direct')],
-        [Markup.button.callback('🤖 Авто-оплата · скоро', 'topup:auto_stub')],
-        [Markup.button.callback('⬅️ Назад', 'menu:main')],
+        [Markup.button.callback(directLabel, 'topup:method:direct')],
+        [Markup.button.callback(autoLabel, 'topup:auto_stub')],
+        [Markup.button.callback(backLabel, 'menu:main')],
       ]),
     }
   );
@@ -47,16 +55,25 @@ const startTopup = async (ctx) => {
 const startTopupWithAmount = async (ctx, amount) => {
   ctx.session = ctx.session || {};
   ctx.session.topup = { quickAmount: amount };
+  const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
+
+  const title = lang === 'en' ? 'Quick Top Up' : 'Быстрое пополнение';
+  const amountLbl = lang === 'en' ? 'Amount' : 'Сумма';
+  const chooseLbl = lang === 'en' ? 'Choose a method:' : 'Выберите способ:';
+  const directLabel = lang === 'en' ? '💳 Direct Transfer' : '💳 Прямой перевод';
+  const autoLabel = lang === 'en' ? '🤖 Auto-payment · soon' : '🤖 Авто-оплата · скоро';
+  const backLabel = t('btn_back');
 
   await editOrReply(ctx,
-    `💳 <b>Быстрое пополнение</b>\n\n` +
-    `Сумма: <b>${amount} USDT</b>\n\nВыберите способ:`,
+    `💳 <b>${title}</b>\n\n` +
+    `${amountLbl}: <b>${amount} USDT</b>\n\n${chooseLbl}`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('💳 Прямой перевод', 'topup:method:direct')],
-        [Markup.button.callback('🤖 Авто-оплата · скоро', 'topup:auto_stub')],
-        [Markup.button.callback('⬅️ Назад', 'menu:main')],
+        [Markup.button.callback(directLabel, 'topup:method:direct')],
+        [Markup.button.callback(autoLabel, 'topup:auto_stub')],
+        [Markup.button.callback(backLabel, 'menu:main')],
       ]),
     }
   );
@@ -64,14 +81,22 @@ const startTopupWithAmount = async (ctx, amount) => {
 
 // ─── Шаг 2: Выбор платёжной системы ─────────────────────────────────────────
 const showDirectOptions = async (ctx) => {
+  const lang = ctx.user?.language || 'ru';
+  const t = ctx.t || ((k) => k);
+  const title = lang === 'en' ? 'Direct Transfer' : 'Прямой перевод';
+  const chooseLbl = lang === 'en' ? 'Choose a method:' : 'Выберите способ:';
+  const cardLabel = lang === 'en' ? '🏦 Bank card (T-Bank / Sber)' : '🏦 На карту (Т-Банк / Сбербанк)';
+  const bybitLabel = lang === 'en' ? '📊 Via Bybit (USDT)' : '📊 Через Bybit (USDT)';
+  const backLabel = t('btn_back');
+
   await ctx.editMessageText(
-    `💳 <b>Прямой перевод</b>\n\nВыберите способ:`,
+    `💳 <b>${title}</b>\n\n${chooseLbl}`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🏦 На карту (Т-Банк / Сбербанк)', 'topup:pay:card')],
-        [Markup.button.callback('📊 Через Bybit (USDT)', 'topup:pay:bybit')],
-        [Markup.button.callback('⬅️ Назад', 'menu:topup')],
+        [Markup.button.callback(cardLabel, 'topup:pay:card')],
+        [Markup.button.callback(bybitLabel, 'topup:pay:bybit')],
+        [Markup.button.callback(backLabel, 'menu:topup')],
       ]),
     }
   );
@@ -131,15 +156,20 @@ const showBybitOptions = async (ctx) => {
   ctx.session = ctx.session || {};
   const prevQuickAmount = ctx.session?.topup?.quickAmount || null;
   ctx.session.topup = { method: 'bybit', network: null, step: null, msgId: null, quickAmount: prevQuickAmount };
+  const lang = ctx.user?.language || 'ru';
+  const t = ctx.t || ((k) => k);
+  const title = lang === 'en' ? 'Top Up via Bybit (USDT)' : 'Пополнение через Bybit (USDT)';
+  const chooseLbl = lang === 'en' ? 'Choose a network:' : 'Выберите сеть:';
+  const backLabel = t('btn_back');
 
   await ctx.editMessageText(
-    `📊 <b>Пополнение через Bybit (USDT)</b>\n\nВыберите сеть:`,
+    `📊 <b>${title}</b>\n\n${chooseLbl}`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔴 TRC-20 (Tron)', 'topup:network:trc20')],
         [Markup.button.callback('🟡 BEP-20 (BSC)', 'topup:network:bep20')],
-        [Markup.button.callback('⬅️ Назад', 'topup:method:direct')],
+        [Markup.button.callback(backLabel, 'topup:method:direct')],
       ]),
     }
   );

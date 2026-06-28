@@ -21,8 +21,8 @@ const User = require('../models/User');
 /**
  * @typedef {Object} Achievement
  * @property {string} code         Уникальный ID
- * @property {string} title        Название
- * @property {string} description  Что нужно сделать
+ * @property {Object|string} title        Название
+ * @property {Object|string} description  Что нужно сделать
  * @property {string} icon         Эмодзи
  * @property {number} bonus        USDT на баланс при разблокировке (0 = без бонуса)
  * @property {Function} check      async (user, stats) => boolean — условие выполнено
@@ -31,8 +31,8 @@ const User = require('../models/User');
 const ACHIEVEMENTS = [
   {
     code: 'first_purchase',
-    title: 'Первая покупка',
-    description: 'Совершите первую успешную покупку',
+    title: { ru: 'Первая покупка', en: 'First Purchase' },
+    description: { ru: 'Совершите первую успешную покупку', en: 'Make your first successful purchase' },
     icon: '🎉',
     bonus: 0.2,
     check: (_user, stats) => stats.completedOrdersCount >= 1,
@@ -40,8 +40,8 @@ const ACHIEVEMENTS = [
   },
   {
     code: 'five_orders',
-    title: 'Постоянный клиент',
-    description: 'Совершите 5 успешных покупок',
+    title: { ru: 'Постоянный клиент', en: 'Regular Customer' },
+    description: { ru: 'Совершите 5 успешных покупок', en: 'Make 5 successful purchases' },
     icon: '🛍️',
     bonus: 0.5,
     check: (_user, stats) => stats.completedOrdersCount >= 5,
@@ -49,8 +49,8 @@ const ACHIEVEMENTS = [
   },
   {
     code: 'ten_orders',
-    title: 'Опытный покупатель',
-    description: 'Совершите 10 успешных покупок',
+    title: { ru: 'Опытный покупатель', en: 'Experienced Buyer' },
+    description: { ru: 'Совершите 10 успешных покупок', en: 'Make 10 successful purchases' },
     icon: '🏅',
     bonus: 1,
     check: (_user, stats) => stats.completedOrdersCount >= 10,
@@ -58,8 +58,8 @@ const ACHIEVEMENTS = [
   },
   {
     code: 'spent_20',
-    title: 'Активный участник',
-    description: 'Потратьте 20 USDT',
+    title: { ru: 'Активный участник', en: 'Active Member' },
+    description: { ru: 'Потратьте 20 USDT', en: 'Spend 20 USDT' },
     icon: '💸',
     bonus: 0.5,
     check: (user) => user.totalSpent >= 20,
@@ -67,8 +67,8 @@ const ACHIEVEMENTS = [
   },
   {
     code: 'spent_50',
-    title: 'VIP-статус',
-    description: 'Потратьте 50 USDT',
+    title: { ru: 'VIP-статус', en: 'VIP Status' },
+    description: { ru: 'Потратьте 50 USDT', en: 'Spend 50 USDT' },
     icon: '💎',
     bonus: 2,
     check: (user) => user.totalSpent >= 50,
@@ -76,8 +76,8 @@ const ACHIEVEMENTS = [
   },
   {
     code: 'spent_100',
-    title: 'Элита',
-    description: 'Потратьте 100 USDT',
+    title: { ru: 'Элита', en: 'Elite' },
+    description: { ru: 'Потратьте 100 USDT', en: 'Spend 100 USDT' },
     icon: '👑',
     bonus: 5,
     check: (user) => user.totalSpent >= 100,
@@ -85,8 +85,8 @@ const ACHIEVEMENTS = [
   },
   {
     code: 'first_referral',
-    title: 'Первый приглашённый',
-    description: 'Пригласите первого друга',
+    title: { ru: 'Первый приглашённый', en: 'First Referral' },
+    description: { ru: 'Пригласите первого друга', en: 'Invite your first friend' },
     icon: '🎁',
     bonus: 0.3,
     check: (_user, stats) => stats.referredCount >= 1,
@@ -237,30 +237,35 @@ const getAllWithProgress = async (userId) => {
 /**
  * Хелпер: рендерит список ачивок в HTML для профиля.
  */
-const renderAchievementsText = (items) => {
-  if (!items.length) return '🏆 <b>Достижения</b>\n\nСписок пуст.';
+const renderAchievementsText = (items, lang = 'ru') => {
+  const t = (obj) => (typeof obj === 'object' ? (obj[lang] || obj.ru) : obj);
+
+  const emptyTitle = lang === 'en' ? 'Achievements' : 'Достижения';
+  if (!items.length) return `🏆 <b>${emptyTitle}</b>\n\n${lang === 'en' ? 'The list is empty.' : 'Список пуст.'}`;
 
   const unlocked = items.filter((a) => a.unlocked);
   const locked = items.filter((a) => !a.unlocked);
 
-  const lines = [`🏆 <b>Достижения</b>  ·  ${unlocked.length}/${items.length}\n`];
+  const titleStr = lang === 'en' ? 'Achievements' : 'Достижения';
+  const lines = [`🏆 <b>${titleStr}</b>  ·  ${unlocked.length}/${items.length}\n`];
 
   if (unlocked.length) {
-    lines.push('<b>Разблокировано:</b>');
+    lines.push(lang === 'en' ? '<b>Unlocked:</b>' : '<b>Разблокировано:</b>');
     for (const a of unlocked) {
-      lines.push(`  ${a.icon} ${a.title}`);
+      lines.push(`  ${a.icon} ${t(a.title)}`);
     }
     lines.push('');
   }
 
   if (locked.length) {
-    lines.push('<b>В процессе:</b>');
+    lines.push(lang === 'en' ? '<b>In progress:</b>' : '<b>В процессе:</b>');
     for (const a of locked) {
       const pct = Math.floor((a.progress.current / a.progress.target) * 100);
       const bar = '▓'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
-      lines.push(`  🔒 <b>${a.title}</b> — ${a.description}`);
+      lines.push(`  🔒 <b>${t(a.title)}</b> — ${t(a.description)}`);
       lines.push(`     ${bar} ${pct}% (${Math.floor(a.progress.current)}/${a.progress.target})`);
-      if (a.bonus > 0) lines.push(`     💰 Награда: +${a.bonus} USDT`);
+      const rewardLabel = lang === 'en' ? 'Reward' : 'Награда';
+      if (a.bonus > 0) lines.push(`     💰 ${rewardLabel}: +${a.bonus} USDT`);
     }
   }
 

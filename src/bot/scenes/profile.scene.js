@@ -52,7 +52,7 @@ const showProfile = async (ctx) => {
   }
 
   const text =
-    `👤 <b>Мой профиль</b>\n\n` +
+    `👤 <b>${lang === 'en' ? 'My Profile' : 'Мой профиль'}</b>\n\n` +
     bannerText +
     `<blockquote>${level.emoji} ${t('profile_level')}: <b>${levelLabel}</b>\n\n` +
     `🆔 ${t('profile_id')}: <code>${user.telegramId}</code>\n` +
@@ -179,8 +179,9 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
 // №20 Достижения: отдельный экран со списком ачивок + прогрессом
 const showAchievements = async (ctx) => {
   const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
   const items = await getAllWithProgress(ctx.user._id);
-  const text = renderAchievementsText(items);
+  const text = renderAchievementsText(items, lang);
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback(t('profile_back_to_profile'), 'menu:profile')],

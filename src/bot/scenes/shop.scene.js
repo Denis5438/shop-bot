@@ -44,12 +44,12 @@ const getEffectivePrice = async (product, stockCount) => {
   return price;
 };
 
-const stockIndicator = (stock) => {
-  if (stock === '∞') return '♾️ Неограниченно';
-  if (stock > 10) return `🟢 ${stock} шт.`;
-  if (stock > 3) return `🟡 ${stock} шт. — мало`;
-  if (stock > 0) return `🔴 ${stock} шт. — последние`;
-  return '⛔ Нет в наличии';
+const stockIndicator = (stock, t) => {
+  if (stock === '∞') return t ? t('shop_stock_infinite') : '♾️ Unlimited';
+  if (stock > 10) return t ? t('shop_stock_high', { count: stock }) : `🟢 ${stock} pcs`;
+  if (stock > 3) return t ? t('shop_stock_medium', { count: stock }) : `🟡 ${stock} pcs — low`;
+  if (stock > 0) return t ? t('shop_stock_low', { count: stock }) : `🔴 ${stock} pcs — last`;
+  return t ? t('shop_out_of_stock') : '⛔ Out of stock';
 };
 
 const getStock = async (product) => {
@@ -57,7 +57,7 @@ const getStock = async (product) => {
   return Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
 };
 
-const buildShopKeyboard = async (products, page, totalPages, lang = 'ru') => {
+const buildShopKeyboard = async (products, page, totalPages, lang = 'ru', t = null) => {
   const buttons = [];
 
   for (const product of products) {
@@ -66,16 +66,14 @@ const buildShopKeyboard = async (products, page, totalPages, lang = 'ru') => {
     const stockBadge = stock === '∞'
       ? '♾️'
       : stock === 0
-        ? '(0 шт.) ⛔'
+        ? '⛔'
         : stock < 10 && effectivePrice > product.price
-          ? `(${stock} шт.) 🔥`
+          ? `(${stock}) 🔥`
           : stock <= 3
-            ? `(${stock} шт.) 🔴`
-            : `(${stock} шт.) 🟢`;
+            ? `(${stock}) 🔴`
+            : `(${stock}) 🟢`;
     const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
     const label = `${product.icon} ${displayName} — ${effectivePrice} USDT ${stockBadge}`;
-    // Передаём page в callback_data — чтобы из карточки товара вернуться
-    // ровно на ту страницу, с которой юзер пришёл.
     buttons.push([Markup.button.callback(label, `shop:product:${product._id}:${page}`)]);
   }
 
@@ -85,9 +83,11 @@ const buildShopKeyboard = async (products, page, totalPages, lang = 'ru') => {
   if (page < totalPages) navButtons.push(Markup.button.callback('➡️', `shop:page:${page + 1}`));
   if (navButtons.length) buttons.push(navButtons);
 
+  const refreshLabel = t ? t('btn_refresh') : '🔄 Refresh';
+  const backLabel = t ? t('btn_back') : '⬅️ Back';
   buttons.push([
-    Markup.button.callback('🔄 Обновить', `shop:page:${page}`),
-    Markup.button.callback('⬅️ Назад', 'menu:main'),
+    Markup.button.callback(refreshLabel, `shop:page:${page}`),
+    Markup.button.callback(backLabel, 'menu:main'),
   ]);
 
   return Markup.inlineKeyboard(buttons);
@@ -115,16 +115,16 @@ const showShopPage = async (ctx, page = 1) => {
   const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
   const paginated = products.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
   const lang = ctx.user?.language || 'ru';
-  const keyboard = await buildShopKeyboard(paginated, safePage, totalPages, lang);
-  const text = `🛒 <b>Магазин</b>\n\n<blockquote>💡 Выберите товар, чтобы посмотреть подробности и купить.</blockquote>`;
+  const keyboard = await buildShopKeyboard(paginated, safePage, totalPages, lang, t);
+  const text = t('shop_title');
 
   if (ctx.callbackQuery) {
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-      await ctx.answerCbQuery('✅ Обновлено');
+      await ctx.answerCbQuery('✅');
     } catch (err) {
       if (err.description?.includes('message is not modified')) {
-        await ctx.answerCbQuery('✅ Уже актуально');
+        await ctx.answerCbQuery('✅').catch(() => {});
       } else {
         await ctx.answerCbQuery().catch(() => {});
       }
@@ -137,7 +137,7 @@ const showShopPage = async (ctx, page = 1) => {
 const showProduct = async (ctx, productId, fromPage = 1) => {
   const product = await Product.findById(productId);
   if (!product || !product.isActive) {
-    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+    return ctx.answerCbQuery(ctx.t ? ctx.t('err_not_found') : '❌ Not found', { show_alert: true });
   }
 
   const t = ctx.t || ((k) => k);
@@ -155,25 +155,25 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     alertLine = '\n' + t('shop_alert_markdown');
   }
 
+  const priceLabel = lang === 'en' ? '💰 Price' : '💰 Цена';
+  const stockLabel = lang === 'en' ? '📦 Stock' : '📦 Наличие';
+
   const text =
     balanceHeader(ctx.user) +
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
-    `<blockquote>💰 Цена: <b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)${alertLine}\n` +
-    `📦 Наличие: ${stockIndicator(stock)}</blockquote>\n\n` +
+    `<blockquote>${priceLabel}: <b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)${alertLine}\n` +
+    `${stockLabel}: ${stockIndicator(stock, t)}</blockquote>\n\n` +
     `${description ? `<blockquote expandable>📝 ${escapeHtml(description)}</blockquote>\n` : ''}`;
 
   const buttons = [];
   if (!outOfStock) {
-    // Передаём page в buy-callback чтобы после покупки/отмены вернуться на ту же страницу.
     buttons.push([Markup.button.callback(t('btn_buy'), `shop:buy:${productId}:${fromPage}`)]);
   } else {
     buttons.push([Markup.button.callback(t('shop_out_of_stock'), 'shop:noop')]);
   }
-  // Для GPT-активаций добавляем бесплатную pre-check токена — снижает долю failed.
   if (product.type === 'gpt_activation') {
     buttons.push([Markup.button.callback(t('shop_check_token'), `shop:check_token:${productId}`)]);
   }
-  // "Назад к списку" возвращает на страницу, откуда пришёл пользователь.
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
   buttons.push([Markup.button.callback(t('shop_back_to_list'), `shop:page:${safePage}`)]);
 
@@ -189,52 +189,62 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
 const confirmPurchase = async (ctx, productId, fromPage = 1) => {
   const user = ctx.user;
   const product = await Product.findById(productId);
+  const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
 
   if (!product || !product.isActive) {
-    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+    return ctx.answerCbQuery(t('err_not_found'), { show_alert: true });
   }
 
   const stock = await getStock(product);
   if (stock !== '∞' && stock === 0) {
-    return ctx.answerCbQuery('❌ Товар закончился', { show_alert: true });
+    return ctx.answerCbQuery(t('err_out_of_stock'), { show_alert: true });
   }
 
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const productName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
 
   const effectivePrice = await getEffectivePrice(product, stock);
   if (user.balance < effectivePrice) {
     const diff = parseFloat((effectivePrice - user.balance).toFixed(2));
-    const text =
-      `❌ <b>Недостаточно средств</b>\n\n` +
-      `💰 Цена: ${effectivePrice} USDT\n` +
-      `💳 Баланс: ${user.balance.toFixed(2)} USDT\n` +
-      `➖ Не хватает: ${diff} USDT (~${toRub(diff)} ₽)`;
-
+    const topupLabel = lang === 'en' ? `💰 Top up ${diff} USDT` : `💰 Пополнить на ${diff} USDT`;
+    const otherLabel = lang === 'en' ? '💳 Other amount' : '💳 Другая сумма';
+    const backLabel = t('btn_back');
+    const text = t('product_not_enough', {
+      price: effectivePrice,
+      balance: user.balance.toFixed(2),
+      diff
+    });
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback(`💰 Пополнить на ${diff} USDT`, `topup:quick:${diff}`)],
-        [Markup.button.callback('💳 Другая сумма', 'menu:topup')],
-        [Markup.button.callback('⬅️ Назад', `shop:product:${productId}:${safePage}`)],
+        [Markup.button.callback(topupLabel, `topup:quick:${diff}`)],
+        [Markup.button.callback(otherLabel, 'menu:topup')],
+        [Markup.button.callback(backLabel, `shop:product:${productId}:${safePage}`)],
       ]),
     }).catch(() => {});
     return ctx.answerCbQuery().catch(() => {});
   }
 
   const newBalance = (user.balance - effectivePrice).toFixed(2);
-  const text =
-    `🛒 <b>Подтверждение покупки</b>\n\n` +
-    `<blockquote>📦 Товар: ${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b>\n` +
-    `💰 Цена: <b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)</blockquote>\n\n` +
-    `<blockquote>💳 Сейчас: ${user.balance.toFixed(2)} USDT\n` +
-    `💳 После: <b>${newBalance} USDT</b></blockquote>\n\n` +
-    `Подтвердите покупку.`;
+  const confirmBtnLabel = lang === 'en'
+    ? `✅ Yes, buy for ${effectivePrice} USDT`
+    : `✅ Да, купить за ${effectivePrice} USDT`;
+  const backToProductLabel = lang === 'en' ? '⬅️ Back to product' : '⬅️ Вернуться к товару';
+
+  const text = t('product_buy_confirm', {
+    name: escapeHtml(productName),
+    price: effectivePrice,
+    priceRub: toRub(effectivePrice),
+    balance: user.balance.toFixed(2),
+    newBalance
+  });
 
   const opts = {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
-      [Markup.button.callback(`✅ Да, купить за ${effectivePrice} USDT`, `shop:confirm:${productId}:${safePage}`)],
-      [Markup.button.callback('⬅️ Вернуться к товару', `shop:product:${productId}:${safePage}`)],
+      [Markup.button.callback(confirmBtnLabel, `shop:confirm:${productId}:${safePage}`)],
+      [Markup.button.callback(backToProductLabel, `shop:product:${productId}:${safePage}`)],
     ]),
   };
   try {
@@ -252,8 +262,11 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
   const user = ctx.user;
   const product = await Product.findById(productId);
 
+  const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
+
   if (!product || !product.isActive) {
-    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+    return ctx.answerCbQuery(t('err_not_found'), { show_alert: true });
   }
 
   const stock = await getStock(product);
@@ -261,14 +274,15 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
 
   if (user.balance < effectivePrice) {
     const deficit = parseFloat((effectivePrice - user.balance).toFixed(2));
-    const text =
-      `❌ <b>Недостаточно средств</b>\n\n` +
-      `💰 Ваш баланс: <b>${user.balance.toFixed(2)} USDT</b>\n` +
-      `🏷 Стоимость: <b>${effectivePrice} USDT</b>\n` +
-      `📉 Не хватает: <b>${deficit} USDT</b>`;
+    const topupLabel = lang === 'en' ? `💰 Top up ${deficit} USDT` : `💰 Пополнить на ${deficit} USDT`;
+    const text = t('product_not_enough', {
+      price: effectivePrice,
+      balance: user.balance.toFixed(2),
+      diff: deficit
+    });
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback(`💰 Пополнить на ${deficit} USDT`, `topup:quick:${deficit}`)],
-      [Markup.button.callback('⬅️ Назад', `shop:product:${product._id}`)],
+      [Markup.button.callback(topupLabel, `topup:quick:${deficit}`)],
+      [Markup.button.callback(t('btn_back'), `shop:product:${product._id}`)],
     ]);
 
     try {
@@ -364,19 +378,18 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
     }
 
     if (err.message === 'INSUFFICIENT_BALANCE') {
-      return ctx.answerCbQuery('❌ Недостаточно средств', { show_alert: true });
+      return ctx.answerCbQuery(t('err_insufficient_balance'), { show_alert: true });
     }
     if (err.message === 'OUT_OF_STOCK') {
-      return ctx.answerCbQuery('❌ Товар закончился', { show_alert: true });
+      return ctx.answerCbQuery(t('err_out_of_stock'), { show_alert: true });
     }
 
-    // Неожиданная ошибка — показываем экран с retry/support/menu вместо голого alert.
-    await ctx.answerCbQuery('❌ Ошибка при покупке').catch(() => {});
+    await ctx.answerCbQuery('❌').catch(() => {});
     await errorScreen(ctx, {
-      title: '💥 Не удалось оформить заказ',
-      message:
-        `Произошла непредвиденная ошибка. Деньги не списаны.\n\n` +
-        `Можно попробовать снова или обратиться в поддержку — мы разберёмся.`,
+      title: lang === 'en' ? '💥 Order failed' : '💥 Не удалось оформить заказ',
+      message: lang === 'en'
+        ? 'An unexpected error occurred. Money was not charged.\n\nYou can try again or contact support.'
+        : 'Произошла непредвиденная ошибка. Деньги не списаны.\n\nМожно попробовать снова или обратиться в поддержку.',
       retryAction: `shop:buy:${productId}`,
       backAction: 'menu:main',
     });
@@ -410,13 +423,17 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
     }
   }
 
+  const productDisplayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+
   if (product.type === 'gpt_activation') {
+    const orderLbl = lang === 'en' ? 'Order' : 'Заказ';
+    const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
     const text =
-      `✅ <b>Заказ создан</b>\n\n` +
-      `${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)}\n` +
-      `📋 Заказ: <code>${order._id}</code>\n` +
-      `💰 Списано: <b>${effectivePrice} USDT</b>\n\n` +
-      `⏳ Сейчас запрошу ваш токен...`;
+      `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ создан'}</b>\n\n` +
+      `${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
+      `📋 ${orderLbl}: <code>${order._id}</code>\n` +
+      `💰 ${chargedLbl}: <b>${effectivePrice} USDT</b>\n\n` +
+      `⏳ ${lang === 'en' ? 'Requesting your token...' : 'Сейчас запрошу ваш токен...'}`;
     const opts = { parse_mode: 'HTML' };
     try {
       await ctx.editMessageText(text, opts);
@@ -428,18 +445,24 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
   } else if (isAutoKeyProduct) {
     await grantReferralBonusForFirstCompletedOrder(order.userId);
 
+    const productLbl = lang === 'en' ? 'Product' : 'Товар';
+    const orderLbl = lang === 'en' ? 'Order' : 'Заказ';
+    const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
+    const keyLbl = lang === 'en' ? '🔑 <b>Your key:</b>' : '🔑 <b>Ваш ключ:</b>';
     const text =
-      `✅ <b>Заказ выполнен автоматически</b>\n\n` +
-      `📦 Товар: ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)}\n` +
-      `📋 Заказ: <code>${order._id}</code>\n` +
-      `💰 Списано: <b>${effectivePrice} USDT</b>\n\n` +
-      `🔑 <b>Ваш ключ:</b>\n<pre>${escapeHtml(allocatedKey.value)}</pre>`;
+      `✅ <b>${lang === 'en' ? 'Order completed automatically' : 'Заказ выполнен автоматически'}</b>\n\n` +
+      `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
+      `📋 ${orderLbl}: <code>${order._id}</code>\n` +
+      `💰 ${chargedLbl}: <b>${effectivePrice} USDT</b>\n\n` +
+      `${keyLbl}\n<pre>${escapeHtml(allocatedKey.value)}</pre>`;
 
+    const buyMoreLabel = lang === 'en' ? '🛒 Buy more' : '🛒 Купить ещё';
+    const menuLabel = t('back_to_menu');
     const opts = {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🛒 Купить ещё', `shop:product:${product._id}`)],
-        [Markup.button.callback('⬅️ В главное меню', 'menu:main')],
+        [Markup.button.callback(buyMoreLabel, `shop:product:${product._id}`)],
+        [Markup.button.callback(menuLabel, 'menu:main')],
       ]),
     };
     try {
@@ -449,16 +472,19 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
     }
     await ctx.answerCbQuery().catch(() => {});
   } else {
+    const productLbl = lang === 'en' ? 'Product' : 'Товар';
+    const orderLbl = lang === 'en' ? 'Order' : 'Заказ';
+    const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
     const text =
-      `✅ <b>Заказ создан</b>\n\n` +
-      `📦 Товар: ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)}\n` +
-      `📋 Заказ: <code>${order._id}</code>\n` +
-      `💰 Списано: ${effectivePrice} USDT\n\n` +
-      `⏳ Оператор обработает заказ в ближайшее время.`;
+      `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ создан'}</b>\n\n` +
+      `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
+      `📋 ${orderLbl}: <code>${order._id}</code>\n` +
+      `💰 ${chargedLbl}: ${effectivePrice} USDT\n\n` +
+      `⏳ ${lang === 'en' ? 'An operator will process your order shortly.' : 'Оператор обработает заказ в ближайшее время.'}`;
 
     const opts = {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]),
+      ...Markup.inlineKeyboard([[Markup.button.callback(t('back_to_menu'), 'menu:main')]]),
     };
     try {
       await ctx.editMessageText(text, opts);
