@@ -100,13 +100,13 @@ const showShopPage = async (ctx, page = 1) => {
   if (products.length === 0) {
     if (ctx.callbackQuery) {
       try {
-        await ctx.editMessageText(t('shop_empty'), mainKeyboard(t));
+        await ctx.editMessageText(t('shop_empty'), mainKeyboard(t, ctx.isSeller));
       } catch (_) {
-        await ctx.reply(t('shop_empty'), mainKeyboard(t));
+        await ctx.reply(t('shop_empty'), mainKeyboard(t, ctx.isSeller));
       }
       await ctx.answerCbQuery().catch(() => {});
     } else {
-      await ctx.reply(t('shop_empty'), mainKeyboard(t));
+      await ctx.reply(t('shop_empty'), mainKeyboard(t, ctx.isSeller));
     }
     return;
   }

@@ -1,8 +1,8 @@
 const { Markup } = require('telegraf');
 
 // Главное меню пользователя
-const mainKeyboard = (t) =>
-  Markup.inlineKeyboard([
+const mainKeyboard = (t, isSeller = false) => {
+  const buttons = [
     [Markup.button.callback(t('btn_shop'), 'menu:shop')],
     [
       Markup.button.callback(t('btn_topup'), 'menu:topup'),
@@ -18,7 +18,14 @@ const mainKeyboard = (t) =>
     [
       Markup.button.callback(t('btn_documents'), 'menu:documents')
     ],
-  ]);
+  ];
+
+  if (isSeller) {
+    buttons.push([Markup.button.callback(t('btn_seller_cabinet'), 'seller:cabinet')]);
+  }
+
+  return Markup.inlineKeyboard(buttons);
+};
 
 // Кнопка "Назад в главное меню"
 const backToMainKeyboard = (t) =>

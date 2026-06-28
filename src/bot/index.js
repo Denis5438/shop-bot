@@ -485,7 +485,7 @@ const createBot = () => {
 
     await ctx.reply(
       t('welcome_back', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
-      { parse_mode: 'HTML', ...mainKeyboard(t) }
+      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
     );
   });
 
@@ -505,7 +505,7 @@ const createBot = () => {
           balance: ctx.user.balance.toFixed(2),
           balanceRub: toRub(ctx.user.balance),
         }),
-        { parse_mode: 'HTML', ...mainKeyboard(t) }
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
       );
     } catch (_) {
       await ctx.reply(
@@ -514,7 +514,7 @@ const createBot = () => {
           balance: ctx.user.balance.toFixed(2),
           balanceRub: toRub(ctx.user.balance),
         }),
-        { parse_mode: 'HTML', ...mainKeyboard(t) }
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
       ).catch(() => {});
     }
   });
@@ -633,7 +633,7 @@ const createBot = () => {
       `💰 <b>Пополнить</b> — карта, USDT (TRC-20/BEP-20), Bybit UID\n` +
       `👤 <b>Профиль</b> — баланс, заказы, реферальный код\n\n` +
       `💰 Баланс: ${ctx.user.balance.toFixed(2)} USDT (~${toRub(ctx.user.balance)} ₽)`,
-      { parse_mode: 'HTML', ...mainKeyboard(ctx.t) }
+      { parse_mode: 'HTML', ...mainKeyboard(ctx.t, ctx.isSeller) }
     ).catch(() => {});
   });
 
@@ -648,7 +648,7 @@ const createBot = () => {
       `💰 <b>Top up</b> — card, USDT (TRC-20/BEP-20), Bybit UID\n` +
       `👤 <b>Profile</b> — balance, orders, referral code\n\n` +
       `💰 Balance: ${ctx.user.balance.toFixed(2)} USDT (~${toRub(ctx.user.balance)} ₽)`,
-      { parse_mode: 'HTML', ...mainKeyboard(ctx.t) }
+      { parse_mode: 'HTML', ...mainKeyboard(ctx.t, ctx.isSeller) }
     ).catch(() => {});
   });
 
@@ -674,12 +674,12 @@ const createBot = () => {
     try {
       await ctx.editMessageText(
         t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
-        { parse_mode: 'HTML', ...mainKeyboard(t) }
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
       );
     } catch (_) {
       await ctx.reply(
         t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
-        { parse_mode: 'HTML', ...mainKeyboard(t) }
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
       );
     }
   });

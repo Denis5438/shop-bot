@@ -1,4 +1,5 @@
 const User = require('../../models/User');
+const Seller = require('../../models/Seller');
 const { ADMIN_IDS } = require('../../config');
 const logger = require('../../config/logger');
 
@@ -61,6 +62,7 @@ const userMiddleware = async (ctx, next) => {
     }
 
     ctx.user = user;
+    ctx.isSeller = await Seller.exists({ telegramId, isActive: true }) != null;
 
     if (global.MAINTENANCE_MODE && user.role !== 'admin') {
       if (ctx.callbackQuery) {
