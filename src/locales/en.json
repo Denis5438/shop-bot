@@ -144,7 +144,7 @@
   "seller_btn_order_complete": "✅ Done — {name}",
   "seller_btn_orders_active": "📦 Active",
   "seller_btn_orders_history": "📋 History",
-  "seller_btn_cabinet": "⬅️ Cabinet",
+  "seller_btn_cabinet": "🏪 Cabinet",
   "seller_order_not_found": "❌ Order not found or already closed",
   "seller_order_deliver_title": "📦 <b>Order fulfillment</b>\n\nProduct: <b>{name}</b>\n\nPlease send the <b>account credentials</b> (login:password, link, or any text).\n<i>You can also send a file or photo.</i>\n\nThese details will be forwarded to the buyer, after which the order will be closed and you will receive your payment.",
   "seller_buyer_order_completed": "✅ Your order <b>{name}</b> was fulfilled by the seller!\n\n",

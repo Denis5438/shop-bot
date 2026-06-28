@@ -144,7 +144,7 @@
   "seller_btn_order_complete": "✅ Выполнил — {name}",
   "seller_btn_orders_active": "📦 Активные",
   "seller_btn_orders_history": "📋 История",
-  "seller_btn_cabinet": "⬅️ Кабинет",
+  "seller_btn_cabinet": "🏪 Кабинет",
   "seller_order_not_found": "❌ Заказ не найден или уже закрыт",
   "seller_order_deliver_title": "📦 <b>Выполнение заказа</b>\n\nТовар: <b>{name}</b>\n\nПожалуйста, отправьте <b>данные от аккаунта</b> (логин:пароль, ссылку или любой текст).\n<i>Вы также можете отправить файл или фото.</i>\n\nЭти данные будут пересланы покупателю, после чего заказ закроется и вы получите оплату.",
   "seller_buyer_order_completed": "✅ Ваш заказ <b>{name}</b> выполнен продавцом!\n\n",

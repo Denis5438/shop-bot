@@ -303,7 +303,7 @@ const handleSellerDelivery = async (ctx) => {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
       [Markup.button.callback(ctx.t('seller_btn_my_orders'), 'seller:orders')],
-      [Markup.button.callback('🏪 Кабинет', 'seller:cabinet')],
+      [Markup.button.callback(ctx.t('seller_btn_cabinet'), 'seller:cabinet')],
     ]),
   });
 

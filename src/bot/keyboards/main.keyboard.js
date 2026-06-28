@@ -16,7 +16,8 @@ const mainKeyboard = (t) =>
       Markup.button.callback(t('btn_referral'), 'menu:referral')
     ],
     [
-      Markup.button.callback(t('btn_documents'), 'menu:documents')
+      Markup.button.callback(t('btn_documents'), 'menu:documents'),
+      Markup.button.callback(t('btn_change_lang'), 'profile:lang')
     ],
   ]);
 

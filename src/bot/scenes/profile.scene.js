@@ -72,8 +72,6 @@ const showProfile = async (ctx) => {
   }
   buttons.push([Markup.button.callback(t('btn_orders'), 'profile:orders')]);
   buttons.push([Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements')]);
-  buttons.push([Markup.button.callback(t('btn_topup'), 'menu:topup')]);
-  buttons.push([Markup.button.callback(t('btn_change_lang'), 'profile:lang')]);
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
 
   const keyboard = Markup.inlineKeyboard(buttons);
