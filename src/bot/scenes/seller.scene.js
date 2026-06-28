@@ -290,9 +290,8 @@ const handleSellerDelivery = async (ctx) => {
   ctx.session.sellerAction = null;
   ctx.session.deliverOrderId = null;
 
-  const Settings = require('../../../models/Settings');
-  const settings = await Settings.findOne({ name: 'global' });
-  const autoConfirmHours = settings?.autoConfirmHours || 24;
+  const settings = await getSettings();
+  const autoConfirmHours = settings.autoConfirmHours || 24;
 
   const text = ctx.t('seller_order_awaiting_confirmation_success', {
     name: escapeHtml(order.productId?.name || 'Товар'),
