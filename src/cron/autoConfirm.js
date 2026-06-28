@@ -4,6 +4,7 @@ const Seller = require('../models/Seller');
 const Settings = require('../models/Settings');
 const notif = require('../services/notification.service');
 const logger = require('../config/logger');
+const i18n = require('../bot/middlewares/i18n');
 
 const init = () => {
   // Run every 15 minutes
@@ -31,7 +32,7 @@ const init = () => {
           await seller.save();
           order.sellerPaidAt = new Date();
           
-          const sellerMsg = `✅ <b>Заказ авто-подтверждён!</b>\n\nЗаказ: ${order.productId?.name || 'Товар'}\nВремя на проверку (${hours} ч.) вышло.\n💰 Вы получили <b>+${order.sellerPayout.toFixed(2)} USDT</b> на баланс.`;
+          const sellerMsg = i18n.translate('ru', 'seller_order_confirmed', { name: order.productId?.name || 'Товар', payout: order.sellerPayout.toFixed(2) });
           await notif.sendToUser(seller.telegramId, sellerMsg, { parse_mode: 'HTML' }).catch(()=>null);
         }
 
@@ -41,7 +42,8 @@ const init = () => {
         await order.save();
 
         if (order.userId) {
-          const buyerMsg = `✅ <b>Ваш заказ автоматически подтверждён</b>, так как прошло ${hours} ч. с момента выдачи товара.`;
+          const buyerLang = order.userId.language || 'ru';
+          const buyerMsg = i18n.translate(buyerLang, 'buyer_order_confirmed');
           await notif.sendToUser(order.userId.telegramId, buyerMsg, { parse_mode: 'HTML' }).catch(()=>null);
         }
       }

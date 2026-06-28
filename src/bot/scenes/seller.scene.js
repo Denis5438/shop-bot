@@ -14,6 +14,7 @@ const SellerWithdrawal = require('../../models/SellerWithdrawal');
 const Order = require('../../models/Order');
 const notif = require('../../services/notification.service');
 const { escapeHtml } = require('../utils/ui');
+const i18n = require('../middlewares/i18n');
 const { getSettings } = require('../../services/settingsCache.service');
 
 // ─── Получить минимальный вывод из настроек ───────────────────────────────────
@@ -250,18 +251,19 @@ const handleSellerDelivery = async (ctx) => {
 
   // Если нет покупателя (вдруг удалён), заказ всё равно закроем
   if (buyer) {
-    let buyerDeliveryText = ctx.t('buyer_confirmation_title', { name: escapeHtml(order.productId?.name || 'Товар') });
+    const buyerLang = buyer.language || 'ru';
+    let buyerDeliveryText = i18n.translate(buyerLang, 'buyer_confirmation_title', { name: escapeHtml(order.productId?.name || 'Товар') });
     let dataStr = '';
     
     try {
       const buttons = Markup.inlineKeyboard([
-        [Markup.button.callback(ctx.t('buyer_confirmation_btn_ok'), `buyer:confirm_order:${order._id}`)],
-        [Markup.button.callback(ctx.t('buyer_confirmation_btn_bad'), `buyer:dispute_order:${order._id}`)],
+        [Markup.button.callback(i18n.translate(buyerLang, 'buyer_confirmation_btn_ok'), `buyer:confirm_order:${order._id}`)],
+        [Markup.button.callback(i18n.translate(buyerLang, 'buyer_confirmation_btn_bad'), `buyer:dispute_order:${order._id}`)],
       ]);
 
       if (ctx.message.text) {
         dataStr = ctx.message.text;
-        buyerDeliveryText += ctx.t('seller_buyer_order_data', { data: escapeHtml(dataStr) });
+        buyerDeliveryText += i18n.translate(buyerLang, 'seller_buyer_order_data', { data: escapeHtml(dataStr) });
         await notif.sendToUser(buyer.telegramId, buyerDeliveryText, { parse_mode: 'HTML', ...buttons });
       } else if (ctx.message.photo || ctx.message.document) {
         dataStr = ctx.message.photo ? '[Фотография]' : '[Документ]';

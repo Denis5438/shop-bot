@@ -3,6 +3,7 @@ const Order = require('../../models/Order');
 const Seller = require('../../models/Seller');
 const notif = require('../../services/notification.service');
 const { escapeHtml } = require('../utils/ui');
+const i18n = require('../middlewares/i18n');
 
 const confirmOrder = async (ctx, orderId) => {
   const order = await Order.findById(orderId).populate('sellerId').populate('productId');
@@ -25,7 +26,7 @@ const confirmOrder = async (ctx, orderId) => {
     
     // Notify seller
     const payout = order.sellerPayout.toFixed(2);
-    const sellerMsg = ctx.t('seller_order_confirmed', { name: escapeHtml(order.productId?.name || 'Товар'), payout });
+    const sellerMsg = i18n.translate('ru', 'seller_order_confirmed', { name: escapeHtml(order.productId?.name || 'Товар'), payout });
     await notif.sendToUser(seller.telegramId, sellerMsg, { parse_mode: 'HTML' }).catch(()=>null);
   }
 
@@ -71,7 +72,7 @@ const disputeOrder = async (ctx, orderId) => {
 
   // Notify seller
   if (order.sellerId) {
-    const sellerMsg = ctx.t('seller_dispute_opened', { name: escapeHtml(order.productId?.name || 'Товар') });
+    const sellerMsg = i18n.translate('ru', 'seller_dispute_opened', { name: escapeHtml(order.productId?.name || 'Товар') });
     await notif.sendToUser(order.sellerId.telegramId, sellerMsg, { parse_mode: 'HTML' }).catch(()=>null);
   }
 

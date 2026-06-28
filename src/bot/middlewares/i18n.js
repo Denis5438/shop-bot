@@ -23,4 +23,11 @@ const i18nMiddleware = (ctx, next) => {
   return next();
 };
 
+const translate = (lang, key, params = {}) => {
+  const locale = locales[lang] || locales['ru'];
+  const str = locale[key] || ru[key] || key;
+  return format(str, params);
+};
+
+i18nMiddleware.translate = translate;
 module.exports = i18nMiddleware;
