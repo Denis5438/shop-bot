@@ -21,6 +21,5 @@ const sellerSchema = new mongoose.Schema({
 });
 
 sellerSchema.index({ telegramId: 1 }, { sparse: true });
-sellerSchema.index({ username: 1 });
 
 module.exports = mongoose.model('Seller', sellerSchema);
