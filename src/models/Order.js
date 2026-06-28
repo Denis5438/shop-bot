@@ -6,7 +6,7 @@ const orderSchema = new mongoose.Schema({
   provider: { type: String, enum: ['local', 'u1traby'], default: undefined },
   status: {
     type: String,
-    enum: ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'completed', 'cancelled', 'failed', 'retry'],
+    enum: ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'completed', 'cancelled', 'failed', 'retry', 'disputed'],
     default: 'pending',
   },
   price: { type: Number, required: true },
@@ -22,11 +22,16 @@ const orderSchema = new mongoose.Schema({
   nextRetryAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
 
-  // ─── Seller-система ───────────────────────────────────────────────────────
+  // ─── Seller-система (Escrow & Disputes) ──────────────────────────────────
   sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },
-  // Сколько начислено продавцу
   sellerPayout: { type: Number, default: 0 },
   sellerPaidAt: { type: Date, default: null },
+  
+  // Данные для Escrow/Спора
+  deliveredAt: { type: Date, default: null },
+  deliveryData: { type: String, default: null }, // Текст/ID файла, который выдал продавец
+  disputeOpenedAt: { type: Date, default: null },
+  disputeStatus: { type: String, enum: ['open', 'resolved'], default: 'open' },
 });
 
 orderSchema.index({ status: 1, createdAt: 1 });

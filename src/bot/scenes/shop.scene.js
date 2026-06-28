@@ -393,14 +393,11 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
       const seller = await Seller.findById(product.sellerId);
       if (seller && seller.isActive) {
         const payout = parseFloat(product.sellerPrice.toFixed(8));
-        seller.balance = parseFloat((seller.balance + payout).toFixed(8));
-        seller.totalEarned = parseFloat((seller.totalEarned + payout).toFixed(8));
-        await seller.save();
 
-        // Обновляем заказ — сохраняем сумму выплаты продавцу
+        // Обновляем заказ — фиксируем сумму выплаты, но НЕ начисляем на баланс (холдируем)
         await Order.updateOne(
           { _id: order._id },
-          { $set: { sellerId: seller._id, sellerPayout: payout, sellerPaidAt: new Date() } }
+          { $set: { sellerId: seller._id, sellerPayout: payout } }
         );
 
         // Уведомляем продавца (только если он зарегистрирован в боте)

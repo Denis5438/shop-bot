@@ -171,5 +171,13 @@
   "seller_withdraw_created_alert": "✅ Request created!",
   "seller_withdraw_created": "✅ <b>Withdrawal request created!</b>\n\n💰 Amount: <b>{amount} USDT</b>\n💳 Wallet: <code>{wallet}</code>\n🌐 Network: <b>{network}</b>\n\n⏳ An administrator will process your request shortly.",
   "seller_btn_to_cabinet": "🏪 To cabinet",
-  "seller_order_closed_alert": "✅ Order closed!"
+  "seller_order_closed_alert": "✅ Order closed!",
+  "buyer_confirmation_title": "✅ The seller has delivered the data for order <b>{name}</b>!\n\n",
+  "buyer_confirmation_btn_ok": "✅ Everything works",
+  "buyer_confirmation_btn_bad": "❌ Not working (Dispute)",
+  "seller_order_awaiting_confirmation_success": "✅ <b>Data sent to buyer!</b>\n\n📦 Product: {name}\n\n⏳ Awaiting buyer confirmation (up to {hours} h.).\n<i>Once the buyer verifies the data (or time expires), you will receive <b>+{payout} USDT</b> to your balance.</i>",
+  "buyer_dispute_opened": "❌ <b>Dispute opened!</b>\n\nAn administrator will assist in resolving the issue shortly.",
+  "seller_dispute_opened": "⚠️ <b>Buyer opened a dispute!</b>\n\nOrder: {name}\nThe buyer reported that the provided data is not working. Please await the administrator's decision.",
+  "buyer_order_confirmed": "✅ <b>Order confirmed!</b> Thank you for your purchase.",
+  "seller_order_confirmed": "✅ <b>Buyer confirmed the order!</b>\n\nOrder: {name}\n💰 You received <b>+{payout} USDT</b> to your balance."
 }

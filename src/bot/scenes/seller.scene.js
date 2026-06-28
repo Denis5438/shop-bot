@@ -250,39 +250,53 @@ const handleSellerDelivery = async (ctx) => {
 
   // Если нет покупателя (вдруг удалён), заказ всё равно закроем
   if (buyer) {
-    // Формируем сообщение для покупателя
-    let deliveryText = ctx.t('seller_buyer_order_completed', { name: escapeHtml(order.productId?.name || 'Товар') });
+    let buyerDeliveryText = ctx.t('buyer_confirmation_title', { name: escapeHtml(order.productId?.name || 'Товар') });
+    let dataStr = '';
     
-    // Пересылаем данные покупателю
     try {
+      const buttons = Markup.inlineKeyboard([
+        [Markup.button.callback(ctx.t('buyer_confirmation_btn_ok'), `buyer:confirm_order:${order._id}`)],
+        [Markup.button.callback(ctx.t('buyer_confirmation_btn_bad'), `buyer:dispute_order:${order._id}`)],
+      ]);
+
       if (ctx.message.text) {
-        deliveryText += ctx.t('seller_buyer_order_data', { data: escapeHtml(ctx.message.text) });
-        await notif.sendToUser(buyer.telegramId, deliveryText);
+        dataStr = ctx.message.text;
+        buyerDeliveryText += ctx.t('seller_buyer_order_data', { data: escapeHtml(dataStr) });
+        await notif.sendToUser(buyer.telegramId, buyerDeliveryText, { parse_mode: 'HTML', ...buttons });
       } else if (ctx.message.photo || ctx.message.document) {
-        await notif.sendToUser(buyer.telegramId, deliveryText);
-        await ctx.telegram.copyMessage(buyer.telegramId, ctx.chat.id, ctx.message.message_id);
+        dataStr = ctx.message.photo ? '[Фотография]' : '[Документ]';
+        await notif.sendToUser(buyer.telegramId, buyerDeliveryText, { parse_mode: 'HTML' });
+        await ctx.telegram.copyMessage(buyer.telegramId, ctx.chat.id, ctx.message.message_id, {
+          ...buttons
+        });
       } else {
         await ctx.reply(ctx.t('seller_deliver_need_file'));
         return true;
       }
+      order.deliveryData = dataStr;
     } catch (err) {
-      // Если бот не смог отправить (пользователь заблокировал бота)
+      // Если бот не смог отправить
     }
   }
 
-  order.status = 'completed';
-  order.confirmedAt = new Date();
-  order.activationResult = 'Выдано продавцом вручную';
+  order.status = 'awaiting_confirmation';
+  order.deliveredAt = new Date();
+  order.activationResult = 'Ожидает подтверждения покупателя';
   await order.save();
 
   // Очищаем сессию
   ctx.session.sellerAction = null;
   ctx.session.deliverOrderId = null;
 
-  // Перечитываем актуальный баланс
-  const freshSeller = await Seller.findById(seller._id);
+  const Settings = require('../../../models/Settings');
+  const settings = await Settings.findOne({ name: 'global' });
+  const autoConfirmHours = settings?.autoConfirmHours || 24;
 
-  const text = ctx.t('seller_order_completed_success', { name: escapeHtml(order.productId?.name || 'Товар'), payout: (order.sellerPayout || 0).toFixed(2), balance: (freshSeller?.balance || seller.balance).toFixed(2) });
+  const text = ctx.t('seller_order_awaiting_confirmation_success', {
+    name: escapeHtml(order.productId?.name || 'Товар'),
+    payout: (order.sellerPayout || 0).toFixed(2),
+    hours: autoConfirmHours
+  });
 
   await ctx.reply(text, {
     parse_mode: 'HTML',

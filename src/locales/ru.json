@@ -171,5 +171,13 @@
   "seller_withdraw_created_alert": "✅ Заявка создана!",
   "seller_withdraw_created": "✅ <b>Заявка на вывод создана!</b>\n\n💰 Сумма: <b>{amount} USDT</b>\n💳 Кошелёк: <code>{wallet}</code>\n🌐 Сеть: <b>{network}</b>\n\n⏳ Администратор обработает заявку в ближайшее время.",
   "seller_btn_to_cabinet": "🏪 В кабинет",
-  "seller_order_closed_alert": "✅ Заказ закрыт!"
+  "seller_order_closed_alert": "✅ Заказ закрыт!",
+  "buyer_confirmation_title": "✅ Продавец передал данные по заказу <b>{name}</b>!\n\n",
+  "buyer_confirmation_btn_ok": "✅ Всё работает",
+  "buyer_confirmation_btn_bad": "❌ Не работает (Спор)",
+  "seller_order_awaiting_confirmation_success": "✅ <b>Данные отправлены покупателю!</b>\n\n📦 Товар: {name}\n\n⏳ Ожидаем подтверждения от покупателя (до {hours} ч.).\n<i>Как только покупатель проверит данные (или выйдет время), вы получите <b>+{payout} USDT</b> на баланс.</i>",
+  "buyer_dispute_opened": "❌ <b>Спор открыт!</b>\n\nАдминистратор подключится к решению проблемы в ближайшее время.",
+  "seller_dispute_opened": "⚠️ <b>Покупатель открыл спор!</b>\n\nЗаказ: {name}\nПокупатель заявил, что выданные данные не работают. Ожидайте решения администратора.",
+  "buyer_order_confirmed": "✅ <b>Заказ подтверждён!</b> Спасибо за покупку.",
+  "seller_order_confirmed": "✅ <b>Покупатель подтвердил заказ!</b>\n\nЗаказ: {name}\n💰 Вы получили <b>+{payout} USDT</b> на баланс."
 }

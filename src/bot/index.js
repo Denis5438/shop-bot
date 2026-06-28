@@ -31,6 +31,8 @@ const paymentsScene = require('./scenes/admin/payments.scene');
 const statsScene = require('./scenes/admin/stats.scene');
 const settingsScene = require('./scenes/admin/settings.scene');
 const sellerWithdrawalsScene = require('./scenes/admin/seller_withdrawals.scene');
+const disputesScene = require('./scenes/admin/disputes.scene');
+const buyerEscrowScene = require('./scenes/buyer_escrow.scene');
 
 // User Seller cabinet
 const sellerScene = require('./scenes/seller.scene');
@@ -522,6 +524,15 @@ const createBot = () => {
     } catch (_) {
       await ctx.reply(t('tos_declined'), { parse_mode: 'HTML' }).catch(() => {});
     }
+  });
+
+  // ─── BUYER ESCROW ────────────────────────────────────────────────────────────
+  bot.action(/^buyer:confirm_order:(.+)$/, async (ctx) => {
+    await buyerEscrowScene.confirmOrder(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^buyer:dispute_order:(.+)$/, async (ctx) => {
+    await buyerEscrowScene.disputeOrder(ctx, ctx.match[1]);
   });
 
   // ─────────────────── ДОКУМЕНТЫ ───────────────────
@@ -1209,6 +1220,23 @@ const createBot = () => {
 
   bot.action(/^admin:product:seller:remove:(.+)$/, adminMiddleware, async (ctx) => {
     await productsScene.removeSellerFromProduct(ctx, ctx.match[1]);
+  });
+
+  // ─── ADMIN: Споры (Disputes) ────────────────────────────────────────────────
+  bot.action(/^admin:disputes:list$/, adminMiddleware, async (ctx) => {
+    await disputesScene.listDisputes(ctx, 1);
+  });
+  bot.action(/^admin:disputes:page:(\d+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.listDisputes(ctx, parseInt(ctx.match[1]));
+  });
+  bot.action(/^admin:disputes:view:(.+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.viewDispute(ctx, ctx.match[1]);
+  });
+  bot.action(/^admin:disputes:refund:(.+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.resolveRefundBuyer(ctx, ctx.match[1]);
+  });
+  bot.action(/^admin:disputes:pay:(.+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.resolvePaySeller(ctx, ctx.match[1]);
   });
 
   // ─── ADMIN: Статистика ───

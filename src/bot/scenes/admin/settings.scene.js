@@ -60,7 +60,8 @@ const showSettings = async (ctx) => {
     `🟡 BEP-20: <code>${fmt(settings.bybitBep20Address)}</code>\n\n` +
     `💵 Минимум пополнения: <b>${settings.minTopup} USDT</b>\n` +
     `⭐ Реферальный бонус: <b>${settings.referralBonus} USDT</b>\n\n` +
-    `💸 Мин. вывод продавца: <b>${settings.minSellerWithdraw ?? 5} USDT</b>\n\n` +
+    `💸 Мин. вывод продавца: <b>${settings.minSellerWithdraw ?? 5} USDT</b>\n` +
+    `⏱ Авто-подтверждение заказа: <b>${settings.autoConfirmHours ?? 24} ч.</b>\n\n` +
     `🚕 Умные цены (x1.2 при &lt;10 шт): <b>${smartPriceText}</b>\n` +
     `📉 Умная уценка (-${settings.autoMarkdownPercent}% / ${settings.autoMarkdownDays}дн): <b>${settings.autoMarkdownEnabled ? '🔴 Вкл' : '🟢 Выкл'}</b>\n` +
     `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n\n` +
@@ -78,6 +79,7 @@ const showSettings = async (ctx) => {
     [Markup.button.callback('✏️ Минимальное пополнение', 'admin:settings:edit:minTopup')],
     [Markup.button.callback('✏️ Реферальный бонус', 'admin:settings:edit:referralBonus')],
     [Markup.button.callback('💸 Мин. вывод продавца (USDT)', 'admin:settings:edit:minSellerWithdraw')],
+    [Markup.button.callback('⏱ Часов до авто-подтверждения', 'admin:settings:edit:autoConfirmHours')],
     [Markup.button.callback(smartBtnStr, 'admin:settings:toggle_smart_pricing')],
     [Markup.button.callback(settings.autoMarkdownEnabled ? '📉 Умная уценка: Выкл' : '📉 Умная уценка: Вкл', 'admin:settings:toggle_markdown')],
     [Markup.button.callback('⏳ Дни простоя для уценки', 'admin:settings:edit:autoMarkdownDays')],
@@ -174,6 +176,7 @@ const startEditSetting = async (ctx, field) => {
     bybitUid: 'Bybit UID',
     adminDigestIntervalMinutes: 'интервал сводки уведомлений в минутах (от 5 до 1440)',
     minSellerWithdraw: 'минимальную сумму вывода для продавцов (в USDT, например: 5)',
+    autoConfirmHours: 'кол-во часов на проверку заказа (после чего деньги уходят продавцу)',
   };
   
   ctx.session = ctx.session || {};
@@ -199,7 +202,7 @@ const handleSettingsInput = async (ctx) => {
   const value = ctx.message.text.trim();
   const update = {};
 
-  const numericFields = ['minTopup', 'referralBonus', 'autoMarkdownDays', 'autoMarkdownPercent', 'adminDigestIntervalMinutes', 'minSellerWithdraw'];
+  const numericFields = ['minTopup', 'referralBonus', 'autoMarkdownDays', 'autoMarkdownPercent', 'adminDigestIntervalMinutes', 'minSellerWithdraw', 'autoConfirmHours'];
   
   if (numericFields.includes(field)) {
     const num = parseFloat(value.replace(',', '.'));

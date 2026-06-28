@@ -25,6 +25,7 @@ const settingsSchema = new mongoose.Schema({
   adminDigestIntervalMinutes: { type: Number, default: 60 },
   // Продавцы
   minSellerWithdraw: { type: Number, default: 5 },
+  autoConfirmHours: { type: Number, default: 24 },
 }, {
   timestamps: true
 });

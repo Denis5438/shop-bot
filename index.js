@@ -2,6 +2,7 @@ require('dotenv').config();
 const connectDB = require('./src/db/connect');
 const createBot = require('./src/bot/index');
 const currencyService = require('./src/services/currency.service');
+const autoConfirmCron = require('./src/cron/autoConfirm');
 const logger = require('./src/config/logger');
 const { startHealthServer, stopHealthServer } = require('./src/bot/health-server');
 
@@ -13,6 +14,9 @@ const main = async () => {
 
   // Инициализация курса валют
   await currencyService.init();
+
+  // Инициализация фоновых задач (Cron)
+  autoConfirmCron.init();
 
   // Создаём и запускаем бота
   const bot = createBot();
