@@ -42,24 +42,35 @@ const getRemainingMins = (createdAt) => {
 
 const sendPrompt = async (ctx) => {
   const timeLeft = getRemainingMins(ctx.scene.state.orderCreatedAt);
+  const lang = ctx.user?.language || 'ru';
+
+  const doneLabel = lang === 'en' ? '✅ I sent the full token' : '✅ Я отправил весь токен';
+  const cancelLabel = lang === 'en' ? '❌ Cancel' : '❌ Отмена';
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Я отправил весь токен', DONE_ACTION)],
-    [Markup.button.callback('❌ Отмена', CANCEL_ACTION)],
+    [Markup.button.callback(doneLabel, DONE_ACTION)],
+    [Markup.button.callback(cancelLabel, CANCEL_ACTION)],
   ]);
 
-  const sent = await ctx.reply(
-    `🔑 <b>Отправьте токен ChatGPT</b>\n\n` +
-    `<blockquote>⏱ Осталось: <b>~${timeLeft} мин</b></blockquote>\n\n` +
-    `<b>Как получить токен:</b>\n` +
-    `1️⃣ Войдите на <a href="https://chatgpt.com">chatgpt.com</a>\n` +
-    `2️⃣ Перейдите по ссылке:\n    <a href="https://chatgpt.com/api/auth/session">chatgpt.com/api/auth/session</a>\n` +
-    `3️⃣ Скопируйте <b>весь текст</b> страницы и отправьте мне\n\n` +
-    `<blockquote>⚠️ Токен длинный — Telegram разбивает его на части. Отправляйте всё, затем нажмите кнопку.\n\n` +
-    `📎 Или прикрепите <code>.txt</code> файл — прочитаю сам.</blockquote>`,
-    { parse_mode: 'HTML', disable_web_page_preview: true, ...keyboard }
-  );
+  const text = lang === 'en'
+    ? `🔑 <b>Send your ChatGPT token</b>\n\n` +
+      `<blockquote>⏱ Time left: <b>~${timeLeft} min</b></blockquote>\n\n` +
+      `<b>How to get the token:</b>\n` +
+      `1️⃣ Log in at <a href="https://chatgpt.com">chatgpt.com</a>\n` +
+      `2️⃣ Go to: <a href="https://chatgpt.com/api/auth/session">chatgpt.com/api/auth/session</a>\n` +
+      `3️⃣ Copy <b>all text</b> from the page and send it here\n\n` +
+      `<blockquote>⚠️ The token is long — Telegram splits it into parts. Send everything, then press the button.\n\n` +
+      `📎 Or attach a <code>.txt</code> file — the bot will read it automatically.</blockquote>`
+    : `🔑 <b>Отправьте токен ChatGPT</b>\n\n` +
+      `<blockquote>⏱ Осталось: <b>~${timeLeft} мин</b></blockquote>\n\n` +
+      `<b>Как получить токен:</b>\n` +
+      `1️⃣ Войдите на <a href="https://chatgpt.com">chatgpt.com</a>\n` +
+      `2️⃣ Перейдите по ссылке:\n    <a href="https://chatgpt.com/api/auth/session">chatgpt.com/api/auth/session</a>\n` +
+      `3️⃣ Скопируйте <b>весь текст</b> страницы и отправьте мне\n\n` +
+      `<blockquote>⚠️ Токен длинный — Telegram разбивает его на части. Отправляйте всё, затем нажмите кнопку.\n\n` +
+      `📎 Или прикрепите <code>.txt</code> файл — прочитаю сам.</blockquote>`;
 
+  const sent = await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...keyboard });
   ctx.scene.state.promptMsgId = sent.message_id;
 };
 
@@ -101,7 +112,7 @@ const refundOrder = async (order, key, description) => {
   return user;
 };
 
-const finishWithFailure = async (ctx, order, key, provider, message, editMessageId = null, refundDescription = 'Ошибка активации') => {
+const finishWithFailure = async (ctx, order, key, provider, message, editMessageId = null, refundDescription = 'Activation error') => {
   order.status = 'failed';
   order.provider = provider;
   order.activationResult = message;
@@ -110,33 +121,34 @@ const finishWithFailure = async (ctx, order, key, provider, message, editMessage
 
   const user = await refundOrder(order, key, refundDescription);
   const safeError = String(message).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const lang = ctx.user?.language || 'ru';
 
-  // UX-12: три действия после ошибки вместо двух.
-  // "Купить ещё" = retry для failed-заказа (деньги вернулись, можно пробовать снова).
   const productId = order.productId?._id || order.productId;
+  const retryLabel = lang === 'en' ? '🔄 Try again' : '🔄 Попробовать снова';
+  const supportLabel = lang === 'en' ? '🆘 Contact Support' : '🆘 Написать поддержке';
+  const menuLabel = lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню';
+  const errorTitle = lang === 'en' ? 'Activation error:' : 'Ошибка активации:';
+  const refundMsg = lang === 'en' ? 'Funds have been returned to your balance.' : 'Средства возвращены на баланс.';
+  const { TEXTS } = require('../constants/ux');
+
   const retryButton = productId
-    ? [Markup.button.callback('🔄 Попробовать снова', `shop:product:${productId}`)]
+    ? [Markup.button.callback(retryLabel, `shop:product:${productId}`)]
     : null;
 
   const buttons = [];
   if (retryButton) buttons.push(retryButton);
-  buttons.push([Markup.button.url('🆘 Написать поддержку', 'https://t.me/Tigrano_o')]);
-  buttons.push([Markup.button.callback('⬅️ В главное меню', 'menu:main')]);
+  buttons.push([Markup.button.url(supportLabel, TEXTS.SUPPORT_URL)]);
+  buttons.push([Markup.button.callback(menuLabel, 'menu:main')]);
   const replyMarkup = Markup.inlineKeyboard(buttons);
+  const errorText = `❌ <b>${errorTitle}</b>\n<blockquote>${safeError}</blockquote>\n\n${refundMsg}`;
 
   if (editMessageId) {
     await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      editMessageId,
-      null,
-      `❌ <b>Ошибка активации:</b>\n<blockquote>${safeError}</blockquote>\n\nСредства возвращены на баланс.`,
+      ctx.chat.id, editMessageId, null, errorText,
       { parse_mode: 'HTML', ...replyMarkup }
     ).catch(() => {});
   } else {
-    await ctx.reply(
-      `❌ <b>Ошибка активации:</b>\n<blockquote>${safeError}</blockquote>\n\nСредства возвращены на баланс.`,
-      { parse_mode: 'HTML', ...replyMarkup }
-    );
+    await ctx.reply(errorText, { parse_mode: 'HTML', ...replyMarkup });
   }
 
   if (user) {
@@ -154,21 +166,22 @@ const completeActivationOrder = async (ctx, order, provider, externalOrderId, su
 
   const user = await User.findById(order.userId);
   if (user) {
-    await notif.notifyUserOrderCompleted(user, order, order.productId, 'Активация завершена успешно.');
+    await notif.notifyUserOrderCompleted(user, order, order.productId, 'Activation completed successfully.');
     await grantReferralBonusForFirstCompletedOrder(user._id);
   }
 
+  const lang = ctx.user?.language || user?.language || 'ru';
+  const menuLabel = lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню';
+  const doneText = lang === 'en'
+    ? `🎉 <b>Activation complete!</b>\n\n<blockquote>✅ The provider confirmed the order completion.</blockquote>\n\nThank you for your purchase! Your subscription is activated.`
+    : `🎉 <b>Активация завершена!</b>\n\n<blockquote>✅ Поставщик подтвердил выполнение заказа.</blockquote>\n\nСпасибо за покупку! Ваша подписка активирована.`;
+
   if (editMessageId) {
     await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      editMessageId,
-      null,
-      `🎉 <b>Активация завершена!</b>\n\n` +
-      `<blockquote>✅ Поставщик подтвердил выполнение заказа.</blockquote>\n\n` +
-      `Спасибо за покупку! Ваша подписка активирована.`,
+      ctx.chat.id, editMessageId, null, doneText,
       {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]),
+        ...Markup.inlineKeyboard([[Markup.button.callback(menuLabel, 'menu:main')]]),
       }
     ).catch(() => {});
   }
@@ -183,17 +196,18 @@ const scheduleRetry = async (ctx, order, provider, externalOrderId, message, edi
   order.nextRetryAt = new Date(Date.now() + RETRY_DELAY_MS);
   await order.save();
 
+  const lang = ctx.user?.language || 'ru';
+  const menuLabel = lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню';
+  const retryText = lang === 'en'
+    ? `⏳ <b>Activation not yet complete</b>\n\nThe provider accepted the request, but the final status is not yet received.\nWill retry automatically in a few minutes.`
+    : `⏳ <b>Активация ещё не завершена</b>\n\nПоставщик принял запрос, но финальный статус пока не получен.\nПопробую автоматически ещё раз через несколько минут.`;
+
   if (editMessageId) {
     await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      editMessageId,
-      null,
-      `⏳ <b>Активация ещё не завершена</b>\n\n` +
-      `Поставщик принял запрос, но финальный статус пока не получен.\n` +
-      `Попробую автоматически ещё раз через несколько минут.`,
+      ctx.chat.id, editMessageId, null, retryText,
       {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]),
+        ...Markup.inlineKeyboard([[Markup.button.callback(menuLabel, 'menu:main')]]),
       }
     ).catch(() => {});
   }
@@ -408,30 +422,40 @@ tokenCollectionScene.on('text', async (ctx) => {
   ctx.scene.state.tokenBuffer = (ctx.scene.state.tokenBuffer || '') + chunk;
   const totalLen = ctx.scene.state.tokenBuffer.length;
   const timeLeft = getRemainingMins(ctx.scene.state.orderCreatedAt);
+  const lang = ctx.user?.language || 'ru';
 
   logger.info(`[TokenScene] chunk=${chunk.length} buffer=${totalLen}`);
 
   ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
 
   const promptMsgId = ctx.scene.state.promptMsgId;
+  const received = lang === 'en' ? 'Received' : 'Получено';
+  const continueHint = lang === 'en'
+    ? 'Keep sending if the token is not complete yet.'
+    : 'Продолжайте, если токен ещё не весь.';
+  const whenDone = lang === 'en'
+    ? 'When done — press the button below.\n\n📎 Or attach a <code>.txt</code> file — the bot will read it.'
+    : 'Когда отправите всё — нажмите кнопку ниже.\n\n📎 Или прикрепите <code>.txt</code> файл — бот прочитает сам.';
+  const title = lang === 'en' ? '🔑 <b>Send your ChatGPT token</b>' : '🔑 <b>Отправьте ваш токен ChatGPT</b>';
+  const timeLeft2 = lang === 'en' ? `Time left: <b>~${timeLeft} min</b>` : `Осталось: <b>~${timeLeft} мин</b>`;
+  const doneLabel = lang === 'en' ? '✅ I sent the full token' : '✅ Я отправил весь токен';
+  const cancelLabel = lang === 'en' ? '❌ Cancel' : '❌ Отмена';
+  const chars = lang === 'en' ? 'chars' : 'симв.';
+
   const text =
-    `🔑 <b>Отправьте ваш токен ChatGPT</b>\n\n` +
-    `<blockquote>⏱ Осталось: <b>~${timeLeft} мин</b></blockquote>\n\n` +
-    `📥 <b>Получено:</b> ${totalLen} симв. — продолжайте, если токен ещё не весь.\n\n` +
-    `<blockquote>Когда отправите всё — нажмите кнопку ниже.\n\n` +
-    `📎 Или прикрепите <code>.txt</code> файл — бот прочитает сам.</blockquote>`;
+    `${title}\n\n` +
+    `<blockquote>⏱ ${timeLeft2}</blockquote>\n\n` +
+    `📥 <b>${received}:</b> ${totalLen} ${chars} — ${continueHint}\n\n` +
+    `<blockquote>${whenDone}</blockquote>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Я отправил весь токен', DONE_ACTION)],
-    [Markup.button.callback('❌ Отмена', CANCEL_ACTION)],
+    [Markup.button.callback(doneLabel, DONE_ACTION)],
+    [Markup.button.callback(cancelLabel, CANCEL_ACTION)],
   ]);
 
   if (promptMsgId) {
     await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      promptMsgId,
-      null,
-      text,
+      ctx.chat.id, promptMsgId, null, text,
       { parse_mode: 'HTML', disable_web_page_preview: true, ...keyboard }
     ).catch(() => {});
   } else {
@@ -444,12 +468,17 @@ tokenCollectionScene.on('document', async (ctx) => {
   const doc = ctx.message.document;
   const mimeOk = doc.mime_type === 'text/plain';
   const nameOk = doc.file_name && doc.file_name.toLowerCase().endsWith('.txt');
+  const lang = ctx.user?.language || 'ru';
 
   if (!mimeOk && !nameOk) {
-    return ctx.reply('❌ Пожалуйста, отправьте только <b>.txt</b> файл.', { parse_mode: 'HTML' });
+    const msg = lang === 'en'
+      ? '❌ Please send only a <b>.txt</b> file.'
+      : '❌ Пожалуйста, отправьте только <b>.txt</b> файл.';
+    return ctx.reply(msg, { parse_mode: 'HTML' });
   }
 
-  const processingMsg = await ctx.reply('⏳ Читаю файл...');
+  const readingMsg = lang === 'en' ? '⏳ Reading file...' : '⏳ Читаю файл...';
+  const processingMsg = await ctx.reply(readingMsg);
 
   try {
     const fileLink = await ctx.telegram.getFileLink(doc.file_id);
@@ -465,14 +494,19 @@ tokenCollectionScene.on('document', async (ctx) => {
 
     if (!token) {
       await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id).catch(() => {});
-      return ctx.reply('❌ Файл пустой. Пожалуйста, отправьте файл с токеном.');
+      const emptyMsg = lang === 'en'
+        ? '❌ The file is empty. Please send a file with the token.'
+        : '❌ Файл пустой. Пожалуйста, отправьте файл с токеном.';
+      return ctx.reply(emptyMsg);
     }
 
+    const chars = lang === 'en' ? 'chars' : 'симв.';
+    const launchMsg = lang === 'en'
+      ? `✅ File read (<b>${token.length}</b> chars). Launching activation...`
+      : `✅ Файл прочитан (<b>${token.length}</b> симв.). Запускаю активацию...`;
+    void chars;
     await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      processingMsg.message_id,
-      null,
-      `✅ Файл прочитан (<b>${token.length}</b> симв.). Запускаю активацию...`,
+      ctx.chat.id, processingMsg.message_id, null, launchMsg,
       { parse_mode: 'HTML' }
     );
 
@@ -480,29 +514,32 @@ tokenCollectionScene.on('document', async (ctx) => {
   } catch (err) {
     logger.error(`[TokenScene] file read error: ${err.message}`);
     await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id).catch(() => {});
-    await ctx.reply(
-      `❌ Не удалось прочитать файл: <code>${escapeHtml(err.message)}</code>`,
-      { parse_mode: 'HTML' }
-    );
+    const errMsg = lang === 'en'
+      ? `❌ Could not read the file: <code>${escapeHtml(err.message)}</code>`
+      : `❌ Не удалось прочитать файл: <code>${escapeHtml(err.message)}</code>`;
+    await ctx.reply(errMsg, { parse_mode: 'HTML' });
   }
 });
 
 tokenCollectionScene.action(DONE_ACTION, async (ctx) => {
   const token = (ctx.scene.state.tokenBuffer || '').trim();
+  const lang = ctx.user?.language || 'ru';
 
   if (!token) {
-    return ctx.answerCbQuery('⚠️ Буфер пуст! Сначала отправьте токен текстом или файлом.', { show_alert: true });
+    const alertMsg = lang === 'en'
+      ? '⚠️ Buffer is empty! Send the token as text or file first.'
+      : '⚠️ Буфер пуст! Сначала отправьте токен текстом или файлом.';
+    return ctx.answerCbQuery(alertMsg, { show_alert: true });
   }
 
   await ctx.answerCbQuery();
-
   logger.info(`[TokenScene] done token_len=${token.length}`);
-
   await ctx.editMessageReplyMarkup(null).catch(() => {});
-  await ctx.reply(
-    `⚙️ <b>Принято!</b> Итоговый токен: <b>${token.length} симв.</b>\nЗапускаю активацию...`,
-    { parse_mode: 'HTML' }
-  );
+
+  const acceptedMsg = lang === 'en'
+    ? `⚙️ <b>Received!</b> Token: <b>${token.length} chars</b>\nLaunching activation...`
+    : `⚙️ <b>Принято!</b> Итоговый токен: <b>${token.length} симв.</b>\nЗапускаю активацию...`;
+  await ctx.reply(acceptedMsg, { parse_mode: 'HTML' });
 
   await runActivation(ctx, token);
 });
@@ -510,14 +547,15 @@ tokenCollectionScene.action(DONE_ACTION, async (ctx) => {
 // Шаг 1: пользователь нажал "❌ Отмена" → показываем экран подтверждения.
 // Отмена возврата денег необратима в рамках этой сессии, нужен явный confirm.
 tokenCollectionScene.action(CANCEL_ACTION, async (ctx) => {
+  const lang = ctx.user?.language || 'ru';
   await confirmScreen(ctx, {
-    title: '⚠️ Отменить покупку?',
-    message:
-      `<blockquote>Деньги вернутся на баланс, но заказ нельзя будет возобновить — нужно будет оформить новый.</blockquote>\n\n` +
-      `Если хотите просто сменить токен — нажмите «Продолжить ввод» и отправьте другой токен.`,
-    yesLabel: '❗ Да, отменить и вернуть деньги',
+    title: lang === 'en' ? '⚠️ Cancel the purchase?' : '⚠️ Отменить покупку?',
+    message: lang === 'en'
+      ? `<blockquote>Funds will be returned to your balance, but the order cannot be resumed — a new one will need to be placed.</blockquote>\n\nIf you just want to change the token — press «Continue» and send another token.`
+      : `<blockquote>Деньги вернутся на баланс, но заказ нельзя будет возобновить — нужно будет оформить новый.</blockquote>\n\nЕсли хотите просто сменить токен — нажмите «Продолжить ввод» и отправьте другой токен.`,
+    yesLabel: lang === 'en' ? '❗ Yes, cancel & refund' : '❗ Да, отменить и вернуть деньги',
     yesAction: CANCEL_CONFIRM_ACTION,
-    noLabel: '⬅️ Продолжить ввод',
+    noLabel: lang === 'en' ? '⬅️ Continue entering' : '⬅️ Продолжить ввод',
     noAction: CANCEL_ABORT_ACTION,
     danger: true,
   });
@@ -525,7 +563,8 @@ tokenCollectionScene.action(CANCEL_ACTION, async (ctx) => {
 
 // Шаг 2a: пользователь подтвердил отмену — выполняем откат.
 tokenCollectionScene.action(CANCEL_CONFIRM_ACTION, async (ctx) => {
-  await ctx.answerCbQuery('❌ Отменяю...').catch(() => {});
+  const lang = ctx.user?.language || 'ru';
+  await ctx.answerCbQuery(lang === 'en' ? '❌ Cancelling...' : '❌ Отменяю...').catch(() => {});
   await ctx.editMessageReplyMarkup(null).catch(() => {});
 
   const orderId = ctx.scene.state.orderId;
@@ -541,7 +580,7 @@ tokenCollectionScene.action(CANCEL_CONFIRM_ACTION, async (ctx) => {
         {
           $set: {
             status: 'cancelled',
-            activationResult: 'Отмена пользователем',
+            activationResult: 'Cancelled by user',
             nextRetryAt: null,
           },
         },
@@ -567,25 +606,28 @@ tokenCollectionScene.action(CANCEL_CONFIRM_ACTION, async (ctx) => {
         type: 'refund',
         amount: cancelledOrder.price,
         orderId: cancelledOrder._id,
-        description: 'Отмена: пользователь отказался от ввода токена',
+        description: 'Cancelled: user refused token input',
       }).save(sessionOptions);
     });
 
     if (cancelledOrder) {
-      await ctx.reply(
-        `❌ <b>Покупка отменена.</b>\n💰 Средства возвращены на баланс.`,
-        {
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]),
-        }
-      );
+      const menuLabel = lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню';
+      const cancelledText = lang === 'en'
+        ? `❌ <b>Purchase cancelled.</b>\n💰 Funds returned to your balance.`
+        : `❌ <b>Покупка отменена.</b>\n💰 Средства возвращены на баланс.`;
+      await ctx.reply(cancelledText, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback(menuLabel, 'menu:main')]]),
+      });
       await ctx.scene.leave();
       return;
     }
   }
 
-  await ctx.reply('⚠️ Заказ уже обработан или отменён.', {
-    ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В главное меню', 'menu:main')]]),
+  const alreadyMsg = lang === 'en' ? '⚠️ Order already processed or cancelled.' : '⚠️ Заказ уже обработан или отменён.';
+  const menuLabel2 = lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню';
+  await ctx.reply(alreadyMsg, {
+    ...Markup.inlineKeyboard([[Markup.button.callback(menuLabel2, 'menu:main')]]),
   });
   await ctx.scene.leave();
 });
@@ -599,10 +641,11 @@ tokenCollectionScene.action(CANCEL_ABORT_ACTION, async (ctx) => {
 });
 
 tokenCollectionScene.on('message', async (ctx) => {
-  await ctx.reply(
-    '⚠️ Пожалуйста, отправьте только <b>текст</b> или <b>.txt файл</b>.',
-    { parse_mode: 'HTML' }
-  );
+  const lang = ctx.user?.language || 'ru';
+  const msg = lang === 'en'
+    ? '⚠️ Please send only <b>text</b> or a <b>.txt file</b>.'
+    : '⚠️ Пожалуйста, отправьте только <b>текст</b> или <b>.txt файл</b>.';
+  await ctx.reply(msg, { parse_mode: 'HTML' });
 });
 
 module.exports = tokenCollectionScene;

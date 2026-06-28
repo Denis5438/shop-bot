@@ -775,15 +775,20 @@ const createBot = () => {
 
   bot.action('menu:support', async (ctx) => {
     await ctx.answerCbQuery();
+    const t = ctx.t;
+    const lang = ctx.user?.language || 'ru';
+    const { TEXTS } = require('./constants/ux');
+    const supportLink = TEXTS.SUPPORT_URL;
+    const btnLabel = lang === 'en' ? '✉️ Write to Support' : '✉️ Написать поддержке';
 
     try {
       await ctx.editMessageText(
-        `🆘 <b>Поддержка</b>\n\nЕсли у вас возникли вопросы или проблемы — напишите напрямую!\n\n👤 Администратор ответит в ближайшее время.`,
+        t('support_text'),
         {
           parse_mode: 'HTML',
           ...Markup.inlineKeyboard([
-            [Markup.button.url('✉️ Написать @Tigrano_o', 'https://t.me/Tigrano_o')],
-            [Markup.button.callback('⬅️ Назад', 'menu:main')],
+            [Markup.button.url(btnLabel, supportLink)],
+            [Markup.button.callback(t('btn_back'), 'menu:main')],
           ]),
         }
       );
