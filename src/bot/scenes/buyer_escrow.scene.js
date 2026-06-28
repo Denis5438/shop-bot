@@ -87,7 +87,7 @@ const disputeOrder = async (ctx, orderId) => {
     `Данные: <code>${escapeHtml(order.deliveryData || 'отсутствуют')}</code>\n\n` +
     `Перейдите в панель админа "⚠️ Споры" для решения.`;
   
-  await notif.notifyAdmin(adminMsg, {
+  await notif.sendToAdmins(adminMsg, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([[Markup.button.callback('🔍 К спорам', 'admin:disputes:list')]])
   });
