@@ -10,14 +10,13 @@ const mainKeyboard = (t) =>
     ],
     [
       Markup.button.callback(t('btn_support'), 'menu:support'),
-      Markup.button.callback(t('btn_about'), 'menu:about'),
+      Markup.button.callback(t('btn_change_lang'), 'profile:lang'),
     ],
     [
       Markup.button.callback(t('btn_referral'), 'menu:referral')
     ],
     [
-      Markup.button.callback(t('btn_documents'), 'menu:documents'),
-      Markup.button.callback(t('btn_change_lang'), 'profile:lang')
+      Markup.button.callback(t('btn_documents'), 'menu:documents')
     ],
   ]);
 
