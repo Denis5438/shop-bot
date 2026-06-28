@@ -4,34 +4,42 @@ const path = require('path');
 const ruPath = path.join(__dirname, '../src/locales/ru.json');
 const enPath = path.join(__dirname, '../src/locales/en.json');
 
-const ru = JSON.parse(fs.readFileSync(ruPath, 'utf8'));
-const en = JSON.parse(fs.readFileSync(enPath, 'utf8'));
+const ruData = JSON.parse(fs.readFileSync(ruPath, 'utf-8'));
+const enData = JSON.parse(fs.readFileSync(enPath, 'utf-8'));
 
-const newRu = {
-  "buyer_confirmation_title": "✅ Продавец передал данные по заказу <b>{name}</b>!\n\n",
-  "buyer_confirmation_btn_ok": "✅ Всё работает",
-  "buyer_confirmation_btn_bad": "❌ Не работает (Спор)",
-  "seller_order_awaiting_confirmation_success": "✅ <b>Данные отправлены покупателю!</b>\n\n📦 Товар: {name}\n\n⏳ Ожидаем подтверждения от покупателя (до {hours} ч.).\n<i>Как только покупатель проверит данные (или выйдет время), вы получите <b>+{payout} USDT</b> на баланс.</i>",
-  "buyer_dispute_opened": "❌ <b>Спор открыт!</b>\n\nАдминистратор подключится к решению проблемы в ближайшее время.",
-  "seller_dispute_opened": "⚠️ <b>Покупатель открыл спор!</b>\n\nЗаказ: {name}\nПокупатель заявил, что выданные данные не работают. Ожидайте решения администратора.",
-  "buyer_order_confirmed": "✅ <b>Заказ подтверждён!</b> Спасибо за покупку.",
-  "seller_order_confirmed": "✅ <b>Покупатель подтвердил заказ!</b>\n\nЗаказ: {name}\n💰 Вы получили <b>+{payout} USDT</b> на баланс.",
+const updates = {
+  support_hello: {
+    ru: "👨‍💻 <b>Поддержка на связи!</b>\n\nОператор готов помочь вам. Напишите ваш вопрос — мы ответим прямо здесь.",
+    en: "👨‍💻 <b>Support is online!</b>\n\nOur operator is ready to help you. Write your question — we will answer right here."
+  },
+  support_operator_prefix: {
+    ru: "👨‍💻 <b>Поддержка:</b>\n",
+    en: "👨‍💻 <b>Support:</b>\n"
+  },
+  profile_level: { ru: "Уровень", en: "Level" },
+  profile_id: { ru: "ID", en: "ID" },
+  profile_name: { ru: "Имя", en: "Name" },
+  profile_balance: { ru: "Баланс", en: "Balance" },
+  profile_orders: { ru: "Заказов", en: "Orders" },
+  profile_spent: { ru: "Потрачено", en: "Spent" },
+  profile_ref_code: { ru: "Реф. код", en: "Ref. code" },
+  profile_joined: { ru: "В боте с", en: "Joined" },
+  orders_page: { ru: "стр.", en: "page" },
+  orders_tab_all: { ru: "☑️ Все", en: "☑️ All" },
+  orders_tab_active: { ru: "🔄 Активные", en: "🔄 Active" },
+  seller_new_order_title: {
+    ru: "📦 <b>Новый заказ!</b>\n\n{icon} <b>{productName}</b>\n📋 Заказ: <code>{orderId}</code>\n👤 Покупатель: {buyerTag}\n💰 Ваш доход: <b>+{payout} USDT</b>\n\n<blockquote>Выполните заказ и нажмите кнопку ниже.</blockquote>",
+    en: "📦 <b>New order!</b>\n\n{icon} <b>{productName}</b>\n📋 Order: <code>{orderId}</code>\n👤 Buyer: {buyerTag}\n💰 Your income: <b>+{payout} USDT</b>\n\n<blockquote>Fulfill the order and click the button below.</blockquote>"
+  },
+  seller_new_order_btn_complete: { ru: "✅ Выполнил заказ", en: "✅ Order fulfilled" }
 };
 
-const newEn = {
-  "buyer_confirmation_title": "✅ The seller has delivered the data for order <b>{name}</b>!\n\n",
-  "buyer_confirmation_btn_ok": "✅ Everything works",
-  "buyer_confirmation_btn_bad": "❌ Not working (Dispute)",
-  "seller_order_awaiting_confirmation_success": "✅ <b>Data sent to buyer!</b>\n\n📦 Product: {name}\n\n⏳ Awaiting buyer confirmation (up to {hours} h.).\n<i>Once the buyer verifies the data (or time expires), you will receive <b>+{payout} USDT</b> to your balance.</i>",
-  "buyer_dispute_opened": "❌ <b>Dispute opened!</b>\n\nAn administrator will assist in resolving the issue shortly.",
-  "seller_dispute_opened": "⚠️ <b>Buyer opened a dispute!</b>\n\nOrder: {name}\nThe buyer reported that the provided data is not working. Please await the administrator's decision.",
-  "buyer_order_confirmed": "✅ <b>Order confirmed!</b> Thank you for your purchase.",
-  "seller_order_confirmed": "✅ <b>Buyer confirmed the order!</b>\n\nOrder: {name}\n💰 You received <b>+{payout} USDT</b> to your balance.",
-};
+for (const [key, trans] of Object.entries(updates)) {
+  ruData[key] = trans.ru;
+  enData[key] = trans.en;
+}
 
-Object.assign(ru, newRu);
-Object.assign(en, newEn);
+fs.writeFileSync(ruPath, JSON.stringify(ruData, null, 2), 'utf-8');
+fs.writeFileSync(enPath, JSON.stringify(enData, null, 2), 'utf-8');
 
-fs.writeFileSync(ruPath, JSON.stringify(ru, null, 2) + '\n');
-fs.writeFileSync(enPath, JSON.stringify(en, null, 2) + '\n');
 console.log('Locales updated successfully!');

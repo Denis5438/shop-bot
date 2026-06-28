@@ -179,5 +179,20 @@
   "buyer_dispute_opened": "❌ <b>Dispute opened!</b>\n\nAn administrator will assist in resolving the issue shortly.",
   "seller_dispute_opened": "⚠️ <b>Buyer opened a dispute!</b>\n\nOrder: {name}\nThe buyer reported that the provided data is not working. Please await the administrator's decision.",
   "buyer_order_confirmed": "✅ <b>Order confirmed!</b> Thank you for your purchase.",
-  "seller_order_confirmed": "✅ <b>Buyer confirmed the order!</b>\n\nOrder: {name}\n💰 You received <b>+{payout} USDT</b> to your balance."
+  "seller_order_confirmed": "✅ <b>Buyer confirmed the order!</b>\n\nOrder: {name}\n💰 You received <b>+{payout} USDT</b> to your balance.",
+  "support_hello": "👨‍💻 <b>Support is online!</b>\n\nOur operator is ready to help you. Write your question — we will answer right here.",
+  "support_operator_prefix": "👨‍💻 <b>Support:</b>\n",
+  "profile_level": "Level",
+  "profile_id": "ID",
+  "profile_name": "Name",
+  "profile_balance": "Balance",
+  "profile_orders": "Orders",
+  "profile_spent": "Spent",
+  "profile_ref_code": "Ref. code",
+  "profile_joined": "Joined",
+  "orders_page": "page",
+  "orders_tab_all": "☑️ All",
+  "orders_tab_active": "🔄 Active",
+  "seller_new_order_title": "📦 <b>New order!</b>\n\n{icon} <b>{productName}</b>\n📋 Order: <code>{orderId}</code>\n👤 Buyer: {buyerTag}\n💰 Your income: <b>+{payout} USDT</b>\n\n<blockquote>Fulfill the order and click the button below.</blockquote>",
+  "seller_new_order_btn_complete": "✅ Order fulfilled"
 }

@@ -6,6 +6,7 @@ const { Markup } = require('telegraf');
 const { escapeHtml } = require('../bot/utils/ui');
 const User = require('../models/User');
 const digest = require('./notification-digest.service');
+const i18n = require('../bot/middlewares/i18n');
 
 let botInstance = null;
 
@@ -381,19 +382,22 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
 const notifySellerNewOrder = async (seller, order, product, buyer) => {
   if (!botInstance || !seller?.telegramId) return;
 
+  const sellerUser = await User.findOne({ telegramId: seller.telegramId });
+  const sellerLang = sellerUser?.language || 'ru';
+
   const buyerTag = buyer?.username ? `@${h(buyer.username)}` : `ID ${h(buyer?.telegramId)}`;
 
-  const msg =
-    `📦 <b>Новый заказ!</b>\n\n` +
-    `${h(product?.icon || '📦')} <b>${h(product?.name, 'Товар')}</b>\n` +
-    `📋 Заказ: <code>${order._id}</code>\n` +
-    `👤 Покупатель: ${buyerTag}\n` +
-    `💰 Ваш доход: <b>+${order.sellerPayout.toFixed(2)} USDT</b>\n\n` +
-    `<blockquote>Выполните заказ и нажмите кнопку ниже.</blockquote>`;
+  const msg = i18n.translate(sellerLang, 'seller_new_order_title', {
+    icon: h(product?.icon || '📦'),
+    productName: h(product?.name, 'Товар'),
+    orderId: order._id,
+    buyerTag,
+    payout: order.sellerPayout.toFixed(2)
+  });
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: '✅ Выполнил заказ', callback_data: `seller:order:complete:${order._id}` }],
+      [{ text: i18n.translate(sellerLang, 'seller_new_order_btn_complete'), callback_data: `seller:order:complete:${order._id}` }],
     ],
   };
 

@@ -5,6 +5,7 @@ const Transaction = require('../../../models/Transaction');
 const { toRub } = require('../../../services/currency.service');
 const mongoose = require('mongoose');
 const { escapeHtml } = require('../../utils/ui');
+const i18n = require('../../middlewares/i18n');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -314,7 +315,7 @@ const startTakeover = async (ctx, userId) => {
   try {
     await ctx.telegram.sendMessage(
       targetUser.telegramId,
-      `👨‍💻 <b>Поддержка на связи!</b>\n\nОператор готов помочь вам. Напишите ваш вопрос — мы ответим прямо здесь.`,
+      i18n.translate(targetUser.language || 'ru', 'support_hello'),
       { parse_mode: 'HTML' }
     );
   } catch (_) {}

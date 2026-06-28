@@ -179,5 +179,20 @@
   "buyer_dispute_opened": "❌ <b>Спор открыт!</b>\n\nАдминистратор подключится к решению проблемы в ближайшее время.",
   "seller_dispute_opened": "⚠️ <b>Покупатель открыл спор!</b>\n\nЗаказ: {name}\nПокупатель заявил, что выданные данные не работают. Ожидайте решения администратора.",
   "buyer_order_confirmed": "✅ <b>Заказ подтверждён!</b> Спасибо за покупку.",
-  "seller_order_confirmed": "✅ <b>Покупатель подтвердил заказ!</b>\n\nЗаказ: {name}\n💰 Вы получили <b>+{payout} USDT</b> на баланс."
+  "seller_order_confirmed": "✅ <b>Покупатель подтвердил заказ!</b>\n\nЗаказ: {name}\n💰 Вы получили <b>+{payout} USDT</b> на баланс.",
+  "support_hello": "👨‍💻 <b>Поддержка на связи!</b>\n\nОператор готов помочь вам. Напишите ваш вопрос — мы ответим прямо здесь.",
+  "support_operator_prefix": "👨‍💻 <b>Поддержка:</b>\n",
+  "profile_level": "Уровень",
+  "profile_id": "ID",
+  "profile_name": "Имя",
+  "profile_balance": "Баланс",
+  "profile_orders": "Заказов",
+  "profile_spent": "Потрачено",
+  "profile_ref_code": "Реф. код",
+  "profile_joined": "В боте с",
+  "orders_page": "стр.",
+  "orders_tab_all": "☑️ Все",
+  "orders_tab_active": "🔄 Активные",
+  "seller_new_order_title": "📦 <b>Новый заказ!</b>\n\n{icon} <b>{productName}</b>\n📋 Заказ: <code>{orderId}</code>\n👤 Покупатель: {buyerTag}\n💰 Ваш доход: <b>+{payout} USDT</b>\n\n<blockquote>Выполните заказ и нажмите кнопку ниже.</blockquote>",
+  "seller_new_order_btn_complete": "✅ Выполнил заказ"
 }

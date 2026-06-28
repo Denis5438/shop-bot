@@ -54,14 +54,14 @@ const showProfile = async (ctx) => {
   const text =
     `👤 <b>Мой профиль</b>\n\n` +
     bannerText +
-    `<blockquote>${level.emoji} Уровень: <b>${levelLabel}</b>\n\n` +
-    `🆔 ID: <code>${user.telegramId}</code>\n` +
-    `📛 Имя: ${escapeHtml(user.firstName)}${user.lastName ? ' ' + escapeHtml(user.lastName) : ''}\n\n` +
-    `💰 Баланс: <b>${user.balance.toFixed(2)} USDT</b>  (~${toRub(user.balance)} ₽)\n` +
-    `📦 Заказов: ${ordersCount}\n` +
-    `💸 Потрачено: ${user.totalSpent.toFixed(2)} USDT\n\n` +
-    `🔗 Реф. код: <code>${escapeHtml(user.referralCode)}</code>\n` +
-    `📅 В боте с: ${createdAt}</blockquote>`;
+    `<blockquote>${level.emoji} ${t('profile_level')}: <b>${levelLabel}</b>\n\n` +
+    `🆔 ${t('profile_id')}: <code>${user.telegramId}</code>\n` +
+    `📛 ${t('profile_name')}: ${escapeHtml(user.firstName)}${user.lastName ? ' ' + escapeHtml(user.lastName) : ''}\n\n` +
+    `💰 ${t('profile_balance')}: <b>${user.balance.toFixed(2)} USDT</b>  (~${toRub(user.balance)} ₽)\n` +
+    `📦 ${t('profile_orders')}: ${ordersCount}\n` +
+    `💸 ${t('profile_spent')}: ${user.totalSpent.toFixed(2)} USDT\n\n` +
+    `🔗 ${t('profile_ref_code')}: <code>${escapeHtml(user.referralCode)}</code>\n` +
+    `📅 ${t('profile_joined')}: ${createdAt}</blockquote>`;
 
   const buttons = [];
   if (activeOrder) {
@@ -142,7 +142,7 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
     }
   }
 
-  let text = `${filterLabel}  ·  стр. ${page}/${totalPages}\n\n`;
+  let text = `${filterLabel}  ·  ${t('orders_page')} ${page}/${totalPages}\n\n`;
   for (const order of orders) {
     const date = new Date(order.createdAt).toLocaleDateString('ru-RU');
     const status = localizedOrderStatus(ctx, order.status);
@@ -154,8 +154,8 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
   // Кнопки фильтра
   const buttons = [];
   buttons.push([
-    Markup.button.callback(filter === 'all'    ? '☑️ Все'      : '📋 Все',      'profile:orders:all:1'),
-    Markup.button.callback(filter === 'active' ? '☑️ Активные' : '🔄 Активные', 'profile:orders:active:1'),
+    Markup.button.callback(filter === 'all'    ? t('orders_tab_all') : '📋 ' + t('orders_tab_all').replace('☑️ ', ''), 'profile:orders:all:1'),
+    Markup.button.callback(filter === 'active' ? t('orders_tab_active') : '📋 ' + t('orders_tab_active').replace('🔄 ', ''), 'profile:orders:active:1'),
   ]);
 
   // Навигация

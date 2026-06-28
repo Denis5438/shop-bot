@@ -1,6 +1,7 @@
 const { Markup } = require('telegraf');
 const Order = require('../../models/Order');
 const Seller = require('../../models/Seller');
+const User = require('../../models/User');
 const notif = require('../../services/notification.service');
 const { escapeHtml } = require('../utils/ui');
 const i18n = require('../middlewares/i18n');
@@ -25,8 +26,10 @@ const confirmOrder = async (ctx, orderId) => {
     order.sellerPaidAt = new Date();
     
     // Notify seller
+    const sellerUser = await User.findOne({ telegramId: seller.telegramId });
+    const sellerLang = sellerUser?.language || 'ru';
     const payout = order.sellerPayout.toFixed(2);
-    const sellerMsg = i18n.translate('ru', 'seller_order_confirmed', { name: escapeHtml(order.productId?.name || 'Товар'), payout });
+    const sellerMsg = i18n.translate(sellerLang, 'seller_order_confirmed', { name: escapeHtml(order.productId?.name || 'Товар'), payout });
     await notif.sendToUser(seller.telegramId, sellerMsg, { parse_mode: 'HTML' }).catch(()=>null);
   }
 
@@ -72,7 +75,9 @@ const disputeOrder = async (ctx, orderId) => {
 
   // Notify seller
   if (order.sellerId) {
-    const sellerMsg = i18n.translate('ru', 'seller_dispute_opened', { name: escapeHtml(order.productId?.name || 'Товар') });
+    const sellerUser = await User.findOne({ telegramId: order.sellerId.telegramId });
+    const sellerLang = sellerUser?.language || 'ru';
+    const sellerMsg = i18n.translate(sellerLang, 'seller_dispute_opened', { name: escapeHtml(order.productId?.name || 'Товар') });
     await notif.sendToUser(order.sellerId.telegramId, sellerMsg, { parse_mode: 'HTML' }).catch(()=>null);
   }
 

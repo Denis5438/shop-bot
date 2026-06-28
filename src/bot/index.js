@@ -141,8 +141,11 @@ const createBot = () => {
       const targetId = ctx.session.takeoverUserId;
       if (targetId) {
         try {
+          const targetUser = await User.findOne({ telegramId: targetId });
+          const targetLang = targetUser?.language || 'ru';
+          const prefix = i18nMiddleware.translate(targetLang, 'support_operator_prefix');
           const safeText = escapeHtml(ctx.message.text);
-          await ctx.telegram.sendMessage(targetId, `👨‍💻 <b>Поддержка:</b>\n\n${safeText}`, { parse_mode: 'HTML' });
+          await ctx.telegram.sendMessage(targetId, `${prefix}${safeText}`, { parse_mode: 'HTML' });
         } catch (e) {}
         // DO NOT halt propagation if it's a specific admin stop command, but we'll use a callback button to stop.
         // Haulting normal bot logic so admin commands don't trigger
