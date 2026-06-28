@@ -168,7 +168,7 @@ const askSellerForProduct = async (ctx, productId) => {
     for (const seller of sellers) {
       const isCurrently = product.sellerId?.toString() === seller._id.toString();
       const label = `${isCurrently ? '✅ ' : ''}@${seller.username}`;
-      buttons.push([Markup.button.callback(label, `admin:product:seller:pick:${productId}:${seller._id}`)]);
+      buttons.push([Markup.button.callback(label, `adm:ps:p:${productId}:${seller._id}`)]);
     }
   }
 

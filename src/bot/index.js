@@ -1210,7 +1210,7 @@ const createBot = () => {
     await productsScene.askSellerForProduct(ctx, ctx.match[1]);
   });
 
-  bot.action(/^admin:product:seller:pick:(.+):(.+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^adm:ps:p:(.+):(.+)$/, adminMiddleware, async (ctx) => {
     await productsScene.pickSellerForProduct(ctx, ctx.match[1], ctx.match[2]);
   });
 
