@@ -12,10 +12,9 @@ function format(str, params = {}) {
 
 // Middleware: добавляет ctx.t() для перевода
 const i18nMiddleware = (ctx, next) => {
-  const lang = ctx.user?.language || 'ru';
-  const locale = locales[lang] || locales['ru'];
-
   ctx.t = (key, params = {}) => {
+    const currentLang = ctx.user?.language || 'ru';
+    const locale = locales[currentLang] || locales['ru'];
     const str = locale[key] || ru[key] || key;
     return format(str, params);
   };
