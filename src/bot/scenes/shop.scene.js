@@ -167,7 +167,11 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
 
   const buttons = [];
   if (!outOfStock) {
-    buttons.push([Markup.button.callback(t('btn_buy'), `shop:buy:${productId}:${fromPage}`)]);
+    if (product.type === 'key') {
+      buttons.push([Markup.button.callback(t('btn_buy'), `shop:qty:${productId}:${fromPage}:1`)]);
+    } else {
+      buttons.push([Markup.button.callback(t('btn_buy'), `shop:buy:${productId}:${fromPage}:1`)]);
+    }
   } else {
     buttons.push([Markup.button.callback(t('shop_out_of_stock'), 'shop:noop')]);
   }
@@ -186,7 +190,54 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   await ctx.answerCbQuery().catch(() => {});
 };
 
-const confirmPurchase = async (ctx, productId, fromPage = 1) => {
+const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
+  qty = parseInt(qty, 10);
+  if (isNaN(qty) || qty < 1) qty = 1;
+  const product = await Product.findById(productId);
+  const t = ctx.t || ((k) => k);
+
+  if (!product || !product.isActive) {
+    return ctx.answerCbQuery(t('err_not_found'), { show_alert: true });
+  }
+
+  const stock = await getStock(product);
+  if (stock !== '∞' && qty > stock) {
+    return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
+  }
+
+  const effectivePrice = await getEffectivePrice(product, stock);
+  const total = parseFloat((effectivePrice * qty).toFixed(2));
+
+  const text = t('shop_qty_title') + '\n\n' + t('shop_qty_total', { qty, total });
+
+  const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const buttons = [
+    [
+      Markup.button.callback('➖', `shop:qty_dec:${productId}:${safePage}:${qty}`),
+      Markup.button.callback(`${qty} шт`, 'shop:noop'),
+      Markup.button.callback('➕', `shop:qty_inc:${productId}:${safePage}:${qty}`),
+    ],
+    [
+      Markup.button.callback('5 шт', `shop:qty_set:${productId}:${safePage}:5`),
+      Markup.button.callback('10 шт', `shop:qty_set:${productId}:${safePage}:10`),
+      Markup.button.callback('20 шт', `shop:qty_set:${productId}:${safePage}:20`),
+    ],
+    [Markup.button.callback(t('shop_qty_confirm_btn'), `shop:buy:${productId}:${safePage}:${qty}`)],
+    [Markup.button.callback(t('btn_back'), `shop:product:${productId}:${safePage}`)]
+  ];
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  try {
+    await ctx.editMessageText(text, opts);
+  } catch (_) {
+    await ctx.reply(text, opts).catch(() => {});
+  }
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
+  qty = parseInt(qty, 10);
+  if (isNaN(qty) || qty < 1) qty = 1;
   const user = ctx.user;
   const product = await Product.findById(productId);
   const t = ctx.t || ((k) => k);
@@ -197,21 +248,23 @@ const confirmPurchase = async (ctx, productId, fromPage = 1) => {
   }
 
   const stock = await getStock(product);
-  if (stock !== '∞' && stock === 0) {
-    return ctx.answerCbQuery(t('err_out_of_stock'), { show_alert: true });
+  if (stock !== '∞' && stock < qty) {
+    return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
   }
 
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
   const productName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
 
   const effectivePrice = await getEffectivePrice(product, stock);
-  if (user.balance < effectivePrice) {
-    const diff = parseFloat((effectivePrice - user.balance).toFixed(2));
+  const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
+  
+  if (user.balance < totalCost) {
+    const diff = parseFloat((totalCost - user.balance).toFixed(2));
     const topupLabel = lang === 'en' ? `💰 Top up ${diff} USDT` : `💰 Пополнить на ${diff} USDT`;
     const otherLabel = lang === 'en' ? '💳 Other amount' : '💳 Другая сумма';
     const backLabel = t('btn_back');
     const text = t('product_not_enough', {
-      price: effectivePrice,
+      price: totalCost,
       balance: user.balance.toFixed(2),
       diff
     });
@@ -226,24 +279,36 @@ const confirmPurchase = async (ctx, productId, fromPage = 1) => {
     return ctx.answerCbQuery().catch(() => {});
   }
 
-  const newBalance = (user.balance - effectivePrice).toFixed(2);
+  const newBalance = (user.balance - totalCost).toFixed(2);
   const confirmBtnLabel = lang === 'en'
-    ? `✅ Yes, buy for ${effectivePrice} USDT`
-    : `✅ Да, купить за ${effectivePrice} USDT`;
+    ? `✅ Yes, buy for ${totalCost} USDT`
+    : `✅ Да, купить за ${totalCost} USDT`;
   const backToProductLabel = lang === 'en' ? '⬅️ Back to product' : '⬅️ Вернуться к товару';
 
-  const text = t('product_buy_confirm', {
-    name: escapeHtml(productName),
-    price: effectivePrice,
-    priceRub: toRub(effectivePrice),
-    balance: user.balance.toFixed(2),
-    newBalance
-  });
+  let text;
+  if (qty > 1) {
+    text = t('product_buy_confirm_qty', {
+      name: escapeHtml(productName),
+      qty,
+      price: totalCost,
+      priceRub: toRub(totalCost),
+      balance: user.balance.toFixed(2),
+      newBalance
+    });
+  } else {
+    text = t('product_buy_confirm', {
+      name: escapeHtml(productName),
+      price: effectivePrice,
+      priceRub: toRub(effectivePrice),
+      balance: user.balance.toFixed(2),
+      newBalance
+    });
+  }
 
   const opts = {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
-      [Markup.button.callback(confirmBtnLabel, `shop:confirm:${productId}:${safePage}`)],
+      [Markup.button.callback(confirmBtnLabel, `shop:confirm:${productId}:${safePage}:${qty}`)],
       [Markup.button.callback(backToProductLabel, `shop:product:${productId}:${safePage}`)],
     ]),
   };
@@ -255,9 +320,9 @@ const confirmPurchase = async (ctx, productId, fromPage = 1) => {
   await ctx.answerCbQuery().catch(() => {});
 };
 
-const processPurchase = async (ctx, productId, fromPage = 1) => {
-  // fromPage принимается для консистентности flow (навигация из карточки товара),
-  // сейчас не используется в UI покупки, но полезно при расширении (например, редирект).
+const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
+  qty = parseInt(qty, 10);
+  if (isNaN(qty) || qty < 1) qty = 1;
   void fromPage;
   const user = ctx.user;
   const product = await Product.findById(productId);
@@ -270,13 +335,18 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
   }
 
   const stock = await getStock(product);
-  const effectivePrice = await getEffectivePrice(product, stock);
+  if (stock !== '∞' && qty > stock) {
+    return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
+  }
 
-  if (user.balance < effectivePrice) {
-    const deficit = parseFloat((effectivePrice - user.balance).toFixed(2));
+  const effectivePrice = await getEffectivePrice(product, stock);
+  const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
+
+  if (user.balance < totalCost) {
+    const deficit = parseFloat((totalCost - user.balance).toFixed(2));
     const topupLabel = lang === 'en' ? `💰 Top up ${deficit} USDT` : `💰 Пополнить на ${deficit} USDT`;
     const text = t('product_not_enough', {
-      price: effectivePrice,
+      price: totalCost,
       balance: user.balance.toFixed(2),
       diff: deficit
     });
@@ -299,79 +369,80 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
   const User = require('../../models/User');
   const { withTransaction } = require('../../services/transactionHelper.service');
 
-  let order = null;
-  let allocatedKey = null;
+  let orders = [];
+  let allocatedKeys = [];
 
   try {
     await withTransaction(async (session) => {
       const sessionOptions = session ? { session } : undefined;
 
       const freshUser = await User.findById(user._id, null, sessionOptions);
-      if (!freshUser || freshUser.balance < effectivePrice) {
+      if (!freshUser || freshUser.balance < totalCost) {
         throw new Error('INSUFFICIENT_BALANCE');
       }
 
-      // Резервируем ключ внутри транзакции — так при любом сбое вся операция
-      // (списание баланса, создание заказа, выделение ключа) откатится атомарно.
-      if (product.type !== 'manual') {
-        allocatedKey = await Key.findOneAndUpdate(
-          buildKeyQueryForProduct(product, { isUsed: false }),
-          {
-            $set: {
-              isUsed: true,
-              usedAt: new Date(),
-            },
-          },
-          { new: true, ...(sessionOptions || {}) }
-        );
-
-        if (!allocatedKey) {
+      if (isAutoKeyProduct) {
+        // Резервируем qty ключей
+        allocatedKeys = await Key.find(buildKeyQueryForProduct(product, { isUsed: false }))
+          .limit(qty)
+          .session(sessionOptions || null);
+          
+        if (allocatedKeys.length < qty) {
           throw new Error('OUT_OF_STOCK');
         }
+
+        const keyIds = allocatedKeys.map(k => k._id);
+        await Key.updateMany(
+          { _id: { $in: keyIds } },
+          { $set: { isUsed: true, usedAt: new Date() } },
+          sessionOptions
+        );
       }
 
-      freshUser.balance = parseFloat((freshUser.balance - effectivePrice).toFixed(8));
-      freshUser.totalSpent = parseFloat((freshUser.totalSpent + effectivePrice).toFixed(8));
+      freshUser.balance = parseFloat((freshUser.balance - totalCost).toFixed(8));
+      freshUser.totalSpent = parseFloat((freshUser.totalSpent + totalCost).toFixed(8));
       await freshUser.save(sessionOptions);
       ctx.user = freshUser;
 
-      order = new Order({
-        userId: user._id,
-        productId: product._id,
-        provider,
-        price: effectivePrice,
-        costPrice: product.costPrice || 0,
-        status: product.type === 'gpt_activation' ? 'awaiting_token' : isAutoKeyProduct ? 'completed' : 'pending',
-        keyId: allocatedKey ? allocatedKey._id : null,
-        confirmedAt: isAutoKeyProduct ? new Date() : null,
-        activationResult: isAutoKeyProduct ? 'Ключ выдан автоматически' : null,
-      });
-      await order.save(sessionOptions);
+      for (let i = 0; i < qty; i++) {
+        const allocatedKey = allocatedKeys[i] || null;
+        const order = new Order({
+          userId: user._id,
+          productId: product._id,
+          provider,
+          price: effectivePrice,
+          costPrice: product.costPrice || 0,
+          status: product.type === 'gpt_activation' ? 'awaiting_token' : isAutoKeyProduct ? 'completed' : 'pending',
+          keyId: allocatedKey ? allocatedKey._id : null,
+          confirmedAt: isAutoKeyProduct ? new Date() : null,
+          activationResult: isAutoKeyProduct ? 'Ключ выдан автоматически' : null,
+        });
+        await order.save(sessionOptions);
+        orders.push(order);
+
+        if (allocatedKey) {
+          allocatedKey.usedByOrder = order._id;
+          await allocatedKey.save(sessionOptions);
+        }
+      }
 
       product.lastSoldAt = Date.now();
       await product.save(sessionOptions);
 
-      if (allocatedKey) {
-        allocatedKey.usedByOrder = order._id;
-        await allocatedKey.save(sessionOptions);
-      }
-
       await new Transaction({
         userId: user._id,
         type: 'purchase',
-        amount: -effectivePrice,
-        orderId: order._id,
-        description: `Покупка: ${product.name}`,
+        amount: -totalCost,
+        orderId: orders[0]._id, // Привязываем транзакцию к первому заказу для простоты
+        description: `Покупка: ${product.name} (x${qty})`,
       }).save(sessionOptions);
     });
   } catch (err) {
-    // Fallback: если транзакции не поддерживаются (standalone MongoDB) — пытаемся
-    // руками освободить ключ, который мог остаться в состоянии isUsed=true.
-    // В реплика-сете транзакция уже откатила изменения.
-    if (allocatedKey && allocatedKey._id) {
+    if (allocatedKeys.length > 0) {
       try {
-        await Key.updateOne(
-          { _id: allocatedKey._id, usedByOrder: null },
+        const keyIds = allocatedKeys.map(k => k._id);
+        await Key.updateMany(
+          { _id: { $in: keyIds }, usedByOrder: null },
           { $set: { isUsed: false, usedAt: null } }
         );
       } catch (_) {}
@@ -396,34 +467,39 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
     throw err;
   }
 
-  if (product.type !== 'key') {
-    await notif.notifyAdminNewOrder(order, ctx.user, product);
-  }
+  // Начисление продавцу (sellerPayout холдируется) и уведомления
+  const productDisplayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+  let sellerTotalPayout = 0;
 
-  // ─── Начисление продавцу ─────────────────────────────────────────────────
   if (product.sellerId && product.sellerPrice > 0) {
     try {
       const seller = await Seller.findById(product.sellerId);
       if (seller && seller.isActive) {
-        const payout = parseFloat(product.sellerPrice.toFixed(8));
-
-        // Обновляем заказ — фиксируем сумму выплаты, но НЕ начисляем на баланс (холдируем)
-        await Order.updateOne(
-          { _id: order._id },
-          { $set: { sellerId: seller._id, sellerPayout: payout } }
+        const payoutPerItem = parseFloat(product.sellerPrice.toFixed(8));
+        sellerTotalPayout = parseFloat((payoutPerItem * qty).toFixed(8));
+        
+        const orderIds = orders.map(o => o._id);
+        await Order.updateMany(
+          { _id: { $in: orderIds } },
+          { $set: { sellerId: seller._id, sellerPayout: payoutPerItem } }
         );
-
-        // Уведомляем продавца (только если он зарегистрирован в боте)
-        await notif.notifySellerNewOrder(seller, { ...order.toObject(), sellerPayout: payout }, product, ctx.user);
+        
+        // Отправляем одно сводное уведомление продавцу
+        const summaryOrder = { ...orders[0].toObject(), sellerPayout: sellerTotalPayout, qty };
+        await notif.notifySellerNewOrder(seller, summaryOrder, product, ctx.user);
       }
     } catch (sellerErr) {
-      // Не ломаем основной flow при ошибке начисления продавцу
       const logger = require('../../config/logger');
       logger.error(`[Seller payout] Ошибка начисления продавцу: ${sellerErr.message}`);
     }
   }
 
-  const productDisplayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+  if (product.type !== 'key') {
+    // Если купили несколько manual, то шлем несколько уведомлений админу
+    for (const order of orders) {
+      await notif.notifyAdminNewOrder(order, ctx.user, product);
+    }
+  }
 
   if (product.type === 'gpt_activation') {
     const orderLbl = lang === 'en' ? 'Order' : 'Заказ';
@@ -431,8 +507,8 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
     const text =
       `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ создан'}</b>\n\n` +
       `${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
-      `📋 ${orderLbl}: <code>${order._id}</code>\n` +
-      `💰 ${chargedLbl}: <b>${effectivePrice} USDT</b>\n\n` +
+      `📋 ${orderLbl}: <code>${orders[0]._id}</code>\n` +
+      `💰 ${chargedLbl}: <b>${totalCost} USDT</b>\n\n` +
       `⏳ ${lang === 'en' ? 'Requesting your token...' : 'Сейчас запрошу ваш токен...'}`;
     const opts = { parse_mode: 'HTML' };
     try {
@@ -441,20 +517,30 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
       await ctx.reply(text, opts).catch(() => {});
     }
     await ctx.answerCbQuery().catch(() => {});
-    await ctx.scene.enter('token_collection', { orderId: order._id.toString() });
+    await ctx.scene.enter('token_collection', { orderId: orders[0]._id.toString() });
   } else if (isAutoKeyProduct) {
-    await grantReferralBonusForFirstCompletedOrder(order.userId);
+    await grantReferralBonusForFirstCompletedOrder(orders[0].userId);
 
     const productLbl = lang === 'en' ? 'Product' : 'Товар';
-    const orderLbl = lang === 'en' ? 'Order' : 'Заказ';
+    const qtyLbl = lang === 'en' ? 'Quantity' : 'Количество';
     const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
-    const keyLbl = lang === 'en' ? '🔑 <b>Your key:</b>' : '🔑 <b>Ваш ключ:</b>';
+    const keyLbl = lang === 'en' ? '🔑 <b>Your keys:</b>' : '🔑 <b>Ваши ключи:</b>';
+    
+    let keysText = '';
+    if (qty === 1) {
+      keysText = `<pre>${escapeHtml(allocatedKeys[0].value)}</pre>`;
+    } else {
+      allocatedKeys.forEach((k, idx) => {
+        keysText += `${idx + 1}. <code>${escapeHtml(k.value)}</code>\n`;
+      });
+    }
+
     const text =
       `✅ <b>${lang === 'en' ? 'Order completed automatically' : 'Заказ выполнен автоматически'}</b>\n\n` +
       `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
-      `📋 ${orderLbl}: <code>${order._id}</code>\n` +
-      `💰 ${chargedLbl}: <b>${effectivePrice} USDT</b>\n\n` +
-      `${keyLbl}\n<pre>${escapeHtml(allocatedKey.value)}</pre>`;
+      `📊 ${qtyLbl}: <b>${qty}</b>\n` +
+      `💰 ${chargedLbl}: <b>${totalCost} USDT</b>\n\n` +
+      `${keyLbl}\n${keysText}`;
 
     const buyMoreLabel = lang === 'en' ? '🛒 Buy more' : '🛒 Купить ещё';
     const menuLabel = t('back_to_menu');
@@ -473,13 +559,11 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
     await ctx.answerCbQuery().catch(() => {});
   } else {
     const productLbl = lang === 'en' ? 'Product' : 'Товар';
-    const orderLbl = lang === 'en' ? 'Order' : 'Заказ';
     const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
     const text =
       `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ создан'}</b>\n\n` +
       `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
-      `📋 ${orderLbl}: <code>${order._id}</code>\n` +
-      `💰 ${chargedLbl}: ${effectivePrice} USDT\n\n` +
+      `💰 ${chargedLbl}: ${totalCost} USDT\n\n` +
       `⏳ ${lang === 'en' ? 'An operator will process your order shortly.' : 'Оператор обработает заказ в ближайшее время.'}`;
 
     const opts = {
@@ -522,4 +606,4 @@ const processPurchase = async (ctx, productId, fromPage = 1) => {
   }
 };
 
-module.exports = { showShopPage, showProduct, confirmPurchase, processPurchase };
+module.exports = { showShopPage, showProduct, confirmPurchase, processPurchase, showQuantitySelect };
