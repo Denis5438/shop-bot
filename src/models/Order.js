@@ -10,6 +10,7 @@ const orderSchema = new mongoose.Schema({
     default: 'pending',
   },
   price: { type: Number, required: true },
+  qty: { type: Number, default: 1 },
   costPrice: { type: Number, default: 0 },
   keyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Key', default: null },
   tokenRaw: { type: String, default: null },

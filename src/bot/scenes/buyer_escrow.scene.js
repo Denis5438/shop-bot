@@ -29,7 +29,8 @@ const confirmOrder = async (ctx, orderId) => {
     const sellerUser = await User.findOne({ telegramId: seller.telegramId });
     const sellerLang = sellerUser?.language || 'ru';
     const payout = order.sellerPayout.toFixed(2);
-    const sellerMsg = i18n.translate(sellerLang, 'seller_order_confirmed', { name: escapeHtml(order.productId?.name || 'Товар'), payout });
+    const productName = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
+    const sellerMsg = i18n.translate(sellerLang, 'seller_order_confirmed', { name: productName, payout });
     await notif.sendToUser(seller.telegramId, sellerMsg, { parse_mode: 'HTML' }).catch(()=>null);
   }
 
@@ -77,15 +78,16 @@ const disputeOrder = async (ctx, orderId) => {
   if (order.sellerId) {
     const sellerUser = await User.findOne({ telegramId: order.sellerId.telegramId });
     const sellerLang = sellerUser?.language || 'ru';
-    const sellerMsg = i18n.translate(sellerLang, 'seller_dispute_opened', { name: escapeHtml(order.productId?.name || 'Товар') });
+    const productName = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
+    const sellerMsg = i18n.translate(sellerLang, 'seller_dispute_opened', { name: productName });
     await notif.sendToUser(order.sellerId.telegramId, sellerMsg, { parse_mode: 'HTML' }).catch(()=>null);
   }
 
-  // Notify Admin
+  const productNameAdmin = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
   const adminMsg = 
     `⚠️ <b>Новый спор!</b>\n\n` +
     `Заказ: <code>${order._id}</code>\n` +
-    `Товар: <b>${escapeHtml(order.productId?.name || 'Товар')}</b>\n` +
+    `Товар: <b>${productNameAdmin}</b>\n` +
     `Сумма выплаты продавцу: <b>${order.sellerPayout} USDT</b>\n\n` +
     `Покупатель: @${escapeHtml(order.userId.username || order.userId.telegramId)}\n` +
     `Продавец: @${escapeHtml(order.sellerId?.username || order.sellerId?.telegramId)}\n\n` +

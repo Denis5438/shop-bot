@@ -76,9 +76,10 @@ const viewDispute = async (ctx, orderId) => {
   const bLink = b ? (b.username ? `@${b.username}` : `<a href="tg://user?id=${b.telegramId}">Покупатель</a>`) : 'Удалён';
   const sLink = s ? (s.username ? `@${s.username}` : `<a href="tg://user?id=${s.telegramId}">Продавец</a>`) : 'Удалён';
 
+  const productName = order.qty > 1 ? `${escapeHtml(order.productId?.name || '?')} (x${order.qty})` : escapeHtml(order.productId?.name || '?');
   const text =
     `⚠️ <b>Спор по заказу <code>${order._id}</code></b>\n\n` +
-    `📦 Товар: <b>${escapeHtml(order.productId?.name || '?')}</b>\n` +
+    `📦 Товар: <b>${productName}</b>\n` +
     `💰 Оплата: <b>${order.price} USDT</b> (Продавцу: <b>${order.sellerPayout} USDT</b>)\n\n` +
     `👤 Покупатель: ${bLink}\n` +
     `🏪 Продавец: ${sLink}\n\n` +

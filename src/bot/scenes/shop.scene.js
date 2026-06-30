@@ -167,7 +167,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
 
   const buttons = [];
   if (!outOfStock) {
-    if (product.type === 'key') {
+    if (product.type !== 'gpt_activation') {
       buttons.push([Markup.button.callback(t('btn_buy'), `shop:qty:${productId}:${fromPage}:1`)]);
     } else {
       buttons.push([Markup.button.callback(t('btn_buy'), `shop:buy:${productId}:${fromPage}:1`)]);
@@ -404,25 +404,43 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       await freshUser.save(sessionOptions);
       ctx.user = freshUser;
 
-      for (let i = 0; i < qty; i++) {
-        const allocatedKey = allocatedKeys[i] || null;
+      if (product.type === 'manual') {
         const order = new Order({
           userId: user._id,
           productId: product._id,
           provider,
-          price: effectivePrice,
-          costPrice: product.costPrice || 0,
-          status: product.type === 'gpt_activation' ? 'awaiting_token' : isAutoKeyProduct ? 'completed' : 'pending',
-          keyId: allocatedKey ? allocatedKey._id : null,
-          confirmedAt: isAutoKeyProduct ? new Date() : null,
-          activationResult: isAutoKeyProduct ? 'Ключ выдан автоматически' : null,
+          price: totalCost,
+          qty: qty,
+          costPrice: (product.costPrice || 0) * qty,
+          status: 'pending',
+          keyId: null,
+          confirmedAt: null,
+          activationResult: null,
         });
         await order.save(sessionOptions);
         orders.push(order);
+      } else {
+        for (let i = 0; i < qty; i++) {
+          const allocatedKey = allocatedKeys[i] || null;
+          const order = new Order({
+            userId: user._id,
+            productId: product._id,
+            provider,
+            price: effectivePrice,
+            qty: 1,
+            costPrice: product.costPrice || 0,
+            status: product.type === 'gpt_activation' ? 'awaiting_token' : isAutoKeyProduct ? 'completed' : 'pending',
+            keyId: allocatedKey ? allocatedKey._id : null,
+            confirmedAt: isAutoKeyProduct ? new Date() : null,
+            activationResult: isAutoKeyProduct ? 'Ключ выдан автоматически' : null,
+          });
+          await order.save(sessionOptions);
+          orders.push(order);
 
-        if (allocatedKey) {
-          allocatedKey.usedByOrder = order._id;
-          await allocatedKey.save(sessionOptions);
+          if (allocatedKey) {
+            allocatedKey.usedByOrder = order._id;
+            await allocatedKey.save(sessionOptions);
+          }
         }
       }
 
@@ -479,10 +497,20 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
         sellerTotalPayout = parseFloat((payoutPerItem * qty).toFixed(8));
         
         const orderIds = orders.map(o => o._id);
-        await Order.updateMany(
-          { _id: { $in: orderIds } },
-          { $set: { sellerId: seller._id, sellerPayout: payoutPerItem } }
-        );
+        
+        if (product.type === 'manual') {
+          // Для manual у нас всего 1 заказ с qty = N
+          await Order.updateMany(
+            { _id: { $in: orderIds } },
+            { $set: { sellerId: seller._id, sellerPayout: sellerTotalPayout } }
+          );
+        } else {
+          // Для key у нас N заказов с qty = 1
+          await Order.updateMany(
+            { _id: { $in: orderIds } },
+            { $set: { sellerId: seller._id, sellerPayout: payoutPerItem } }
+          );
+        }
         
         // Отправляем одно сводное уведомление продавцу
         const summaryOrder = { ...orders[0].toObject(), sellerPayout: sellerTotalPayout, qty };
@@ -559,10 +587,12 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     await ctx.answerCbQuery().catch(() => {});
   } else {
     const productLbl = lang === 'en' ? 'Product' : 'Товар';
+    const qtyLbl = lang === 'en' ? 'Quantity' : 'Количество';
     const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
     const text =
       `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ создан'}</b>\n\n` +
       `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
+      `📊 ${qtyLbl}: <b>${qty}</b>\n` +
       `💰 ${chargedLbl}: ${totalCost} USDT\n\n` +
       `⏳ ${lang === 'en' ? 'An operator will process your order shortly.' : 'Оператор обработает заказ в ближайшее время.'}`;
 

@@ -209,7 +209,8 @@ const completeSellerOrder = async (ctx, orderId) => {
 
   await ctx.answerCbQuery().catch(() => {});
 
-  const text = ctx.t('seller_order_deliver_title', { name: escapeHtml(order.productId?.name || 'Товар') });
+  const productName = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
+  const text = ctx.t('seller_order_deliver_title', { name: productName });
 
   try {
     await ctx.editMessageText(text, {
@@ -252,7 +253,8 @@ const handleSellerDelivery = async (ctx) => {
   // Если нет покупателя (вдруг удалён), заказ всё равно закроем
   if (buyer) {
     const buyerLang = buyer.language || 'ru';
-    let buyerDeliveryText = i18n.translate(buyerLang, 'buyer_confirmation_title', { name: escapeHtml(order.productId?.name || 'Товар') });
+    const productName = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
+    let buyerDeliveryText = i18n.translate(buyerLang, 'buyer_confirmation_title', { name: productName });
     let dataStr = '';
     
     try {
@@ -293,8 +295,9 @@ const handleSellerDelivery = async (ctx) => {
   const settings = await getSettings();
   const autoConfirmHours = settings.autoConfirmHours || 24;
 
+  const productName2 = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
   const text = ctx.t('seller_order_awaiting_confirmation_success', {
-    name: escapeHtml(order.productId?.name || 'Товар'),
+    name: productName2,
     payout: (order.sellerPayout || 0).toFixed(2),
     hours: autoConfirmHours
   });

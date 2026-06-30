@@ -62,11 +62,13 @@ const notifyAdminNewOrder = async (order, user, product) => {
   const digestLine = `@${user.username || user.telegramId} — ${product?.name || 'Товар'} (${order.price} USDT)`;
   if (digest.queue('NEW_ORDER', digestLine)) return;
 
+  const qtyLine = order.qty > 1 ? `📊 Количество: ${order.qty} шт\n` : '';
   const msg =
     `🛒 <b>Новый заказ!</b>\n\n` +
     `📋 ID: <code>${order._id}</code>\n` +
     `👤 Пользователь: ${h(user.firstName)} (@${h(user.username || 'нет')}) | <code>${h(user.telegramId)}</code>\n` +
     `📦 Товар: ${product?.icon || '📦'} ${h(product?.name, 'Товар')}\n` +
+    qtyLine +
     `🧩 Поставщик: ${h(providerLabel)}\n` +
     `💰 Сумма: ${order.price} USDT (~${toRub(order.price)} ₽)\n` +
     `📅 Дата: ${new Date().toLocaleString('ru-RU')}`;
@@ -384,24 +386,31 @@ const notifySellerNewOrder = async (seller, order, product, buyer) => {
 
   const buyerTag = buyer?.username ? `@${h(buyer.username)}` : `ID ${h(buyer?.telegramId)}`;
 
-  const msg = i18n.translate(sellerLang, 'seller_new_order_title', {
+  const productName = order.qty > 1 ? `${h(product?.name, 'Товар')} (x${order.qty})` : h(product?.name, 'Товар');
+
+  let msg = i18n.translate(sellerLang, 'seller_new_order_title', {
     icon: h(product?.icon || '📦'),
-    productName: h(product?.name, 'Товар'),
+    productName: productName,
     orderId: order._id,
     buyerTag,
     payout: order.sellerPayout.toFixed(2)
   });
 
-  const keyboard = {
-    inline_keyboard: [
-      [{ text: i18n.translate(sellerLang, 'seller_new_order_btn_complete'), callback_data: `seller:order:complete:${order._id}` }],
-    ],
-  };
+  const keyboard = {};
+  if (order.status !== 'completed') {
+    keyboard.reply_markup = {
+      inline_keyboard: [
+        [{ text: i18n.translate(sellerLang, 'seller_new_order_btn_complete'), callback_data: `seller:order:complete:${order._id}` }],
+      ],
+    };
+  } else {
+    msg += `\n\n<i>${sellerLang === 'en' ? '✅ Product issued automatically.' : '✅ Товар выдан автоматически.'}</i>`;
+  }
 
   try {
     await botInstance.telegram.sendMessage(seller.telegramId, msg, {
       parse_mode: 'HTML',
-      reply_markup: keyboard,
+      ...keyboard,
     });
   } catch (err) {
     logger.warn(`❌ Не удалось уведомить продавца ${seller.telegramId}: ${err.message}`);

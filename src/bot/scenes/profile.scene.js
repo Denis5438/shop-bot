@@ -145,7 +145,9 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
   for (const order of orders) {
     const date = new Date(order.createdAt).toLocaleDateString('ru-RU');
     const status = localizedOrderStatus(ctx, order.status);
-    text += `<blockquote>${escapeHtml(order.productId?.icon || '📦')} <b>${escapeHtml(order.productId?.name || 'Товар удалён')}</b>\n`;
+    const productName = escapeHtml(order.productId?.name || 'Товар удалён');
+    const qtyText = order.qty > 1 ? ` (x${order.qty})` : '';
+    text += `<blockquote>${escapeHtml(order.productId?.icon || '📦')} <b>${productName}${qtyText}</b>\n`;
     text += `   ${status}  ·  ${order.price} USDT  ·  ${date}\n`;
     text += `   <code>${order._id}</code></blockquote>\n\n`;
   }
