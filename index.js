@@ -4,6 +4,7 @@ const createBot = require('./src/bot/index');
 const currencyService = require('./src/services/currency.service');
 const autoConfirmCron = require('./src/cron/autoConfirm');
 const logger = require('./src/config/logger');
+const notif = require('./src/services/notification.service');
 const { startHealthServer, stopHealthServer } = require('./src/bot/health-server');
 
 const main = async () => {
@@ -50,10 +51,14 @@ const main = async () => {
 // Глобальные обработчики ошибок для предотвращения падения процесса
 process.on('unhandledRejection', (reason, promise) => {
   logger.error(`💥 Необработанное исключение (unhandledRejection): ${reason}`);
+  const msg = `⚠️ <b>Unhandled Rejection</b>\n\n<pre>${String(reason).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+  notif.sendToAdmins(msg, { parse_mode: 'HTML' }).catch(() => {});
 });
 
 process.on('uncaughtException', (err) => {
   logger.error(`💥 Критическая ошибка (uncaughtException): ${err.message}`);
+  const msg = `⚠️ <b>Uncaught Exception</b>\n\n<pre>${String(err.message).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+  notif.sendToAdmins(msg, { parse_mode: 'HTML' }).catch(() => {});
   // process.exit(1); // Опционально: если ошибка критичная, лучше падать, иначе - логгировать
 });
 

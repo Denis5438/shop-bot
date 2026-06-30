@@ -10,6 +10,7 @@ const userMiddleware = require('./middlewares/user');
 const i18nMiddleware = require('./middlewares/i18n');
 const { authMiddleware, adminMiddleware } = require('./middlewares/auth');
 const { tosMiddleware, tosGateKeyboard, tosGateText, PRIVACY_URL, AGREEMENT_URL } = require('./middlewares/tos');
+const sessionClearMiddleware = require('./middlewares/sessionClear');
 
 // Keyboards
 const { mainKeyboard, languageKeyboard } = require('./keyboards/main.keyboard');
@@ -83,6 +84,7 @@ const createBot = () => {
 
   // Session
   bot.use(session({ defaultSession: () => ({}) }));
+  bot.use(sessionClearMiddleware());
 
   // Scenes (Stage)
   const stage = new Scenes.Stage([tokenCollectionScene]);
@@ -1639,6 +1641,11 @@ const createBot = () => {
     if (err.message && err.message.includes('query is too old')) return;
 
     logger.error(`❌ Ошибка бота: ${err.message}`, { stack: err.stack });
+    
+    // Оповещаем админов о критической ошибке
+    const errorMsg = `⚠️ <b>Критическая ошибка в боте!</b>\n\n<pre>${escapeHtml(err.message)}</pre>`;
+    notif.sendToAdmins(errorMsg, { parse_mode: 'HTML' }).catch(() => {});
+
     ctx.reply('❌ Произошла ошибка. Попробуйте ещё раз.')
       .catch(() => { });
   });
