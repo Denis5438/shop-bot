@@ -42,6 +42,7 @@ const showProfile = async (ctx) => {
     .populate('productId');
 
   const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
   const levelLabel = t(level.labelKey).replace(/^[^\s]+\s/, ''); // убираем эмодзи в начале для подписи
 
   let bannerText = '';
