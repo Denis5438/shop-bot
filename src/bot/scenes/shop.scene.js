@@ -211,16 +211,18 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
   const text = t('shop_qty_title') + '\n\n' + t('shop_qty_total', { qty, total });
 
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const lang = ctx.user?.language || 'ru';
+  const unit = lang === 'en' ? 'pcs' : 'шт';
   const buttons = [
     [
       Markup.button.callback('➖', `shop:qty_dec:${productId}:${safePage}:${qty}`),
-      Markup.button.callback(`${qty} шт`, 'shop:noop'),
+      Markup.button.callback(`${qty} ${unit}`, 'shop:noop'),
       Markup.button.callback('➕', `shop:qty_inc:${productId}:${safePage}:${qty}`),
     ],
     [
-      Markup.button.callback('5 шт', `shop:qty_set:${productId}:${safePage}:5`),
-      Markup.button.callback('10 шт', `shop:qty_set:${productId}:${safePage}:10`),
-      Markup.button.callback('20 шт', `shop:qty_set:${productId}:${safePage}:20`),
+      Markup.button.callback(`5 ${unit}`, `shop:qty_set:${productId}:${safePage}:5`),
+      Markup.button.callback(`10 ${unit}`, `shop:qty_set:${productId}:${safePage}:10`),
+      Markup.button.callback(`20 ${unit}`, `shop:qty_set:${productId}:${safePage}:20`),
     ],
     [Markup.button.callback(t('shop_qty_confirm_btn'), `shop:buy:${productId}:${safePage}:${qty}`)],
     [Markup.button.callback(t('btn_back'), `shop:product:${productId}:${safePage}`)]
