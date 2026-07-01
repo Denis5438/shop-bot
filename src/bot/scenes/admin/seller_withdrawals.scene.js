@@ -243,7 +243,7 @@ const startAddSeller = async (ctx) => {
   await ctx.answerCbQuery().catch(() => {});
   await ctx.reply(
     `➕ <b>Добавить продавца</b>\n\n` +
-    `Введите @username будущего продавца (без @):\n` +
+    `Введите <b>@username</b> (без @) или <b>Telegram ID</b> будущего продавца:\n` +
     `<i>Когда пользователь зайдёт в бот, он автоматически будет привязан к этому аккаунту продавца.</i>`,
     {
       parse_mode: 'HTML',
@@ -256,9 +256,9 @@ const handleAddSellerInput = async (ctx) => {
   const session = ctx.session || {};
   if (session.adminAction !== 'add_seller') return false;
 
-  const username = (ctx.message?.text || '').trim().replace(/^@/, '');
-  if (!username || username.length < 2) {
-    await ctx.reply('❌ Некорректный username. Введите без @:');
+  const input = (ctx.message?.text || '').trim().replace(/^@/, '');
+  if (!input || input.length < 2) {
+    await ctx.reply('❌ Некорректный ввод. Введите ID или username (без @):');
     return true;
   }
 
@@ -266,28 +266,61 @@ const handleAddSellerInput = async (ctx) => {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
   }
 
-  let seller = await Seller.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
-  if (seller) {
-    ctx.session.adminAction = null;
-    await ctx.reply(`⚠️ Продавец @${seller.username} уже существует!`, {
-      ...Markup.inlineKeyboard([[Markup.button.callback('К списку продавцов', 'admin:sellers:list')]]),
-    });
-    return true;
-  }
-
-  seller = new Seller({ username: username.toLowerCase(), displayName: username });
-  await seller.save();
-
   const User = require('../../../models/User');
-  const user = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
-  if (user) {
-    seller.telegramId = user.telegramId;
+  let seller;
+  let isNumber = /^\d+$/.test(input);
+
+  if (isNumber) {
+    const telegramId = parseInt(input, 10);
+    seller = await Seller.findOne({ telegramId });
+    if (seller) {
+      ctx.session.adminAction = null;
+      await ctx.reply(`⚠️ Продавец с таким ID уже существует!`, {
+        ...Markup.inlineKeyboard([[Markup.button.callback('К списку продавцов', 'admin:sellers:list')]]),
+      });
+      return true;
+    }
+
+    let user = await User.findOne({ telegramId });
+    let username = user?.username || `id${telegramId}`;
+    
+    // Убедимся, что username уникален
+    let existingSellerByUsername = await Seller.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
+    if (existingSellerByUsername && existingSellerByUsername.telegramId !== telegramId) {
+      username = `id${telegramId}_${Date.now().toString().slice(-4)}`;
+    }
+
+    seller = new Seller({ telegramId, username, displayName: user?.firstName || username });
     await seller.save();
-    await notif.notifySellerWelcome(seller);
+
+    if (user) {
+      await notif.notifySellerWelcome(seller);
+    }
+  } else {
+    // Ввод username
+    seller = await Seller.findOne({ username: { $regex: new RegExp(`^${input}$`, 'i') } });
+    if (seller) {
+      ctx.session.adminAction = null;
+      await ctx.reply(`⚠️ Продавец @${seller.username} уже существует!`, {
+        ...Markup.inlineKeyboard([[Markup.button.callback('К списку продавцов', 'admin:sellers:list')]]),
+      });
+      return true;
+    }
+
+    seller = new Seller({ username: input.toLowerCase(), displayName: input });
+    await seller.save();
+
+    const user = await User.findOne({ username: { $regex: new RegExp(`^${input}$`, 'i') } });
+    if (user) {
+      seller.telegramId = user.telegramId;
+      await seller.save();
+      await notif.notifySellerWelcome(seller);
+    }
   }
 
   ctx.session.adminAction = null;
-  await ctx.reply(`✅ Продавец @${seller.username} успешно добавлен!`, {
+  await ctx.reply(`✅ Продавец <b>${escapeHtml(seller.displayName)}</b> успешно добавлен!`, {
+    parse_mode: 'HTML',
     ...Markup.inlineKeyboard([[Markup.button.callback('👤 Профиль', `admin:sellers:view:${seller._id}`)]]),
   });
   return true;

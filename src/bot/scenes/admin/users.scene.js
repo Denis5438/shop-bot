@@ -2,6 +2,7 @@ const { Markup } = require('telegraf');
 const User = require('../../../models/User');
 const Order = require('../../../models/Order');
 const Transaction = require('../../../models/Transaction');
+const Seller = require('../../../models/Seller');
 const { toRub } = require('../../../services/currency.service');
 const mongoose = require('mongoose');
 const { escapeHtml } = require('../../utils/ui');
@@ -152,6 +153,7 @@ const showUserProfile = async (ctx, userId) => {
 
   const ordersCount = await Order.countDocuments({ userId: user._id });
   const referralsCount = await User.countDocuments({ referredBy: user._id });
+  const isSeller = await Seller.exists({ telegramId: user.telegramId, isActive: true });
 
   const text =
     `👤 <b>Пользователь</b>\n\n` +
@@ -176,6 +178,11 @@ const showUserProfile = async (ctx, userId) => {
       user.role === 'admin'
         ? Markup.button.callback('👤 Снять права', `admin:user:demote:${user._id}`)
         : Markup.button.callback('🔧 Сделать админом', `admin:user:promote:${user._id}`),
+    ],
+    [
+      isSeller
+        ? Markup.button.callback('👔 Снять селлера', `admin:user:seller_toggle:${user._id}`)
+        : Markup.button.callback('👔 Сделать селлером', `admin:user:seller_toggle:${user._id}`),
     ],
     [Markup.button.callback('🕹 Перехватить управление', `admin:takeover:start:${user._id}`)],
     [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)],
@@ -266,6 +273,38 @@ const toggleRole = async (ctx, userId) => {
   if (!user) return ctx.answerCbQuery('❌ Не найден', { show_alert: true });
   user.role = user.role === 'admin' ? 'user' : 'admin';
   await user.save();
+  await showUserProfile(ctx, userId);
+};
+
+const toggleSeller = async (ctx, userId) => {
+  const user = await User.findById(userId);
+  if (!user) return ctx.answerCbQuery('❌ Не найден', { show_alert: true });
+
+  let seller = await Seller.findOne({ telegramId: user.telegramId });
+  if (seller) {
+    seller.isActive = !seller.isActive;
+    await seller.save();
+    await ctx.answerCbQuery(seller.isActive ? '✅ Назначен продавцом!' : '❌ Права продавца сняты');
+  } else {
+    // Пытаемся создать нового селлера
+    let username = user.username || String(user.telegramId);
+    let existingSeller = await Seller.findOne({ username: { $regex: new RegExp(`^${escapeRegExp(username)}$`, 'i') } });
+    if (existingSeller && existingSeller.telegramId && existingSeller.telegramId !== user.telegramId) {
+      username = `id${user.telegramId}`; // username занят
+    } else if (existingSeller && !existingSeller.telegramId) {
+      existingSeller.telegramId = user.telegramId;
+      existingSeller.isActive = true;
+      existingSeller.displayName = user.firstName || username;
+      await existingSeller.save();
+      await ctx.answerCbQuery('✅ Назначен продавцом!');
+      await showUserProfile(ctx, userId);
+      return;
+    }
+    
+    seller = new Seller({ telegramId: user.telegramId, username, displayName: user.firstName || username, isActive: true });
+    await seller.save();
+    await ctx.answerCbQuery('✅ Назначен продавцом!');
+  }
   await showUserProfile(ctx, userId);
 };
 
@@ -360,6 +399,7 @@ module.exports = {
   handleBalanceChange,
   toggleBan,
   toggleRole,
+  toggleSeller,
   showUserTransactions,
   startTakeover,
   stopTakeover,

@@ -1157,6 +1157,9 @@ const createBot = () => {
   bot.action(/^admin:user:(promote|demote):(.+)$/, adminMiddleware, async (ctx) => {
     await usersScene.toggleRole(ctx, ctx.match[2]);
   });
+  bot.action(/^admin:user:seller_toggle:(.+)$/, adminMiddleware, async (ctx) => {
+    await usersScene.toggleSeller(ctx, ctx.match[1]);
+  });
 
   bot.action(/^admin:user:txs:(.+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
