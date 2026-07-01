@@ -5,7 +5,7 @@ const Order = require('../../../models/Order');
 const Seller = require('../../../models/Seller');
 const keysScene = require('./keys.scene');
 const notif = require('../../../services/notification.service');
-const { escapeHtml } = require('../../utils/ui');
+const { escapeHtml, extractTextWithEmojis } = require('../../utils/ui');
 const {
   buildKeyQueryForProduct,
   getProviderLabel,
@@ -339,7 +339,7 @@ const handleProductInput = async (ctx) => {
     if (!np.type) return true;
 
     if (!np.name) {
-      np.name = ctx.message.text.trim();
+      np.name = extractTextWithEmojis(ctx.message).trim();
       ctx.session.newProduct = np;
       await ctx.reply('Введите цену продажи в USDT\nПример: <code>1.6</code>', {
         parse_mode: 'HTML',
@@ -370,7 +370,7 @@ const handleProductInput = async (ctx) => {
     }
 
     if (!np.description) {
-      np.description = ctx.message.text.trim();
+      np.description = extractTextWithEmojis(ctx.message).trim();
       ctx.session.newProduct = np;
       await ctx.reply(
         'Введите описание товара (на английском):\nПример: <code>ChatGPT Plus subscription activation</code>',
@@ -380,7 +380,7 @@ const handleProductInput = async (ctx) => {
     }
 
     if (!np.descriptionEn) {
-      np.descriptionEn = ctx.message.text.trim();
+      np.descriptionEn = extractTextWithEmojis(ctx.message).trim();
       ctx.session.newProduct = np;
       await ctx.reply('Введите название товара на английском:\nПример: <code>ChatGPT Plus</code>', {
         parse_mode: 'HTML',
@@ -389,14 +389,14 @@ const handleProductInput = async (ctx) => {
     }
 
     if (!np.nameEn) {
-      np.nameEn = ctx.message.text.trim();
+      np.nameEn = extractTextWithEmojis(ctx.message).trim();
       ctx.session.newProduct = np;
       await ctx.reply('Введите иконку (эмодзи) для товара\nПример: 🤖');
       return true;
     }
 
     if (!np.icon) {
-      np.icon = ctx.message.text.trim();
+      np.icon = extractTextWithEmojis(ctx.message).trim();
 
       const provider = normalizeProviderForType(np.type, 'local');
       const product = new Product({
@@ -439,7 +439,7 @@ const handleProductInput = async (ctx) => {
 
   if (session.adminAction === 'edit_product_field') {
     const { productId, field } = session;
-    const value = ctx.message.text.trim();
+    const value = extractTextWithEmojis(ctx.message).trim();
 
     const update = {};
     if (field === 'price' || field === 'costPrice') {

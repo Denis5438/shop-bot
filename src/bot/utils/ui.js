@@ -201,12 +201,40 @@ const parseAmount = (raw) => {
   return { ok: true, value: num };
 };
 
-const escapeHtml = (value) => String(value ?? '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
+const extractTextWithEmojis = (message) => {
+  if (!message || !message.text) return '';
+  const text = message.text;
+  const entities = message.entities || [];
+  
+  if (entities.length === 0) return text;
+
+  let result = '';
+  let lastIndex = 0;
+  
+  for (const entity of entities) {
+    if (entity.type === 'custom_emoji') {
+      result += text.substring(lastIndex, entity.offset);
+      const emojiChar = text.substring(entity.offset, entity.offset + entity.length);
+      result += `<tg-emoji emoji-id="${entity.custom_emoji_id}">${emojiChar}</tg-emoji>`;
+      lastIndex = entity.offset + entity.length;
+    }
+  }
+  result += text.substring(lastIndex);
+  
+  return result;
+};
+
+const escapeHtml = (value) => {
+  let escaped = String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  escaped = escaped.replace(/&lt;tg-emoji emoji-id=&quot;(\d+)&quot;&gt;(.*?)&lt;\/tg-emoji&gt;/g, '<tg-emoji emoji-id="$1">$2</tg-emoji>');
+  return escaped;
+};
 
 module.exports = {
   safeEdit,
@@ -216,6 +244,7 @@ module.exports = {
   emptyScreen,
   confirmScreen,
   parseAmount,
+  extractTextWithEmojis,
   escapeHtml,
   EMOJI,
   TEXTS,
