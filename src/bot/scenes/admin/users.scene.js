@@ -158,7 +158,7 @@ const showUserProfile = async (ctx, userId) => {
   const text =
     `👤 <b>Пользователь</b>\n\n` +
     `🆔 TG ID: <code>${escapeHtml(user.telegramId)}</code>\n` +
-    `📛 Имя: ${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}\n` +
+    `📛 Имя: <a href="tg://user?id=${user.telegramId}">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</a>\n` +
     `👤 Username: @${escapeHtml(user.username || 'нет')}\n` +
     `🌐 Язык: ${escapeHtml(user.language)}\n` +
     `🔘 Роль: ${escapeHtml(user.role)}\n` +
