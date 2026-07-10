@@ -825,6 +825,11 @@ const createBot = () => {
     await shopScene.showProduct(ctx, productId, page);
   });
 
+  bot.action(/^shop:notify:([^:]+)$/, async (ctx) => {
+    const productId = ctx.match[1];
+    await shopScene.handleWaitlist(ctx, productId);
+  });
+
   bot.action(/^shop:qty:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
@@ -962,6 +967,30 @@ const createBot = () => {
 
   bot.action(/^admin:product:toggle:(.+)$/, adminMiddleware, async (ctx) => {
     await productsScene.toggleProduct(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:product:field:(\w+):(.+)$/, adminMiddleware, async (ctx) => {
+    const field = ctx.match[1];
+    const productId = ctx.match[2];
+    ctx.session.adminAction = 'edit_product_field';
+    ctx.session.field = field;
+    ctx.session.productId = productId;
+    await ctx.reply(`Введите новое значение для поля <b>${field}</b>:`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+    });
+    await ctx.answerCbQuery();
+  });
+
+  bot.action(/^admin:product:set_stock:(.+)$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    ctx.session.adminAction = 'set_manual_stock';
+    ctx.session.productId = productId;
+    await ctx.reply(`Введите количество товара в наличии (цифрой).\n\nНапишите <b>-1</b>, если хотите сделать остаток бесконечным (∞):`, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+    });
+    await ctx.answerCbQuery();
   });
 
   bot.action(/^admin:product:delete_confirm:(.+)$/, adminMiddleware, async (ctx) => {

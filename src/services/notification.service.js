@@ -466,6 +466,34 @@ const notifyAdminSellerWithdrawal = async (seller, withdrawal) => {
   await sendToAdmins(msg);
 };
 
+const notifyWaitlist = async (product) => {
+  const Waitlist = require('../models/Waitlist');
+  const bot = require('../bot/bot');
+
+  const usersWaiting = await Waitlist.find({ productId: product._id }).populate('userId');
+  if (!usersWaiting.length) return;
+
+  for (const wait of usersWaiting) {
+    if (wait.userId && wait.userId.telegramId) {
+      try {
+        await bot.telegram.sendMessage(
+          wait.userId.telegramId,
+          `🎉 <b>Отличные новости!</b>\n\nТовар ${product.icon || '📦'} <b>${product.name}</b> снова в наличии!\n\nУспейте приобрести, пока не разобрали!`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[{ text: '🛒 Перейти к товару', callback_data: `shop:product:${product._id}` }]],
+            },
+          }
+        );
+      } catch (e) {}
+    }
+  }
+
+  // Remove them from waitlist since they've been notified
+  await Waitlist.deleteMany({ productId: product._id });
+};
+
 module.exports = {
   setBot,
   sendToAdmins,
@@ -484,6 +512,7 @@ module.exports = {
   notifySellerWithdrawalResult,
   notifyAdminSellerWithdrawal,
   notifySellerWelcome,
+  notifyWaitlist,
   // №16 Сегментация
   buildSegmentQuery,
   countSegment,

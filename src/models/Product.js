@@ -9,6 +9,7 @@ const productSchema = new mongoose.Schema({
   costPrice: { type: Number, default: 0 },
   icon: { type: String, default: '📦' },
   type: { type: String, enum: ['key', 'gpt_activation', 'manual'], default: 'key' },
+  manualStock: { type: Number, default: -1 },
   provider: {
     type: String,
     enum: ['local', 'u1traby'],

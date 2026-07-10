@@ -58,7 +58,7 @@ const showProductEdit = async (ctx, productId) => {
   if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
 
   const stock = product.type === 'manual'
-    ? '∞'
+    ? (product.manualStock === -1 ? '∞' : product.manualStock)
     : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
 
   const deliveryLabel = product.deliveryMethod === 'ready_account'
@@ -92,8 +92,9 @@ const showProductEdit = async (ctx, productId) => {
     [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
   ];
 
-  // Кнопка управления продавцом (только для ручных товаров)
+  // Кнопка управления продавцом и остатком (только для ручных товаров)
   if (product.type === 'manual') {
+    buttons.push([Markup.button.callback('📦 Задать остаток', `admin:product:set_stock:${productId}`)]);
     buttons.push([Markup.button.callback('👤 Назначить продавца', `admin:product:seller:${productId}`)]);
   }
 
@@ -461,6 +462,31 @@ const handleProductInput = async (ctx) => {
 
     await ctx.reply('✅ Изменено!', {
       ...Markup.inlineKeyboard([[Markup.button.callback('📦 К товарам', 'admin:products')]]),
+    });
+    return true;
+  }
+
+  if (session.adminAction === 'set_manual_stock') {
+    const { productId } = session;
+    const value = ctx.message.text.trim();
+    const stock = parseInt(value, 10);
+
+    if (Number.isNaN(stock) || (stock < 0 && stock !== -1)) {
+      await ctx.reply('❌ Неверное число. Введите число >= 0 или -1 для бесконечности.');
+      return true;
+    }
+
+    const product = await Product.findByIdAndUpdate(productId, { manualStock: stock }, { new: true });
+
+    if (stock > 0 || stock === -1) {
+      await notif.notifyWaitlist(product);
+    }
+
+    ctx.session.adminAction = null;
+    ctx.session.productId = null;
+
+    await ctx.reply(`✅ Остаток успешно установлен: ${stock === -1 ? '∞' : stock}`, {
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад к товару', `admin:product:edit:${productId}`)]]),
     });
     return true;
   }

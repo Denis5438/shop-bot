@@ -8,6 +8,7 @@ const {
   resolveProductProvider,
 } = require('../../../services/provider.service');
 const { escapeHtml } = require('../../utils/ui');
+const notif = require('../../../services/notification.service');
 
 const showKeysList = async (ctx) => {
   const products = await Product.find({ type: { $in: ['key', 'gpt_activation'] } });
@@ -164,6 +165,8 @@ const handleKeysInput = async (ctx) => {
 
   const docs = newKeys.map((value) => ({ productId, provider, value }));
   await Key.insertMany(docs);
+
+  await notif.notifyWaitlist(product);
 
   const skipped = lines.length - newKeys.length;
   ctx.session.adminAction = null;

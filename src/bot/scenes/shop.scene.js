@@ -3,6 +3,7 @@ const Product = require('../../models/Product');
 const Key = require('../../models/Key');
 const Order = require('../../models/Order');
 const Transaction = require('../../models/Transaction');
+const Waitlist = require('../../models/Waitlist');
 const { ITEMS_PER_PAGE } = require('../../config');
 const { toRub } = require('../../services/currency.service');
 const { getSettings } = require('../../services/settingsCache.service');
@@ -53,7 +54,9 @@ const stockIndicator = (stock, t) => {
 };
 
 const getStock = async (product) => {
-  if (product.type === 'manual') return '∞';
+  if (product.type === 'manual') {
+    return product.manualStock === -1 ? '∞' : product.manualStock;
+  }
   return Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
 };
 
@@ -173,7 +176,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
       buttons.push([Markup.button.callback(t('btn_buy'), `shop:buy:${productId}:${fromPage}:1`)]);
     }
   } else {
-    buttons.push([Markup.button.callback(t('shop_out_of_stock'), 'shop:noop')]);
+    buttons.push([Markup.button.callback('🔔 Уведомить о наличии', `shop:notify:${productId}`)]);
   }
   if (product.type === 'gpt_activation') {
     buttons.push([Markup.button.callback(t('shop_check_token'), `shop:check_token:${productId}`)]);
@@ -188,6 +191,26 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     await ctx.reply(text, opts).catch(() => {});
   }
   await ctx.answerCbQuery().catch(() => {});
+};
+
+const handleWaitlist = async (ctx, productId) => {
+  try {
+    const product = await Product.findById(productId);
+    if (!product || !product.isActive) {
+      return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+    }
+    
+    // Check if they are already in waitlist
+    const existing = await Waitlist.findOne({ userId: ctx.user._id, productId });
+    if (existing) {
+      return ctx.answerCbQuery('🔔 Вы уже подписаны на уведомления об этом товаре!', { show_alert: true });
+    }
+
+    await new Waitlist({ userId: ctx.user._id, productId }).save();
+    return ctx.answerCbQuery('✅ Вы подписались! Как только товар появится, мы пришлем уведомление.', { show_alert: true });
+  } catch (err) {
+    return ctx.answerCbQuery('❌ Ошибка подписки', { show_alert: true });
+  }
 };
 
 const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
@@ -407,6 +430,11 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       ctx.user = freshUser;
 
       if (product.type === 'manual') {
+        if (product.manualStock !== -1) {
+          if (product.manualStock < qty) throw new Error('OUT_OF_STOCK');
+          product.manualStock -= qty;
+        }
+
         const order = new Order({
           userId: user._id,
           productId: product._id,
