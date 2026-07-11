@@ -468,7 +468,7 @@ const notifyAdminSellerWithdrawal = async (seller, withdrawal) => {
 
 const notifyWaitlist = async (product) => {
   const Waitlist = require('../models/Waitlist');
-  const bot = require('../bot/bot');
+  if (!botInstance) return;
 
   const usersWaiting = await Waitlist.find({ productId: product._id }).populate('userId');
   if (!usersWaiting.length) return;
@@ -476,7 +476,7 @@ const notifyWaitlist = async (product) => {
   for (const wait of usersWaiting) {
     if (wait.userId && wait.userId.telegramId) {
       try {
-        await bot.telegram.sendMessage(
+        await botInstance.telegram.sendMessage(
           wait.userId.telegramId,
           `🎉 <b>Отличные новости!</b>\n\nТовар ${product.icon || '📦'} <b>${product.name}</b> снова в наличии!\n\nУспейте приобрести, пока не разобрали!`,
           {
