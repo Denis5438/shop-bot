@@ -666,4 +666,4 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   }
 };
 
-module.exports = { showShopPage, showProduct, confirmPurchase, processPurchase, showQuantitySelect };
+module.exports = { showShopPage, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist };
