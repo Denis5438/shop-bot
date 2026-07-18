@@ -445,7 +445,7 @@ const createBot = () => {
     await categoriesScene.showCategoryEdit(ctx, ctx.match[1]);
   });
   bot.action(/^admin:category:toggle:([^:]+)$/, isAdmin, async (ctx) => {
-    const Category = require('../../models/Category');
+    const Category = require('../models/Category');
     const cat = await Category.findById(ctx.match[1]);
     if (cat) {
       cat.isActive = !cat.isActive;
@@ -454,8 +454,8 @@ const createBot = () => {
     await categoriesScene.showCategoryEdit(ctx, ctx.match[1]);
   });
   bot.action(/^admin:category:del:([^:]+)$/, isAdmin, async (ctx) => {
-    const Category = require('../../models/Category');
-    const Product = require('../../models/Product');
+    const Category = require('../models/Category');
+    const Product = require('../models/Product');
     const hasProducts = await Product.exists({ categoryId: ctx.match[1] });
     if (hasProducts) {
       return ctx.answerCbQuery('❌ Сначала удалите или переместите все товары из этой категории!', { show_alert: true });
@@ -528,7 +528,7 @@ const createBot = () => {
     ctx.session.productId = ctx.match[1];
     ctx.session.field = 'category';
 
-    const Category = require('../../models/Category');
+    const Category = require('../models/Category');
     const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
     const buttons = categories.map(cat => [
       Markup.button.callback(`${cat.icon} ${cat.name}`, `admin:product:set_cat:${cat._id}`)
