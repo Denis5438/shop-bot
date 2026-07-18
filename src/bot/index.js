@@ -470,6 +470,7 @@ const createBot = () => {
     const session = ctx.session;
     if (session.adminAction !== 'add_product' && session.adminAction !== 'edit_product_field') return;
     
+    const Product = require('../models/Product');
     const catId = ctx.match[1] === 'none' ? null : ctx.match[1];
     
     if (session.adminAction === 'add_product') {
