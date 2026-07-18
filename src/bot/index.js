@@ -25,9 +25,7 @@ const referralScene = require('./scenes/referral.scene');
 // Admin Scenes
 const adminScene = require('./scenes/admin/admin.scene');
 const productsScene = require('./scenes/admin/products.scene');
-const sellerKeysScene = require('./scenes/seller/keys.scene');
-const sellerOrdersScene = require('./scenes/seller/orders.scene');
-const sellerDisputesScene = require('./scenes/seller/disputes.scene');
+
 const categoriesScene = require('./scenes/admin/categories.scene');
 const paymentsScene = require('./scenes/admin/payments.scene');
 const statsScene = require('./scenes/admin/stats.scene');
