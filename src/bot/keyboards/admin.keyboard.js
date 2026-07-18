@@ -9,17 +9,18 @@ const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pend
   return Markup.inlineKeyboard([
     [
       Markup.button.callback('📦 Товары', 'admin:products'),
+      Markup.button.callback('🗂 Категории', 'admin:categories'),
+    ],
+    [
       Markup.button.callback('🔑 Ключи', 'admin:keys'),
-    ],
-    [
       Markup.button.callback(`📋 Заказы${ordersBadge}`, 'admin:orders'),
+    ],
+    [
       Markup.button.callback('👥 Пользователи', 'admin:users'),
-    ],
-    [
       Markup.button.callback(`💳 Платежи${paymentsBadge}`, 'admin:payments'),
-      Markup.button.callback('📊 Статистика', 'admin:stats'),
     ],
     [
+      Markup.button.callback('📊 Статистика', 'admin:stats'),
       Markup.button.callback('📈 Логистика', 'admin:logistics'),
       Markup.button.callback('📉 Графики продаж', 'admin:chart'),
     ],

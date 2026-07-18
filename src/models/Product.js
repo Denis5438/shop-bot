@@ -17,6 +17,7 @@ const productSchema = new mongoose.Schema({
       return this.type === 'gpt_activation' ? 'u1traby' : 'local';
     },
   },
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null },
   /**
    * Тип выдачи товара:
    *  - activation   -> пользователь активирует на своём аккаунте (нужен токен)

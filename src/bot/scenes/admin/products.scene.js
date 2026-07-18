@@ -54,7 +54,7 @@ const showProductsList = async (ctx) => {
 };
 
 const showProductEdit = async (ctx, productId) => {
-  const product = await Product.findById(productId).populate('sellerId');
+  const product = await Product.findById(productId).populate('sellerId').populate('categoryId');
   if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
 
   const stock = product.type === 'manual'
@@ -75,6 +75,7 @@ const showProductEdit = async (ctx, productId) => {
     `💰 Цена продажи: ${product.price} USDT\n` +
     `💸 Закупочная цена: ${product.costPrice || 0} USDT\n` +
     `🔑 Тип: ${escapeHtml(TYPE_LABELS[product.type] || product.type)}\n` +
+    `🗂 Категория: ${product.categoryId ? escapeHtml(product.categoryId.name) : 'Нет'}\n` +
     `🚚 Выдача: ${deliveryLabel}\n` +
     `📦 Остаток ключей: ${stock}\n` +
     `${sellerLine}\n` +
@@ -87,6 +88,7 @@ const showProductEdit = async (ctx, productId) => {
     [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}`)],
     [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}`)],
     [Markup.button.callback('📝 Описание (EN)', `admin:product:field:descriptionEn:${productId}`)],
+    [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}`)],
     [Markup.button.callback('🔑 Добавить ключи', `admin:keys:add:${productId}`)],
     [Markup.button.callback('📣 Разослать', `admin:product:broadcast:${productId}`)],
     [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
@@ -398,42 +400,58 @@ const handleProductInput = async (ctx) => {
 
     if (!np.icon) {
       np.icon = extractTextWithEmojis(ctx.message).trim();
+      ctx.session.newProduct = np;
 
-      const provider = normalizeProviderForType(np.type, 'local');
-      const product = new Product({
-        name: np.name,
-        nameEn: np.nameEn,
-        price: np.price,
-        costPrice: np.costPrice,
-        type: np.type,
-        provider,
-        deliveryMethod: np.type === 'gpt_activation' ? 'activation' : 'ready_account',
-        description: np.description,
-        descriptionEn: np.descriptionEn,
-        icon: np.icon,
-      });
-      await product.save();
+      const Category = require('../../../models/Category');
+      const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
+      
+      if (categories.length === 0) {
+        // No categories yet, save directly
+        const provider = normalizeProviderForType(np.type, 'local');
+        const product = new Product({
+          name: np.name,
+          nameEn: np.nameEn,
+          price: np.price,
+          costPrice: np.costPrice,
+          type: np.type,
+          provider,
+          deliveryMethod: np.type === 'gpt_activation' ? 'activation' : 'ready_account',
+          description: np.description,
+          descriptionEn: np.descriptionEn,
+          icon: np.icon,
+        });
+        await product.save();
+        ctx.session.adminAction = null;
+        ctx.session.newProduct = null;
 
-      ctx.session.adminAction = null;
-      ctx.session.newProduct = null;
-
-      if (np.type === 'key' || np.type === 'gpt_activation') {
-        await keysScene.askKeysAfterCreate(ctx, product);
-      } else {
-        // Для ручного товара — предлагаем сразу назначить продавца
-        await ctx.reply(
-          `✅ <b>Товар «${escapeHtml(product.name)}» создан!</b>\n📦 Тип: ✋ Ручной\n\n` +
-          `Хотите назначить продавца на этот товар?`,
-          {
-            parse_mode: 'HTML',
-            ...Markup.inlineKeyboard([
-              [Markup.button.callback('👤 Назначить продавца', `admin:product:seller:${product._id}`)],
-              [Markup.button.callback('📣 Разослать всем', `admin:product:broadcast:${product._id}`)],
-              [Markup.button.callback('📦 К товарам', 'admin:products')],
-            ]),
-          }
-        );
+        if (np.type === 'key' || np.type === 'gpt_activation') {
+          await keysScene.askKeysAfterCreate(ctx, product);
+        } else {
+          await ctx.reply(
+            `✅ <b>Товар «${escapeHtml(product.name)}» создан!</b>\n📦 Тип: ✋ Ручной\n\n` +
+            `Хотите назначить продавца на этот товар?`,
+            {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([
+                [Markup.button.callback('👤 Назначить продавца', `admin:product:seller:${product._id}`)],
+                [Markup.button.callback('📣 Разослать всем', `admin:product:broadcast:${product._id}`)],
+                [Markup.button.callback('📦 К товарам', 'admin:products')],
+              ]),
+            }
+          );
+        }
+        return true;
       }
+
+      const buttons = categories.map(cat => [
+        Markup.button.callback(`${cat.icon} ${cat.name}`, `admin:product:set_cat:${cat._id}`)
+      ]);
+      buttons.push([Markup.button.callback('Без категории', 'admin:product:set_cat:none')]);
+
+      await ctx.reply('Выберите категорию для товара:', {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard(buttons)
+      });
       return true;
     }
   }

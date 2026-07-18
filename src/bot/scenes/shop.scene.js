@@ -1,5 +1,6 @@
 const { Markup } = require('telegraf');
 const Product = require('../../models/Product');
+const Category = require('../../models/Category');
 const Key = require('../../models/Key');
 const Order = require('../../models/Order');
 const Transaction = require('../../models/Transaction');
@@ -60,81 +61,109 @@ const getStock = async (product) => {
   return Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
 };
 
-const buildShopKeyboard = async (products, page, totalPages, lang = 'ru', t = null) => {
-  const buttons = [];
-
-  for (const product of products) {
-    const stock = await getStock(product);
-    const effectivePrice = await getEffectivePrice(product, stock);
-    const stockBadge = stock === '∞'
-      ? '♾️'
-      : stock === 0
-        ? '⛔'
-        : stock < 10 && effectivePrice > product.price
-          ? `(${stock}) 🔥`
-          : stock <= 3
-            ? `(${stock}) 🔴`
-            : `(${stock}) 🟢`;
-    const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
-    const label = `${product.icon} ${displayName} — ${effectivePrice} USDT ${stockBadge}`;
-    buttons.push([Markup.button.callback(label, `shop:product:${product._id}:${page}`)]);
+const getCategoryStockStatus = async (categoryId) => {
+  const products = await Product.find({ categoryId, isActive: true });
+  if (products.length === 0) return 'danger';
+  
+  for (const p of products) {
+    const stock = await getStock(p);
+    if (stock === '∞' || stock > 0) return 'success';
   }
-
-  const navButtons = [];
-  if (page > 1) navButtons.push(Markup.button.callback('⬅️', `shop:page:${page - 1}`));
-  navButtons.push(Markup.button.callback(`${page}/${totalPages}`, 'shop:noop'));
-  if (page < totalPages) navButtons.push(Markup.button.callback('➡️', `shop:page:${page + 1}`));
-  if (navButtons.length) buttons.push(navButtons);
-
-  const refreshLabel = t ? t('btn_refresh') : '🔄 Refresh';
-  const backLabel = t ? t('btn_back') : '⬅️ Back';
-  buttons.push([
-    Markup.button.callback(refreshLabel, `shop:page:${page}`),
-    Markup.button.callback(backLabel, 'menu:main'),
-  ]);
-
-  return Markup.inlineKeyboard(buttons);
+  return 'danger';
 };
 
-const showShopPage = async (ctx, page = 1) => {
-  const t = ctx.t;
-  const products = await Product.find({ isActive: true }).sort({ sortOrder: 1, createdAt: -1 });
+const showShopPage = async (ctx) => {
+  const t = ctx.t || ((k) => k);
+  const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
+  
+  if (categories.length === 0) {
+    const msg = t('shop_empty') || 'Магазин пуст';
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(msg, mainKeyboard(t, ctx.isSeller)).catch(() => {});
+      return ctx.answerCbQuery().catch(() => {});
+    }
+    return ctx.reply(msg, mainKeyboard(t, ctx.isSeller));
+  }
+
+  const buttons = [];
+  let currentRow = [];
+
+  for (const cat of categories) {
+    const statusColor = await getCategoryStockStatus(cat._id);
+    const label = `${cat.icon || '📁'} ${cat.name}`;
+    const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
+    btn.style = statusColor;
+    currentRow.push(btn);
+
+    if (currentRow.length === 2) {
+      buttons.push(currentRow);
+      currentRow = [];
+    }
+  }
+  if (currentRow.length > 0) buttons.push(currentRow);
+
+  buttons.push([Markup.button.callback(t('btn_back') || '⬅️ Назад', 'menu:main')]);
+
+  const text = t('shop_title') || '🛒 Магазин';
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, opts).catch(() => {});
+    await ctx.answerCbQuery('✅').catch(() => {});
+  } else {
+    await ctx.reply(text, opts);
+  }
+};
+
+const showCategory = async (ctx, categoryId, page = 1) => {
+  const t = ctx.t || ((k) => k);
+  const category = await Category.findById(categoryId);
+  if (!category || !category.isActive) {
+    return ctx.answerCbQuery('❌ Категория не найдена', { show_alert: true });
+  }
+
+  const products = await Product.find({ categoryId, isActive: true }).sort({ sortOrder: 1, createdAt: -1 });
 
   if (products.length === 0) {
-    if (ctx.callbackQuery) {
-      try {
-        await ctx.editMessageText(t('shop_empty'), mainKeyboard(t, ctx.isSeller));
-      } catch (_) {
-        await ctx.reply(t('shop_empty'), mainKeyboard(t, ctx.isSeller));
-      }
-      await ctx.answerCbQuery().catch(() => {});
-    } else {
-      await ctx.reply(t('shop_empty'), mainKeyboard(t, ctx.isSeller));
-    }
-    return;
+    return ctx.answerCbQuery('Пустая категория', { show_alert: true });
   }
 
   const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
   const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
   const paginated = products.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  
+  const buttons = [];
   const lang = ctx.user?.language || 'ru';
-  const keyboard = await buildShopKeyboard(paginated, safePage, totalPages, lang, t);
-  const text = t('shop_title');
 
-  if (ctx.callbackQuery) {
-    try {
-      await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-      await ctx.answerCbQuery('✅');
-    } catch (err) {
-      if (err.description?.includes('message is not modified')) {
-        await ctx.answerCbQuery('✅').catch(() => {});
-      } else {
-        await ctx.answerCbQuery().catch(() => {});
-      }
-    }
-  } else {
-    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  for (const product of paginated) {
+    const stock = await getStock(product);
+    const effectivePrice = await getEffectivePrice(product, stock);
+    const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+    const stockBadge = stock === '∞' ? '∞' : stock;
+    
+    const label = `${product.icon || '📦'} ${displayName} | $${effectivePrice} | 📦 ${stockBadge}`;
+    const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
+    btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
+    
+    buttons.push([btn]);
   }
+
+  const navButtons = [];
+  if (safePage > 1) navButtons.push(Markup.button.callback('⬅️', `shop:category:${categoryId}:${safePage - 1}`));
+  navButtons.push(Markup.button.callback(`${safePage}/${totalPages}`, 'shop:noop'));
+  if (safePage < totalPages) navButtons.push(Markup.button.callback('➡️', `shop:category:${categoryId}:${safePage + 1}`));
+  if (navButtons.length) buttons.push(navButtons);
+
+  buttons.push([
+    Markup.button.callback('🔄 Обновить', `shop:category:${categoryId}:${safePage}`),
+    Markup.button.callback('⬅️ К категориям', 'shop:main'),
+  ]);
+
+  const text = `📁 <b>${escapeHtml(category.name)}</b>\nВыберите продукт:`;
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+
+  await ctx.editMessageText(text, opts).catch(() => {});
+  await ctx.answerCbQuery().catch(() => {});
 };
 
 const showProduct = async (ctx, productId, fromPage = 1) => {
@@ -666,4 +695,4 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   }
 };
 
-module.exports = { showShopPage, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist };
+module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist };
