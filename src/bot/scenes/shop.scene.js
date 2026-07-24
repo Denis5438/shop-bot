@@ -440,9 +440,9 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
 
       if (isAutoKeyProduct) {
         // Резервируем qty ключей
-        allocatedKeys = await Key.find(buildKeyQueryForProduct(product, { isUsed: false }))
-          .limit(qty)
-          .session(sessionOptions || null);
+        const keyQuery = Key.find(buildKeyQueryForProduct(product, { isUsed: false })).limit(qty);
+        if (session) keyQuery.session(session);
+        allocatedKeys = await keyQuery;
           
         if (allocatedKeys.length < qty) {
           throw new Error('OUT_OF_STOCK');
