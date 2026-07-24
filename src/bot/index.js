@@ -1526,6 +1526,9 @@ const createBot = () => {
   bot.action('admin:settings:refresh_rate', adminMiddleware, async (ctx) => {
     await settingsScene.refreshRate(ctx);
   });
+  bot.action('admin:settings:reset_tos', adminMiddleware, async (ctx) => {
+    await settingsScene.resetAllUserToS(ctx);
+  });
 
   // ─── ADMIN: Написать пользователю ───
   bot.action(/^admin:msg:user:(\d+)$/, adminMiddleware, async (ctx) => {

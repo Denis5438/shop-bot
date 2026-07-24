@@ -90,6 +90,7 @@ const showSettings = async (ctx) => {
     )],
     [Markup.button.callback('⏰ Интервал сводки (мин)', 'admin:settings:edit:adminDigestIntervalMinutes')],
     [Markup.button.callback('🔄 Обновить курс вручную', 'admin:settings:refresh_rate')],
+    [Markup.button.callback('📜 Сбросить согласие Оферты у всех', 'admin:settings:reset_tos')],
     [Markup.button.callback(modeBtnStr, 'admin:settings:toggle_maintenance')],
     [Markup.button.callback('⬅️ В панель', 'admin:main')]
   ];
@@ -239,4 +240,21 @@ const handleSettingsInput = async (ctx) => {
   return true;
 };
 
-module.exports = { showSettings, refreshRate, toggleMaintenance, toggleSmartPricing, toggleMarkdown, toggleDigest, startEditSetting, handleSettingsInput };
+const resetAllUserToS = async (ctx) => {
+  const User = require('../../../models/User');
+  const res = await User.updateMany({ role: { $ne: 'admin' } }, { $set: { acceptedToS: false, acceptedToSAt: null } });
+  await ctx.answerCbQuery(`📜 Оферта сброшена у ${res.modifiedCount} пользователей!`, { show_alert: true });
+  await showSettings(ctx);
+};
+
+module.exports = {
+  showSettings,
+  refreshRate,
+  toggleMaintenance,
+  toggleSmartPricing,
+  toggleMarkdown,
+  toggleDigest,
+  startEditSetting,
+  handleSettingsInput,
+  resetAllUserToS,
+};
