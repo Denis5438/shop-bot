@@ -591,7 +591,7 @@ const createBot = () => {
     }
 
     // Экран Оферты (ToS) на языке пользователя (если не принял)
-    if (!user.acceptedToS && user.role !== 'admin') {
+    if (!user.acceptedToS) {
       return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
     }
 

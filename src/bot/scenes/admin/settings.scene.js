@@ -242,7 +242,7 @@ const handleSettingsInput = async (ctx) => {
 
 const resetAllUserToS = async (ctx) => {
   const User = require('../../../models/User');
-  const res = await User.updateMany({ role: { $ne: 'admin' } }, { $set: { acceptedToS: false, acceptedToSAt: null } });
+  const res = await User.updateMany({}, { $set: { acceptedToS: false, acceptedToSAt: null } });
   await ctx.answerCbQuery(`📜 Оферта сброшена у ${res.modifiedCount} пользователей!`, { show_alert: true });
   await showSettings(ctx);
 };
