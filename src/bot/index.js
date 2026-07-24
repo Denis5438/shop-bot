@@ -583,16 +583,16 @@ const createBot = () => {
       return ctx.reply('⚠️ Не удалось загрузить профиль. Попробуйте позже или обратитесь в поддержку.').catch(() => {});
     }
 
-    // ToS-гейт: пока не принял - показываем экран согласия. Админы пропущены
-    // на уровне tosMiddleware, но дублируем условие здесь для надёжности.
-    if (!user.acceptedToS && user.role !== 'admin') {
-      return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
+    const isNew = Date.now() - new Date(user.createdAt).getTime() < 10000;
+
+    // 1. Сначала выбор языка для новых пользователей
+    if (isNew || !user.languageSelected) {
+      return ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
     }
 
-    const isNew = Date.now() - new Date(user.createdAt).getTime() < 5000;
-
-    if (isNew) {
-      return ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
+    // 2. Затем экран Оферты (ToS) на выбранном языке
+    if (!user.acceptedToS && user.role !== 'admin') {
+      return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
     }
 
     await ctx.reply(
@@ -736,31 +736,37 @@ const createBot = () => {
   // ─────────────────── ЯЗЫК ───────────────────
   bot.action('lang:ru', async (ctx) => {
     ctx.user.language = 'ru';
+    ctx.user.languageSelected = true;
     await ctx.user.save();
+    ctx.i18n?.setLocale('ru');
+    const t = ctx.t || ((k) => k);
     await ctx.answerCbQuery('✅ Язык: Русский');
+
+    if (!ctx.user.acceptedToS && ctx.user.role !== 'admin') {
+      return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
+    }
+
     await ctx.editMessageText(
-      `🏪 <b>Добро пожаловать, ${escapeHtml(ctx.user.firstName)}!</b>\n\n` +
-      `💡 <b>Быстрый старт:</b>\n` +
-      `🛒 <b>Магазин</b> - выберите товар и оплатите с баланса\n` +
-      `💰 <b>Пополнить</b> - карта, USDT (TRC-20/BEP-20), Bybit UID\n` +
-      `👤 <b>Профиль</b> - баланс, заказы, реферальный код\n\n` +
-      `💰 Баланс: ${ctx.user.balance.toFixed(2)} USDT (~${toRub(ctx.user.balance)} ₽)`,
-      { parse_mode: 'HTML', ...mainKeyboard(ctx.t, ctx.isSeller) }
+      t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
+      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
     ).catch(() => {});
   });
 
   bot.action('lang:en', async (ctx) => {
     ctx.user.language = 'en';
+    ctx.user.languageSelected = true;
     await ctx.user.save();
+    ctx.i18n?.setLocale('en');
+    const t = ctx.t || ((k) => k);
     await ctx.answerCbQuery('✅ Language: English');
+
+    if (!ctx.user.acceptedToS && ctx.user.role !== 'admin') {
+      return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
+    }
+
     await ctx.editMessageText(
-      `🏪 <b>Welcome, ${escapeHtml(ctx.user.firstName)}!</b>\n\n` +
-      `💡 <b>Quick start:</b>\n` +
-      `🛒 <b>Shop</b> - pick a product & pay from balance\n` +
-      `💰 <b>Top up</b> - card, USDT (TRC-20/BEP-20), Bybit UID\n` +
-      `👤 <b>Profile</b> - balance, orders, referral code\n\n` +
-      `💰 Balance: ${ctx.user.balance.toFixed(2)} USDT (~${toRub(ctx.user.balance)} ₽)`,
-      { parse_mode: 'HTML', ...mainKeyboard(ctx.t, ctx.isSeller) }
+      t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
+      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
     ).catch(() => {});
   });
 
@@ -1312,6 +1318,14 @@ const createBot = () => {
     await usersScene.showGlobalSearch(ctx);
   });
 
+  // Массовая рассылка из меню пользователей
+  bot.action('admin:broadcast:custom:start', adminMiddleware, async (ctx) => {
+    await usersScene.startCustomBroadcast(ctx);
+  });
+  bot.action('admin:broadcast:custom:confirm', adminMiddleware, async (ctx) => {
+    await usersScene.executeCustomBroadcast(ctx);
+  });
+
   bot.action(/^admin:user:view:(.+)$/, adminMiddleware, async (ctx) => {
     await usersScene.showUserProfile(ctx, ctx.match[1]);
   });
@@ -1789,6 +1803,9 @@ const createBot = () => {
 
     // Поиск (admin)
     if (await usersScene.handleGlobalSearch(ctx)) return;
+
+    // Массовая рассылка (admin)
+    if (await usersScene.handleCustomBroadcastInput(ctx)) return;
 
     // Изменение баланса (admin)
     if (await usersScene.handleBalanceChange(ctx)) return;

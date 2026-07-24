@@ -55,6 +55,7 @@ const showAllUsers = async (ctx, page = 1) => {
   if (safePage < totalPages) navRow.push(Markup.button.callback('➡️', `admin:users:page:${safePage + 1}`));
   if (navRow.length) buttons.push(navRow);
 
+  buttons.push([Markup.button.callback('📢 Массовая рассылка всем', 'admin:broadcast:custom:start')]);
   buttons.push([
     Markup.button.callback('🔍 Поиск', 'admin:search'),
     Markup.button.callback('⬅️ Назад', 'admin:main'),
@@ -405,6 +406,117 @@ const stopTakeover = async (ctx, userId) => {
   await ctx.reply(`🛑 <b>Сеанс перехвата завершен.</b> Бот снова обслуживает @${escapeHtml(targetUser?.username || targetUser?.telegramId || '?')} в автоматическом режиме.`, { parse_mode: 'HTML' });
 };
 
+const startCustomBroadcast = async (ctx) => {
+  ctx.session = ctx.session || {};
+  ctx.session.adminAction = 'custom_broadcast_input';
+  await ctx.reply(
+    `📢 <b>Массовая рассылка всем пользователям</b>\n\n` +
+    `Отправьте любое сообщение для рассылки (текст, фото с подписью, видео или файл):`,
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:users')]]),
+    }
+  );
+};
+
+const handleCustomBroadcastInput = async (ctx) => {
+  const session = ctx.session || {};
+  if (session.adminAction !== 'custom_broadcast_input') return false;
+
+  let mediaType = null;
+  let mediaId = null;
+
+  if (ctx.message.photo && ctx.message.photo.length > 0) {
+    mediaType = 'photo';
+    mediaId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+  } else if (ctx.message.video) {
+    mediaType = 'video';
+    mediaId = ctx.message.video.file_id;
+  } else if (ctx.message.document) {
+    mediaType = 'document';
+    mediaId = ctx.message.document.file_id;
+  }
+
+  const text = ctx.message.caption || ctx.message.text || '';
+  if (!text && !mediaId) {
+    await ctx.reply('❌ Пожалуйста, отправьте текст или медиафайл.');
+    return true;
+  }
+
+  const totalUsers = await User.countDocuments({ isBanned: false });
+
+  session.adminAction = null;
+  session.broadcastPayload = { mediaType, mediaId, text };
+
+  const opts = {
+    parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [
+        [Markup.button.callback(`🚀 Запустить рассылку (${totalUsers} чел.)`, 'admin:broadcast:custom:confirm')],
+        [Markup.button.callback('❌ Отмена', 'admin:users')],
+      ],
+    },
+  };
+
+  const previewPrefix = `👁 <b>Предпросмотр вашей рассылки:</b>\n\n`;
+
+  if (mediaType === 'photo') {
+    await ctx.replyWithPhoto(mediaId, { caption: previewPrefix + text, ...opts });
+  } else if (mediaType === 'video') {
+    await ctx.replyWithVideo(mediaId, { caption: previewPrefix + text, ...opts });
+  } else if (mediaType === 'document') {
+    await ctx.replyWithDocument(mediaId, { caption: previewPrefix + text, ...opts });
+  } else {
+    await ctx.reply(previewPrefix + text, opts);
+  }
+
+  return true;
+};
+
+const executeCustomBroadcast = async (ctx) => {
+  const session = ctx.session || {};
+  const payload = session.broadcastPayload;
+  if (!payload) return ctx.answerCbQuery('❌ Сессия рассылки истекла', { show_alert: true });
+
+  session.broadcastPayload = null;
+  await ctx.answerCbQuery('🚀 Запускаю рассылку...');
+  await ctx.reply('⏳ <b>Идёт процесс рассылки...</b> Бот уведомит вас по завершении.', { parse_mode: 'HTML' });
+
+  const users = await User.find({ isBanned: false }).select('telegramId');
+  let sent = 0;
+  let failed = 0;
+
+  const notif = require('../../../services/notification.service');
+
+  for (const u of users) {
+    try {
+      if (payload.mediaType === 'photo') {
+        await ctx.telegram.sendPhoto(u.telegramId, payload.mediaId, { caption: payload.text, parse_mode: 'HTML' });
+      } else if (payload.mediaType === 'video') {
+        await ctx.telegram.sendVideo(u.telegramId, payload.mediaId, { caption: payload.text, parse_mode: 'HTML' });
+      } else if (payload.mediaType === 'document') {
+        await ctx.telegram.sendDocument(u.telegramId, payload.mediaId, { caption: payload.text, parse_mode: 'HTML' });
+      } else {
+        await notif.sendToUser(u.telegramId, payload.text);
+      }
+      sent++;
+    } catch (_) {
+      failed++;
+    }
+    await new Promise((r) => setTimeout(r, 40));
+  }
+
+  await ctx.reply(
+    `✅ <b>Массовая рассылка завершена!</b>\n\n` +
+    `📨 Успешно доставлено: <b>${sent}</b>\n` +
+    `❌ Ошибок (заблокировали бота): <b>${failed}</b>`,
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ К пользователям', 'admin:users')]]),
+    }
+  );
+};
+
 module.exports = {
   showAllUsers,
   showGlobalSearch,
@@ -418,4 +530,7 @@ module.exports = {
   showUserTransactions,
   startTakeover,
   stopTakeover,
+  startCustomBroadcast,
+  handleCustomBroadcastInput,
+  executeCustomBroadcast,
 };
