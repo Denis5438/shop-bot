@@ -155,6 +155,19 @@ const showUserProfile = async (ctx, userId) => {
   const referralsCount = await User.countDocuments({ referredBy: user._id });
   const isSeller = await Seller.exists({ telegramId: user.telegramId, isActive: true });
 
+  const tosDate = user.acceptedToSAt || user.createdAt;
+  const tosDateStr = tosDate
+    ? `${new Date(tosDate).toLocaleDateString('ru-RU')} в ${new Date(tosDate).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+    : null;
+
+  const tosLine = user.acceptedToS
+    ? `📜 Оферта (ToS): ✅ <b>Принята</b> (${tosDateStr || 'Да'})\n`
+    : `📜 Оферта (ToS): 🔴 <b>Не принята</b>\n`;
+
+  const tosLegalProof = user.acceptedToS && tosDateStr
+    ? `\n⚖️ <i>Юр. выписка: Пользователь ID ${user.telegramId} ${tosDateStr} нажал кнопку согласия с Офертой.</i>\n`
+    : '';
+
   const text =
     `👤 <b>Пользователь</b>\n\n` +
     `🆔 TG ID: <code>${escapeHtml(user.telegramId)}</code>\n` +
@@ -162,7 +175,9 @@ const showUserProfile = async (ctx, userId) => {
     `👤 Username: @${escapeHtml(user.username || 'нет')}\n` +
     `🌐 Язык: ${escapeHtml(user.language)}\n` +
     `🔘 Роль: ${escapeHtml(user.role)}\n` +
-    `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n\n` +
+    `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n` +
+    tosLine +
+    tosLegalProof + '\n' +
     `💰 Баланс: ${user.balance.toFixed(2)} USDT (~${toRub(user.balance)} ₽)\n` +
     `📦 Заказов: ${ordersCount}\n` +
     `💸 Потрачено: ${user.totalSpent.toFixed(2)} USDT\n` +
