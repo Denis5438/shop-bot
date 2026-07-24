@@ -55,7 +55,7 @@ const showAllUsers = async (ctx, page = 1) => {
   if (safePage < totalPages) navRow.push(Markup.button.callback('➡️', `admin:users:page:${safePage + 1}`));
   if (navRow.length) buttons.push(navRow);
 
-  buttons.push([Markup.button.callback('📢 Массовая рассылка всем', 'admin:broadcast:custom:start')]);
+  buttons.push([Markup.button.callback('📢 Массовая рассылка всем', 'admin:custom_broadcast:start')]);
   buttons.push([
     Markup.button.callback('🔍 Поиск', 'admin:search'),
     Markup.button.callback('⬅️ Назад', 'admin:main'),
@@ -452,7 +452,7 @@ const handleCustomBroadcastInput = async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
-        [Markup.button.callback(`🚀 Запустить рассылку (${totalUsers} чел.)`, 'admin:broadcast:custom:confirm')],
+        [Markup.button.callback(`🚀 Запустить рассылку (${totalUsers} чел.)`, 'admin:custom_broadcast:confirm')],
         [Markup.button.callback('❌ Отмена', 'admin:users')],
       ],
     },

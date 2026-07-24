@@ -1178,7 +1178,7 @@ const createBot = () => {
     const rows = notif.SEGMENTS.map((s, i) => [
       Markup.button.callback(
         `${s.icon} ${SEGMENT_LABELS[s.key]} - ${counts[i]}`,
-        `admin:broadcast:${productId}:${s.key}`
+        `admin:p_broadcast:${productId}:${s.key}`
       ),
     ]);
     rows.push([Markup.button.callback('❌ Отмена', 'admin:products')]);
@@ -1196,7 +1196,7 @@ const createBot = () => {
   });
 
   // Запуск рассылки на конкретный сегмент (после выбора в предыдущем хэндлере).
-  bot.action(/^admin:broadcast:([^:]+):(\w+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:p_broadcast:([a-f0-9]{24}):(\w+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery('📢 Запускаю рассылку...');
     await ctx.editMessageReplyMarkup(null).catch(() => {});
 
@@ -1319,10 +1319,10 @@ const createBot = () => {
   });
 
   // Массовая рассылка из меню пользователей
-  bot.action('admin:broadcast:custom:start', adminMiddleware, async (ctx) => {
+  bot.action('admin:custom_broadcast:start', adminMiddleware, async (ctx) => {
     await usersScene.startCustomBroadcast(ctx);
   });
-  bot.action('admin:broadcast:custom:confirm', adminMiddleware, async (ctx) => {
+  bot.action('admin:custom_broadcast:confirm', adminMiddleware, async (ctx) => {
     await usersScene.executeCustomBroadcast(ctx);
   });
 
