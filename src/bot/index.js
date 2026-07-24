@@ -583,14 +583,14 @@ const createBot = () => {
       return ctx.reply('⚠️ Не удалось загрузить профиль. Попробуйте позже или обратитесь в поддержку.').catch(() => {});
     }
 
-    const isNew = Date.now() - new Date(user.createdAt).getTime() < 10000;
+    // Показываем выбор языка ТОЛЬКО совершенно новым пользователям (первый запуск)
+    const isBrandNewUser = (Date.now() - new Date(user.createdAt).getTime() < 10000) && !user.languageSelected;
 
-    // 1. Сначала выбор языка для новых пользователей
-    if (isNew || !user.languageSelected) {
+    if (isBrandNewUser) {
       return ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
     }
 
-    // 2. Затем экран Оферты (ToS) на выбранном языке
+    // Экран Оферты (ToS) на языке пользователя (если не принял)
     if (!user.acceptedToS && user.role !== 'admin') {
       return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
     }
