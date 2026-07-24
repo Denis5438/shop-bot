@@ -631,6 +631,22 @@ const createBot = () => {
     }
   });
 
+  bot.action('tos:accept_broadcast', async (ctx) => {
+    const t = ctx.t;
+    if (ctx.user) {
+      ctx.user.acceptedToS = true;
+      ctx.user.acceptedToSAt = new Date();
+      await ctx.user.save().catch((err) => logger.error(`tos:accept_broadcast save: ${err.message}`));
+    }
+    const alertMsg = t('tos_accepted_alert') || '✅ Вы успешно приняли условия Оферты!';
+    await ctx.answerCbQuery(alertMsg, { show_alert: true }).catch(() => {});
+    const dateStr = `${new Date().toLocaleDateString('ru-RU')} в ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    const acceptedBtnText = ctx.user?.language === 'en' ? `✅ Terms accepted (${dateStr})` : `✅ Оферта принята (${dateStr})`;
+    await ctx.editMessageReplyMarkup(
+      Markup.inlineKeyboard([[Markup.button.callback(acceptedBtnText, 'shop:noop')]]).reply_markup
+    ).catch(() => {});
+  });
+
   bot.action('tos:decline', async (ctx) => {
     const t = ctx.t;
     await ctx.answerCbQuery().catch(() => {});
@@ -1321,6 +1337,12 @@ const createBot = () => {
   // Массовая рассылка из меню пользователей
   bot.action('admin:custom_broadcast:start', adminMiddleware, async (ctx) => {
     await usersScene.startCustomBroadcast(ctx);
+  });
+  bot.action('admin:custom_broadcast:tos_yes', adminMiddleware, async (ctx) => {
+    await usersScene.showCustomBroadcastPreview(ctx, true);
+  });
+  bot.action('admin:custom_broadcast:tos_no', adminMiddleware, async (ctx) => {
+    await usersScene.showCustomBroadcastPreview(ctx, false);
   });
   bot.action('admin:custom_broadcast:confirm', adminMiddleware, async (ctx) => {
     await usersScene.executeCustomBroadcast(ctx);

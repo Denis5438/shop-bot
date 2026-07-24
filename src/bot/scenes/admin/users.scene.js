@@ -443,34 +443,59 @@ const handleCustomBroadcastInput = async (ctx) => {
     return true;
   }
 
+  session.adminAction = null;
+  session.broadcastPayload = { mediaType, mediaId, text, includeToS: false };
+
+  await ctx.reply(
+    `❓ <b>Добавить к рассылке интерактивную кнопку согласия с Офертой?</b>\n\n` +
+    `• <b>Добавить кнопку:</b> Под вашим сообщением появится кнопка <code>[☑️ Я ознакомлен и принимаю условия Оферты]</code>. При клике покупателя в БД зафиксируется согласие с точными датой и временем.\n` +
+    `• <b>Без кнопки:</b> Сообщение уйдёт как обычное информационное пуш-уведомление.`,
+    {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('📜 Добавить кнопку Оферты', 'admin:custom_broadcast:tos_yes')],
+        [Markup.button.callback('📢 Обычная рассылка (без кнопки)', 'admin:custom_broadcast:tos_no')],
+        [Markup.button.callback('❌ Отмена', 'admin:users')],
+      ]),
+    }
+  );
+
+  return true;
+};
+
+const showCustomBroadcastPreview = async (ctx, includeToS) => {
+  const session = ctx.session || {};
+  const payload = session.broadcastPayload;
+  if (!payload) return ctx.answerCbQuery('❌ Сессия рассылки истекла', { show_alert: true });
+
+  payload.includeToS = includeToS;
+  await ctx.answerCbQuery();
+
   const totalUsers = await User.countDocuments({ isBanned: false });
 
-  session.adminAction = null;
-  session.broadcastPayload = { mediaType, mediaId, text };
+  const inlineButtons = [];
+  if (includeToS) {
+    inlineButtons.push([Markup.button.callback('☑️ Я ознакомлен и принимаю условия Оферты', 'shop:noop')]);
+  }
+  inlineButtons.push([Markup.button.callback(`🚀 Запустить рассылку (${totalUsers} чел.)`, 'admin:custom_broadcast:confirm')]);
+  inlineButtons.push([Markup.button.callback('❌ Отмена', 'admin:users')]);
 
   const opts = {
     parse_mode: 'HTML',
-    reply_markup: {
-      inline_keyboard: [
-        [Markup.button.callback(`🚀 Запустить рассылку (${totalUsers} чел.)`, 'admin:custom_broadcast:confirm')],
-        [Markup.button.callback('❌ Отмена', 'admin:users')],
-      ],
-    },
+    ...Markup.inlineKeyboard(inlineButtons),
   };
 
-  const previewPrefix = `👁 <b>Предпросмотр вашей рассылки:</b>\n\n`;
+  const previewPrefix = `👁 <b>Предпросмотр вашей рассылки (${includeToS ? 'с кнопкой Оферты' : 'обычная'}):</b>\n\n`;
 
-  if (mediaType === 'photo') {
-    await ctx.replyWithPhoto(mediaId, { caption: previewPrefix + text, ...opts });
-  } else if (mediaType === 'video') {
-    await ctx.replyWithVideo(mediaId, { caption: previewPrefix + text, ...opts });
-  } else if (mediaType === 'document') {
-    await ctx.replyWithDocument(mediaId, { caption: previewPrefix + text, ...opts });
+  if (payload.mediaType === 'photo') {
+    await ctx.replyWithPhoto(payload.mediaId, { caption: previewPrefix + payload.text, ...opts });
+  } else if (payload.mediaType === 'video') {
+    await ctx.replyWithVideo(payload.mediaId, { caption: previewPrefix + payload.text, ...opts });
+  } else if (payload.mediaType === 'document') {
+    await ctx.replyWithDocument(payload.mediaId, { caption: previewPrefix + payload.text, ...opts });
   } else {
-    await ctx.reply(previewPrefix + text, opts);
+    await ctx.reply(previewPrefix + payload.text, opts);
   }
-
-  return true;
 };
 
 const executeCustomBroadcast = async (ctx) => {
@@ -482,22 +507,29 @@ const executeCustomBroadcast = async (ctx) => {
   await ctx.answerCbQuery('🚀 Запускаю рассылку...');
   await ctx.reply('⏳ <b>Идёт процесс рассылки...</b> Бот уведомит вас по завершении.', { parse_mode: 'HTML' });
 
-  const users = await User.find({ isBanned: false }).select('telegramId');
+  const users = await User.find({ isBanned: false }).select('telegramId language');
   let sent = 0;
   let failed = 0;
 
-  const notif = require('../../../services/notification.service');
-
   for (const u of users) {
     try {
+      const userLang = u.language || 'ru';
+      const buttonText = userLang === 'en' ? '☑️ I accept the Terms & Offer' : '☑️ Я ознакомлен и принимаю условия Оферты';
+
+      const keyboard = payload.includeToS
+        ? Markup.inlineKeyboard([[Markup.button.callback(buttonText, 'tos:accept_broadcast')]])
+        : null;
+
+      const opts = { parse_mode: 'HTML', caption: payload.text, ...keyboard };
+
       if (payload.mediaType === 'photo') {
-        await ctx.telegram.sendPhoto(u.telegramId, payload.mediaId, { caption: payload.text, parse_mode: 'HTML' });
+        await ctx.telegram.sendPhoto(u.telegramId, payload.mediaId, opts);
       } else if (payload.mediaType === 'video') {
-        await ctx.telegram.sendVideo(u.telegramId, payload.mediaId, { caption: payload.text, parse_mode: 'HTML' });
+        await ctx.telegram.sendVideo(u.telegramId, payload.mediaId, opts);
       } else if (payload.mediaType === 'document') {
-        await ctx.telegram.sendDocument(u.telegramId, payload.mediaId, { caption: payload.text, parse_mode: 'HTML' });
+        await ctx.telegram.sendDocument(u.telegramId, payload.mediaId, opts);
       } else {
-        await notif.sendToUser(u.telegramId, payload.text);
+        await ctx.telegram.sendMessage(u.telegramId, payload.text, { parse_mode: 'HTML', ...keyboard });
       }
       sent++;
     } catch (_) {
@@ -532,5 +564,6 @@ module.exports = {
   stopTakeover,
   startCustomBroadcast,
   handleCustomBroadcastInput,
+  showCustomBroadcastPreview,
   executeCustomBroadcast,
 };
