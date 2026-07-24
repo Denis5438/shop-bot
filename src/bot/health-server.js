@@ -7,7 +7,7 @@
 //   1) слушает PORT и отвечает 200 на /health, /ping, /
 //   2) позволяет внешнему пингеру (UptimeRobot) будить сервис раз в 5 минут.
 //
-// Сервер намеренно сделан на нативном модуле `http` без Express —
+// Сервер намеренно сделан на нативном модуле `http` без Express -
 // чтобы не плодить зависимости и не трогать остальной код бота.
 // ============================================================
 
@@ -40,7 +40,7 @@ function buildHealthPayload() {
 /**
  * Запускает HTTP-сервер.
  * @param {number} port - порт из process.env.PORT или 3000 по умолчанию
- * @returns {http.Server} instance сервера — его нужно закрыть при shutdown
+ * @returns {http.Server} instance сервера - его нужно закрыть при shutdown
  */
 function startHealthServer(port = 3000) {
   const server = http.createServer((req, res) => {
@@ -53,13 +53,13 @@ function startHealthServer(port = 3000) {
     // Нормализация пути (обрезаем query-string, slash в конце).
     const urlPath = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
 
-    // /ping — самый быстрый ответ, без проверок. Используется для keep-alive.
+    // /ping - самый быстрый ответ, без проверок. Используется для keep-alive.
     if (urlPath === '/ping') {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end('pong');
     }
 
-    // /health — полноценный health-check с MongoDB.
+    // /health - полноценный health-check с MongoDB.
     if (urlPath === '/health') {
       const payload = buildHealthPayload();
       const statusCode = payload.status === 'ok' ? 200 : 503;
@@ -67,7 +67,7 @@ function startHealthServer(port = 3000) {
       return res.end(JSON.stringify(payload));
     }
 
-    // Корень — короткая информация + ссылки.
+    // Корень - короткая информация + ссылки.
     if (urlPath === '/') {
       const payload = {
         service: 'shop-bot',
@@ -79,12 +79,12 @@ function startHealthServer(port = 3000) {
       return res.end(JSON.stringify(payload));
     }
 
-    // Всё остальное — 404.
+    // Всё остальное - 404.
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
   });
 
-  // Явно обрабатываем ошибки запуска (например, порт занят) — иначе упадёт процесс.
+  // Явно обрабатываем ошибки запуска (например, порт занят) - иначе упадёт процесс.
   server.on('error', (err) => {
     logger.error(`❌ Health-server error: ${err.message}`);
   });

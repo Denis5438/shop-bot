@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 
   // №20 Достижения: массив ID разблокированных ачивок и дата получения.
-  // Ключ ачивки — строковый код из achievements.service.js (например "first_purchase").
+  // Ключ ачивки - строковый код из achievements.service.js (например "first_purchase").
   // Денормализуем как массив объектов, чтобы иметь дату получения без отдельной коллекции.
   achievements: [{
     code: { type: String, required: true },
@@ -43,7 +43,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Sparse unique: null/undefined допускают много юзеров без UID, но если
-// UID задан — он уникален на всю коллекцию.
+// UID задан - он уникален на всю коллекцию.
 userSchema.index(
   { bybitUid: 1 },
   {

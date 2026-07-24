@@ -6,19 +6,19 @@ const { escapeHtml } = require('../bot/utils/ui');
  * Сервис агрегации (digest) уведомлений для админов.
  *
  * Проблема: при высокой активности админы получают десятки мелких уведомлений
- * (новая заявка, токен получен, retry, low-stock...) — это спам.
+ * (новая заявка, токен получен, retry, low-stock...) - это спам.
  *
  * Решение: событие попадает в буфер, раз в N минут буфер сбрасывается
  * одним агрегированным сообщением. При этом:
  *   - критичные события (errors, failed после retry) уходят мгновенно.
  *   - обычные события (new_order, new_topup, token_received) буферизуются.
  *
- * Управление режимом — через глобальную переменную digestEnabled.
+ * Управление режимом - через глобальную переменную digestEnabled.
  * Пока что она включается программно (setDigestEnabled), в будущем можно
  * вынести в Settings модель и добавить UI в admin/settings.scene.
  *
  * В существующем коде notification.service.sendToAdmins используется без
- * категоризации. Этот сервис добавляет слой ПОВЕРХ — код может явно писать
+ * категоризации. Этот сервис добавляет слой ПОВЕРХ - код может явно писать
  * `digest.queue('new_order', { ... })` вместо `sendToAdmins(text)` когда
  * событие попадает под дайджест.
  */
@@ -49,7 +49,7 @@ const setDigestEnabled = (on) => {
 const isDigestEnabled = () => digestEnabled;
 
 /**
- * Добавить событие в буфер. Если digest выключен — вернуть false,
+ * Добавить событие в буфер. Если digest выключен - вернуть false,
  * чтобы вызывающий код сразу отправил как обычно.
  *
  * @param {keyof CATEGORIES} category
@@ -79,7 +79,7 @@ const flush = async () => {
   for (const cat of cats) {
     const meta = CATEGORIES[cat];
     const events = buffer[cat];
-    lines.push(`<b>${meta.label}</b> — ${events.length} шт.`);
+    lines.push(`<b>${meta.label}</b> - ${events.length} шт.`);
 
     // Показываем первые 5 событий, остальные сворачиваем в "... ещё N"
     const preview = events.slice(0, 5);
@@ -98,7 +98,7 @@ const flush = async () => {
   buffer = {};
 
   if (!botInstance) {
-    logger.warn('[Digest] flush called but botInstance is null — digest lost');
+    logger.warn('[Digest] flush called but botInstance is null - digest lost');
     return;
   }
 

@@ -23,11 +23,11 @@ const tosGateText = (t) =>
  * Middleware, блокирующий любые действия пользователя пока он не принял ToS.
  *
  * Логика:
- *   - Если ctx.user отсутствует (не от пользователя — channel post и т.п.) — пропускаем.
+ *   - Если ctx.user отсутствует (не от пользователя - channel post и т.п.) - пропускаем.
  *   - Админы освобождены от гейта.
  *   - Команда /start всегда проходит (там показываем ToS-экран).
  *   - Колбэки tos:accept / tos:decline проходят.
- *   - Если acceptedToS === false — отправляем в /start и блокируем дальше.
+ *   - Если acceptedToS === false - отправляем в /start и блокируем дальше.
  */
 const tosMiddleware = async (ctx, next) => {
   const user = ctx.user;
@@ -35,13 +35,13 @@ const tosMiddleware = async (ctx, next) => {
   if (user.role === 'admin') return next();
   if (user.acceptedToS) return next();
 
-  // /start — пропускаем, чтобы bot.start обработал и показал гейт.
+  // /start - пропускаем, чтобы bot.start обработал и показал гейт.
   const text = ctx.message?.text;
   if (typeof text === 'string' && /^\/start(\b|@|\s|$)/i.test(text)) {
     return next();
   }
 
-  // tos:accept / tos:decline — наши собственные обработчики.
+  // tos:accept / tos:decline - наши собственные обработчики.
   const cbData = ctx.callbackQuery?.data;
   if (typeof cbData === 'string' && cbData.startsWith('tos:')) {
     return next();

@@ -25,8 +25,8 @@ const User = require('../models/User');
  * @property {Object|string} description  Что нужно сделать
  * @property {string} icon         Эмодзи
  * @property {number} bonus        USDT на баланс при разблокировке (0 = без бонуса)
- * @property {Function} check      async (user, stats) => boolean — условие выполнено
- * @property {Function} progress   async (user, stats) => {current,target} — для прогресс-бара
+ * @property {Function} check      async (user, stats) => boolean - условие выполнено
+ * @property {Function} progress   async (user, stats) => {current,target} - для прогресс-бара
  */
 const ACHIEVEMENTS = [
   {
@@ -120,7 +120,7 @@ const computeUserStats = async (userId) => {
  *
  * @param {string} userId Mongo _id пользователя
  * @param {Object} opts
- * @param {boolean} [opts.silent] Если true — не шлём уведомления в Telegram.
+ * @param {boolean} [opts.silent] Если true - не шлём уведомления в Telegram.
  *                                 Useful для массовых reconcile-операций.
  * @returns {Promise<Array<{achievement, bonusGranted}>>} Список новых ачивок
  */
@@ -170,12 +170,12 @@ const checkAndGrantAchievements = async (userId, opts = {}) => {
     }
   }
 
-  // Уведомление пользователю — одно сообщение на все новые ачивки.
+  // Уведомление пользователю - одно сообщение на все новые ачивки.
   if (!silent) {
     try {
       const notif = require('./notification.service');
       const lines = newlyUnlocked.map(({ achievement: a, bonusGranted }) =>
-        `${a.icon} <b>${a.title}</b> — ${a.description}` +
+        `${a.icon} <b>${a.title}</b> - ${a.description}` +
         (bonusGranted ? `\n   💰 +${a.bonus} USDT на баланс` : '')
       );
       const totalBonus = newlyUnlocked
@@ -262,7 +262,7 @@ const renderAchievementsText = (items, lang = 'ru') => {
     for (const a of locked) {
       const pct = Math.floor((a.progress.current / a.progress.target) * 100);
       const bar = '▓'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
-      lines.push(`  🔒 <b>${t(a.title)}</b> — ${t(a.description)}`);
+      lines.push(`  🔒 <b>${t(a.title)}</b> - ${t(a.description)}`);
       lines.push(`     ${bar} ${pct}% (${Math.floor(a.progress.current)}/${a.progress.target})`);
       const rewardLabel = lang === 'en' ? 'Reward' : 'Награда';
       if (a.bonus > 0) lines.push(`     💰 ${rewardLabel}: +${a.bonus} USDT`);

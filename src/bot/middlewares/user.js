@@ -16,7 +16,7 @@ const userMiddleware = async (ctx, next) => {
       const isAdmin = ADMIN_IDS.includes(telegramId);
 
       // Проверяем реферальный код из start команды.
-      // ctx.startPayload не устанавливается в обычном middleware — его выставляет
+      // ctx.startPayload не устанавливается в обычном middleware - его выставляет
       // только bot.start(). Извлекаем из ctx.message.text для совместимости.
       let referredBy = null;
       let refCode = ctx.startPayload || null;

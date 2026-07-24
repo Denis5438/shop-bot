@@ -100,7 +100,7 @@ const showOrdersList = async (ctx, filter = 'active', page = 1) => {
     text += `${STATUS_LABELS[order.status]} | ${escapeHtml(product?.name || '?')}\n`;
     text += `👤 @${escapeHtml(user?.username || user?.telegramId || '?')} | ${order.price} USDT | ${date}\n`;
     buttons.push([
-      Markup.button.callback(`📋 ${product?.name?.substring(0, 20) || '?'} — ${STATUS_LABELS[order.status]}`, `admin:order:${order._id}`),
+      Markup.button.callback(`📋 ${product?.name?.substring(0, 20) || '?'} - ${STATUS_LABELS[order.status]}`, `admin:order:${order._id}`),
     ]);
   }
 
@@ -202,7 +202,7 @@ const confirmAndActivate = async (ctx, orderId) => {
   const provider = resolveOrderProvider(order, order.productId);
 
   // Атомарно «займём» заказ: статус awaiting_confirmation -> activating.
-  // Если два админа кликнут одновременно — один получит null и получит alert,
+  // Если два админа кликнут одновременно - один получит null и получит alert,
   // вместо того чтобы оба зарезервировали по ключу.
   const claimed = await Order.findOneAndUpdate(
     { _id: order._id, status: 'awaiting_confirmation' },
@@ -228,7 +228,7 @@ const confirmAndActivate = async (ctx, orderId) => {
   );
 
   if (!key) {
-    // Откатываем статус — иначе заказ застрянет в activating без ключа.
+    // Откатываем статус - иначе заказ застрянет в activating без ключа.
     await Order.updateOne(
       { _id: claimed._id, status: 'activating' },
       { $set: { status: 'awaiting_confirmation', adminId: null, confirmedAt: null } }

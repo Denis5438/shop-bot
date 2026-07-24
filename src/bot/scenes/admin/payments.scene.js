@@ -55,7 +55,7 @@ const showPaymentsList = async (ctx) => {
     const amount = request.amount ? `${request.amount.toFixed(2)} USDT` : '? USDT';
     text += `👤 @${escapeHtml(username || '?')} | ${amount} | ${escapeHtml(method)} | ${date}\n`;
     buttons.push([
-      Markup.button.callback(`@${username} — ${amount} — ${method}`, `admin:payment:${request._id}`),
+      Markup.button.callback(`@${username} - ${amount} - ${method}`, `admin:payment:${request._id}`),
     ]);
   }
 
@@ -237,7 +237,7 @@ const approveTopupRequest = async (ctx, requestId, amount) => {
 
   if (!approvedRequest || !approvedUser) {
     // Race condition: другой админ уже обработал заявку.
-    // answerCbQuery мог быть вызван ранее в approvePayment — повторный вызов
+    // answerCbQuery мог быть вызван ранее в approvePayment - повторный вызов
     // вернёт "query is too old" от Telegram, поэтому просто сообщаем через
     // текст сообщения (с fallback на reply).
     const text = '⚠️ Заявка уже была обработана другим администратором.';

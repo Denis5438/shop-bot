@@ -1,9 +1,9 @@
 /**
  * seller.scene.js
- * Личный кабинет продавца — доступен по команде /seller
+ * Личный кабинет продавца - доступен по команде /seller
  * Продавец может:
  *  - посмотреть баланс
- *  - привязать/изменить крипто-кошелёк (любая сеть — текстом)
+ *  - привязать/изменить крипто-кошелёк (любая сеть - текстом)
  *  - подать заявку на вывод (минимум из настроек)
  *  - видеть свои заказы (активные и историю)
  */
@@ -75,7 +75,7 @@ const showSellerCabinet = async (ctx) => {
   const activeOrders = await Order.countDocuments({ sellerId: seller._id, status: 'pending' });
 
   const walletLine = seller.walletAddress
-    ? ctx.t('seller_wallet_linked', { wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '—') })
+    ? ctx.t('seller_wallet_linked', { wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '-') })
     : ctx.t('seller_wallet_unlinked');
 
   const pendingWithdrawal = await SellerWithdrawal.findOne({ sellerId: seller._id, status: 'pending' });
@@ -313,7 +313,7 @@ const handleSellerDelivery = async (ctx) => {
   return true;
 };
 
-// ─── Настройка кошелька — шаг 1: ввод адреса ─────────────────────────────────
+// ─── Настройка кошелька - шаг 1: ввод адреса ─────────────────────────────────
 const startWalletSetup = async (ctx) => {
   const seller = await findSeller(ctx);
   if (!seller) return ctx.answerCbQuery(ctx.t('seller_no_access'), { show_alert: true });
@@ -324,7 +324,7 @@ const startWalletSetup = async (ctx) => {
   await ctx.answerCbQuery().catch(() => {});
 
   const currentLine = seller.walletAddress
-    ? ctx.t('seller_wallet_setup_current', { wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '—') })
+    ? ctx.t('seller_wallet_setup_current', { wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '-') })
     : '';
 
   const text = ctx.t('seller_wallet_setup_title', { current: currentLine });
@@ -456,7 +456,7 @@ const startWithdraw = async (ctx) => {
 
   try {
     await ctx.editMessageText(
-      ctx.t('seller_withdraw_title', { balance: seller.balance.toFixed(2), wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '—'), min: minWithdraw }),
+      ctx.t('seller_withdraw_title', { balance: seller.balance.toFixed(2), wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '-'), min: minWithdraw }),
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
@@ -527,7 +527,7 @@ const handleWithdrawAmountInput = async (ctx) => {
 };
 
 const processWithdrawAmount = async (ctx, seller, amount) => {
-  const text = ctx.t('seller_withdraw_confirm_title', { amount: amount.toFixed(2), wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '—') });
+  const text = ctx.t('seller_withdraw_confirm_title', { amount: amount.toFixed(2), wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '-') });
 
   try {
     await ctx.editMessageText(text, {
@@ -585,7 +585,7 @@ const confirmWithdraw = async (ctx, amountStr) => {
 
   await ctx.answerCbQuery(ctx.t('seller_withdraw_created_alert'));
 
-  const text = ctx.t('seller_withdraw_created', { amount: amount.toFixed(2), wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '—') });
+  const text = ctx.t('seller_withdraw_created', { amount: amount.toFixed(2), wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '-') });
 
   try {
     await ctx.editMessageText(text, {

@@ -16,7 +16,7 @@
  *   await stopProgress(progress, '✅ Транзакция найдена!');
  *
  * Helper сам рисует бар, меняет шаги и останавливается при stop/ошибке.
- * Если Telegram не смог отредактировать — молча игнорирует.
+ * Если Telegram не смог отредактировать - молча игнорирует.
  */
 
 const barOf = (pct) => {
@@ -62,7 +62,7 @@ const startProgress = async (ctx, opts = {}) => {
   const renderText = (pct, label, dots = '') =>
     `${title}\n<blockquote>${barOf(pct)} ${pct}%  ${label}${dots}</blockquote>`;
 
-  // Первый рендер (0%) — либо edit, либо reply.
+  // Первый рендер (0%) - либо edit, либо reply.
   const initial = renderText(0, steps[0]?.label || 'Запускаю');
   try {
     if (messageId) {
@@ -72,7 +72,7 @@ const startProgress = async (ctx, opts = {}) => {
       messageId = sent?.message_id;
     }
   } catch (_) {
-    // В худшем случае просто не покажем прогресс — это не должно ронять основной flow.
+    // В худшем случае просто не покажем прогресс - это не должно ронять основной flow.
     return null;
   }
 
@@ -94,7 +94,7 @@ const startProgress = async (ctx, opts = {}) => {
       { parse_mode: 'HTML' }
     ).catch(() => {});
 
-    // Переходим к следующему шагу после 3 "тиков" — создаёт ощущение прогресса.
+    // Переходим к следующему шагу после 3 "тиков" - создаёт ощущение прогресса.
     if (dotCount === 3 && stepIdx < steps.length - 1) {
       stepIdx += 1;
     }

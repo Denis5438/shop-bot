@@ -4,7 +4,7 @@ const sellerWithdrawalSchema = new mongoose.Schema({
   sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', required: true },
   amount: { type: Number, required: true },
   walletAddress: { type: String, required: true },
-  // Сеть хранится строкой — поддерживаем TRC-20, BEP-20, APTOS, SOL и др.
+  // Сеть хранится строкой - поддерживаем TRC-20, BEP-20, APTOS, SOL и др.
   network: { type: String, default: 'TRC-20' },
   status: {
     type: String,

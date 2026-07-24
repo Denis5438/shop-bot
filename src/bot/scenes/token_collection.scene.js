@@ -59,16 +59,16 @@ const sendPrompt = async (ctx) => {
       `1️⃣ Log in at <a href="https://chatgpt.com">chatgpt.com</a>\n` +
       `2️⃣ Go to: <a href="https://chatgpt.com/api/auth/session">chatgpt.com/api/auth/session</a>\n` +
       `3️⃣ Copy <b>all text</b> from the page and send it here\n\n` +
-      `<blockquote>⚠️ The token is long — Telegram splits it into parts. Send everything, then press the button.\n\n` +
-      `📎 Or attach a <code>.txt</code> file — the bot will read it automatically.</blockquote>`
+      `<blockquote>⚠️ The token is long - Telegram splits it into parts. Send everything, then press the button.\n\n` +
+      `📎 Or attach a <code>.txt</code> file - the bot will read it automatically.</blockquote>`
     : `🔑 <b>Отправьте токен ChatGPT</b>\n\n` +
       `<blockquote>⏱ Осталось: <b>~${timeLeft} мин</b></blockquote>\n\n` +
       `<b>Как получить токен:</b>\n` +
       `1️⃣ Войдите на <a href="https://chatgpt.com">chatgpt.com</a>\n` +
       `2️⃣ Перейдите по ссылке:\n    <a href="https://chatgpt.com/api/auth/session">chatgpt.com/api/auth/session</a>\n` +
       `3️⃣ Скопируйте <b>весь текст</b> страницы и отправьте мне\n\n` +
-      `<blockquote>⚠️ Токен длинный — Telegram разбивает его на части. Отправляйте всё, затем нажмите кнопку.\n\n` +
-      `📎 Или прикрепите <code>.txt</code> файл — прочитаю сам.</blockquote>`;
+      `<blockquote>⚠️ Токен длинный - Telegram разбивает его на части. Отправляйте всё, затем нажмите кнопку.\n\n` +
+      `📎 Или прикрепите <code>.txt</code> файл - прочитаю сам.</blockquote>`;
 
   const sent = await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...keyboard });
   ctx.scene.state.promptMsgId = sent.message_id;
@@ -291,7 +291,7 @@ const runActivation = async (ctx, token) => {
 
   if (providerRequiresUserConfirmation(provider)) {
     const msg = await ctx.reply(
-      `⚙️ <b>Шаг 1 из 2</b> — Инициализация ключа...\n▓░░░░░░░░░ 10% 🔄 Подключаюсь к сервису...`,
+      `⚙️ <b>Шаг 1 из 2</b> - Инициализация ключа...\n▓░░░░░░░░░ 10% 🔄 Подключаюсь к сервису...`,
       { parse_mode: 'HTML' }
     );
 
@@ -315,7 +315,7 @@ const runActivation = async (ctx, token) => {
         ctx.chat.id,
         msg.message_id,
         null,
-        `⚙️ <b>Шаг 1 из 2</b> — Инициализация ключа...\n${animStates[animIndex]}${dotStr}`,
+        `⚙️ <b>Шаг 1 из 2</b> - Инициализация ключа...\n${animStates[animIndex]}${dotStr}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
       if (animDots === 3) animIndex += 1;
@@ -357,14 +357,14 @@ const runActivation = async (ctx, token) => {
       `✅ <b>Шаг 1 из 2 выполнен!</b>\n\n` +
       `❓ <b>Это ваш аккаунт?</b>\n\n` +
       `<blockquote>📧 <code>${escapeHtml(email)}</code></blockquote>\n\n` +
-      `Если почта ваша — нажмите <b>✅ Да</b>.\n` +
-      `Если нет — нажмите <b>❌ Нет</b> и деньги вернутся.`,
+      `Если почта ваша - нажмите <b>✅ Да</b>.\n` +
+      `Если нет - нажмите <b>❌ Нет</b> и деньги вернутся.`,
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
           [
-            Markup.button.callback('❌ Нет — не мой', `activation:confirm:no:${order._id}`),
-            Markup.button.callback('✅ Да — мой аккаунт', `activation:confirm:yes:${order._id}`),
+            Markup.button.callback('❌ Нет - не мой', `activation:confirm:no:${order._id}`),
+            Markup.button.callback('✅ Да - мой аккаунт', `activation:confirm:yes:${order._id}`),
           ],
         ]),
       }
@@ -434,8 +434,8 @@ tokenCollectionScene.on('text', async (ctx) => {
     ? 'Keep sending if the token is not complete yet.'
     : 'Продолжайте, если токен ещё не весь.';
   const whenDone = lang === 'en'
-    ? 'When done — press the button below.\n\n📎 Or attach a <code>.txt</code> file — the bot will read it.'
-    : 'Когда отправите всё — нажмите кнопку ниже.\n\n📎 Или прикрепите <code>.txt</code> файл — бот прочитает сам.';
+    ? 'When done - press the button below.\n\n📎 Or attach a <code>.txt</code> file - the bot will read it.'
+    : 'Когда отправите всё - нажмите кнопку ниже.\n\n📎 Или прикрепите <code>.txt</code> файл - бот прочитает сам.';
   const title = lang === 'en' ? '🔑 <b>Send your ChatGPT token</b>' : '🔑 <b>Отправьте ваш токен ChatGPT</b>';
   const timeLeft2 = lang === 'en' ? `Time left: <b>~${timeLeft} min</b>` : `Осталось: <b>~${timeLeft} мин</b>`;
   const doneLabel = lang === 'en' ? '✅ I sent the full token' : '✅ Я отправил весь токен';
@@ -445,7 +445,7 @@ tokenCollectionScene.on('text', async (ctx) => {
   const text =
     `${title}\n\n` +
     `<blockquote>⏱ ${timeLeft2}</blockquote>\n\n` +
-    `📥 <b>${received}:</b> ${totalLen} ${chars} — ${continueHint}\n\n` +
+    `📥 <b>${received}:</b> ${totalLen} ${chars} - ${continueHint}\n\n` +
     `<blockquote>${whenDone}</blockquote>`;
 
   const keyboard = Markup.inlineKeyboard([
@@ -551,8 +551,8 @@ tokenCollectionScene.action(CANCEL_ACTION, async (ctx) => {
   await confirmScreen(ctx, {
     title: lang === 'en' ? '⚠️ Cancel the purchase?' : '⚠️ Отменить покупку?',
     message: lang === 'en'
-      ? `<blockquote>Funds will be returned to your balance, but the order cannot be resumed — a new one will need to be placed.</blockquote>\n\nIf you just want to change the token — press «Continue» and send another token.`
-      : `<blockquote>Деньги вернутся на баланс, но заказ нельзя будет возобновить — нужно будет оформить новый.</blockquote>\n\nЕсли хотите просто сменить токен — нажмите «Продолжить ввод» и отправьте другой токен.`,
+      ? `<blockquote>Funds will be returned to your balance, but the order cannot be resumed - a new one will need to be placed.</blockquote>\n\nIf you just want to change the token - press «Continue» and send another token.`
+      : `<blockquote>Деньги вернутся на баланс, но заказ нельзя будет возобновить - нужно будет оформить новый.</blockquote>\n\nЕсли хотите просто сменить токен - нажмите «Продолжить ввод» и отправьте другой токен.`,
     yesLabel: lang === 'en' ? '❗ Yes, cancel & refund' : '❗ Да, отменить и вернуть деньги',
     yesAction: CANCEL_CONFIRM_ACTION,
     noLabel: lang === 'en' ? '⬅️ Continue entering' : '⬅️ Продолжить ввод',
@@ -561,7 +561,7 @@ tokenCollectionScene.action(CANCEL_ACTION, async (ctx) => {
   });
 });
 
-// Шаг 2a: пользователь подтвердил отмену — выполняем откат.
+// Шаг 2a: пользователь подтвердил отмену - выполняем откат.
 tokenCollectionScene.action(CANCEL_CONFIRM_ACTION, async (ctx) => {
   const lang = ctx.user?.language || 'ru';
   await ctx.answerCbQuery(lang === 'en' ? '❌ Cancelling...' : '❌ Отменяю...').catch(() => {});
@@ -632,7 +632,7 @@ tokenCollectionScene.action(CANCEL_CONFIRM_ACTION, async (ctx) => {
   await ctx.scene.leave();
 });
 
-// Шаг 2b: пользователь передумал — возвращаем обратно к prompt'у ввода токена.
+// Шаг 2b: пользователь передумал - возвращаем обратно к prompt'у ввода токена.
 tokenCollectionScene.action(CANCEL_ABORT_ACTION, async (ctx) => {
   await ctx.answerCbQuery('⬅️ Продолжайте ввод').catch(() => {});
   await ctx.editMessageReplyMarkup(null).catch(() => {});

@@ -58,7 +58,7 @@ const showWithdrawalsList = async (ctx) => {
     text += `👤 @${escapeHtml(username)} | 💰 ${w.amount.toFixed(2)} USDT | ${network} | ${date}\n`;
     buttons.push([
       Markup.button.callback(
-        `@${username} — ${w.amount.toFixed(2)} USDT`,
+        `@${username} - ${w.amount.toFixed(2)} USDT`,
         `admin:sellers:withdrawal:${w._id}`
       ),
     ]);
@@ -218,7 +218,7 @@ const showSellersList = async (ctx) => {
 
   for (const seller of sellers) {
     const status = seller.isActive ? '✅' : '🔴';
-    text += `${status} @${escapeHtml(seller.username)} — 💰 ${seller.balance.toFixed(2)} USDT (заработал: ${seller.totalEarned.toFixed(2)})\n`;
+    text += `${status} @${escapeHtml(seller.username)} - 💰 ${seller.balance.toFixed(2)} USDT (заработал: ${seller.totalEarned.toFixed(2)})\n`;
     buttons.push([
       Markup.button.callback(`${status} @${seller.username}`, `admin:sellers:view:${seller._id}`),
     ]);
@@ -494,7 +494,7 @@ const showWithdrawalsHistory = async (ctx) => {
     const seller = w.sellerId;
     const date = new Date(w.processedAt || w.createdAt).toLocaleDateString('ru-RU');
     const icon = w.status === 'completed' ? '✅' : '❌';
-    text += `${icon} @${escapeHtml(seller?.username || '?')} — ${w.amount.toFixed(2)} USDT | ${date}\n`;
+    text += `${icon} @${escapeHtml(seller?.username || '?')} - ${w.amount.toFixed(2)} USDT | ${date}\n`;
   }
 
   const opts = {

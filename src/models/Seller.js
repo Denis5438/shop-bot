@@ -8,7 +8,7 @@ const sellerSchema = new mongoose.Schema({
   // Отображаемое имя
   displayName: { type: String, default: '' },
 
-  // Крипто-кошелёк для вывода (любая сеть — строкой)
+  // Крипто-кошелёк для вывода (любая сеть - строкой)
   walletAddress: { type: String, default: null },
   walletNetwork: { type: String, default: null }, // TRC-20, BEP-20, APTOS, SOL ...
 

@@ -12,7 +12,7 @@ const PER_PAGE = 5;
 const ACTIVE_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'retry'];
 
 // Уровень пользователя по сумме потраченного.
-// Возвращает { emoji, labelKey } — вызывающий код использует ctx.t(labelKey)
+// Возвращает { emoji, labelKey } - вызывающий код использует ctx.t(labelKey)
 // для локализации на язык пользователя.
 const getLevel = (totalSpent) => {
   if (totalSpent >= 50) return { emoji: '💎', labelKey: 'level_vip' };
@@ -25,7 +25,7 @@ const getLevel = (totalSpent) => {
 const localizedOrderStatus = (ctx, status) => {
   const key = `order_status_${status}`;
   const localized = ctx.t ? ctx.t(key) : null;
-  // Если перевод не найден (не добавлен новый статус в локаль) — fallback на RU-мапку.
+  // Если перевод не найден (не добавлен новый статус в локаль) - fallback на RU-мапку.
   return localized && localized !== key ? localized : (ORDER_STATUS_LABELS[status] || status);
 };
 

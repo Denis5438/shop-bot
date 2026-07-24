@@ -2,7 +2,7 @@
  * transactionHelper.service.js
  *
  * Обёртка для MongoDB-транзакций с graceful fallback.
- * Если БД — standalone (не replica set), транзакции недоступны —
+ * Если БД - standalone (не replica set), транзакции недоступны -
  * выполняем операции без транзакции, логируя предупреждение.
  */
 
@@ -13,13 +13,13 @@ let transactionsAvailable = null; // unknown until first attempt
 
 /**
  * Выполняет callback внутри MongoDB-транзакции.
- * Если транзакции недоступны (standalone MongoDB) — выполняет без транзакции.
+ * Если транзакции недоступны (standalone MongoDB) - выполняет без транзакции.
  *
  * @param {Function} fn - async функция, принимающая (session)
  * @returns {Promise<*>} результат fn
  */
 const withTransaction = async (fn) => {
-  // Если уже знаем, что транзакции не работают — сразу без сессии
+  // Если уже знаем, что транзакции не работают - сразу без сессии
   if (transactionsAvailable === false) {
     return await fn(null);
   }

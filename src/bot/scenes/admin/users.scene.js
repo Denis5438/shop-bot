@@ -138,10 +138,10 @@ const handleGlobalSearch = async (ctx) => {
 
 // Профиль пользователя для админа.
 // Вызывается из двух контекстов:
-//   1) callback-кнопка (admin:user:view:..., admin:user:ban, ...) — есть ctx.callbackQuery.
-//   2) текстовый поиск (handleGlobalSearch) — ctx.callbackQuery отсутствует.
+//   1) callback-кнопка (admin:user:view:..., admin:user:ban, ...) - есть ctx.callbackQuery.
+//   2) текстовый поиск (handleGlobalSearch) - ctx.callbackQuery отсутствует.
 // В случае (2) вызов answerCbQuery() синхронно бросает TypeError (до того как
-// вернётся Promise), поэтому обычный .catch() не помогает — нужен guard.
+// вернётся Promise), поэтому обычный .catch() не помогает - нужен guard.
 const answerCbSafe = (ctx, text, opts) => {
   if (!ctx.callbackQuery) return Promise.resolve();
   return ctx.answerCbQuery(text, opts).catch(() => {});
@@ -212,8 +212,8 @@ const startChangeBalance = async (ctx, userId) => {
 
   await ctx.reply(
     `💰 Введите сумму для изменения баланса:\n` +
-    `Положительное (<code>+5</code>) — пополнение\n` +
-    `Отрицательное (<code>-3</code>) — списание`,
+    `Положительное (<code>+5</code>) - пополнение\n` +
+    `Отрицательное (<code>-3</code>) - списание`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:user:view:${userId}`)]]),

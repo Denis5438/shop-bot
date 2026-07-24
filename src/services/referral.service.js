@@ -12,7 +12,7 @@ const { withTransaction } = require('./transactionHelper.service');
  *
  * Это единая «точка после completed-заказа». Вызывается из всех мест,
  * где заказ переходит в `completed`. Благодаря идемпотентности обоих
- * сервисов — повторные вызовы безопасны.
+ * сервисов - повторные вызовы безопасны.
  */
 const grantReferralBonusForFirstCompletedOrder = async (userId) => {
   let result = { granted: false, reason: 'not_eligible' };

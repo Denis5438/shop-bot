@@ -6,9 +6,9 @@ const crypto = require('crypto');
  * Валидация внутреннего перевода по UID пользователя (Bybit API v5)
  *
  * Возвращает:
- *   - { success: true, matches: [...] }                — найдены подтверждённые переводы.
- *   - { success: false, reason }                       — переводов нет.
- *   - { success: false, blocked: true, reason, code }  — Bybit заблокировал запрос
+ *   - { success: true, matches: [...] }                - найдены подтверждённые переводы.
+ *   - { success: false, reason }                       - переводов нет.
+ *   - { success: false, blocked: true, reason, code }  - Bybit заблокировал запрос
  *     (часто 403 от CloudFront по гео-фильтру или rate-limit). Вызывающий код
  *     должен в этом случае не показывать пользователю «соединение упало», а
  *     перевести заявку на ручную проверку.
@@ -19,7 +19,7 @@ const verifyUidUsdt = async (senderUid) => {
     return { success: false, reason: 'API ключи не настроены (Обратитесь к администратору)' };
   }
 
-  // Нормализуем ввод: обрезаем пробелы и невидимые символы, UID — это цифры.
+  // Нормализуем ввод: обрезаем пробелы и невидимые символы, UID - это цифры.
   const uidClean = String(senderUid || '').trim();
   if (!uidClean) {
     return { success: false, reason: 'Пустой UID' };
@@ -36,7 +36,7 @@ const verifyUidUsdt = async (senderUid) => {
   try {
     const res = await axios.get(`https://api.bybit.com/v5/asset/deposit/query-internal-record?${qs}`, {
       headers: {
-        // Bybit's CloudFront отбивает запросы без User-Agent с 403 — добавляем явный UA.
+        // Bybit's CloudFront отбивает запросы без User-Agent с 403 - добавляем явный UA.
         'User-Agent': 'shop-bot/1.0 (+https://t.me/Tigrano_o)',
         'Accept': 'application/json',
         'X-BAPI-API-KEY': BYBIT_API_KEY,
@@ -46,7 +46,7 @@ const verifyUidUsdt = async (senderUid) => {
         'X-BAPI-RECV-WINDOW': recvWindow,
       },
       timeout: 10000,
-      // Не выкидываем исключение по 4xx/5xx — нам нужно тело для диагностики.
+      // Не выкидываем исключение по 4xx/5xx - нам нужно тело для диагностики.
       validateStatus: () => true,
     });
 

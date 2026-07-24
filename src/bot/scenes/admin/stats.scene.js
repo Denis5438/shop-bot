@@ -333,7 +333,7 @@ const showSalesChart = async (ctx) => {
       }
     );
   } catch (err) {
-    // quickchart.io или Telegram не смогли принять картинку —
+    // quickchart.io или Telegram не смогли принять картинку -
     // шлём текстовую сводку с прямой ссылкой, чтобы админ мог открыть её.
     const fallbackText =
       `${text}\n\n` +

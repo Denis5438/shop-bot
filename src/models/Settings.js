@@ -19,7 +19,7 @@ const settingsSchema = new mongoose.Schema({
   bybitTrc20Address: { type: String, default: '' },
   bybitBep20Address: { type: String, default: '' },
   bybitUid: { type: String, default: '' },
-  // #17 Admin digest: если включён — обычные уведомления агрегируются
+  // #17 Admin digest: если включён - обычные уведомления агрегируются
   // в почасовую сводку, критичные уходят сразу как раньше.
   adminDigestEnabled: { type: Boolean, default: false },
   adminDigestIntervalMinutes: { type: Number, default: 60 },

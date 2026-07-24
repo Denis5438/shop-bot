@@ -114,7 +114,7 @@ const askTopupAmount = async (ctx, method, network = null) => {
 
   const rate = getRate();
   const currencyLine = lang === 'en' ? `💱 Rate: <b>1 USDT = ${rate.toFixed(2)} ₽</b>` : `💱 Курс: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`;
-  const hint = lang === 'en' ? `Example: <code>5</code> — is ~${(5 * rate).toFixed(0)} ₽` : `Например: <code>5</code> — это ~${(5 * rate).toFixed(0)} ₽`;
+  const hint = lang === 'en' ? `Example: <code>5</code> - is ~${(5 * rate).toFixed(0)} ₽` : `Например: <code>5</code> - это ~${(5 * rate).toFixed(0)} ₽`;
 
   const presets = [5, 10, 20, 50, 100];
   const presetLabel = 'USDT';
@@ -156,7 +156,7 @@ const showCardDetails = async (ctx) => {
   await askTopupAmount(ctx, 'card', null);
 };
 
-// ─── Шаг 3б: Bybit — выбор сети ──────────────────────────────────────────────
+// ─── Шаг 3б: Bybit - выбор сети ──────────────────────────────────────────────
 const showBybitOptions = async (ctx) => {
   ctx.session = ctx.session || {};
   const prevQuickAmount = ctx.session?.topup?.quickAmount || null;
@@ -200,7 +200,7 @@ const showBybitNetwork = async (ctx, network) => {
 };
 
 // UX-1: Обработчик кнопки-пресета. Подставляем сумму как будто её ввели вручную
-// и прогоняем через тот же flow — это даёт -1 клик в типичном сценарии.
+// и прогоняем через тот же flow - это даёт -1 клик в типичном сценарии.
 const handlePresetAmount = async (ctx, currency, amountStr) => {
   const topup = ctx.session?.topup;
   const lang = ctx.user?.language || 'ru';
@@ -265,8 +265,8 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
   if (amountUSDT < minTopup) {
     const minRub = Math.ceil(minTopup * getRate());
     const errMsg = currency === 'usdt'
-      ? (lang === 'en' ? `❌ <b>Minimum top-up amount — ${minTopup} USDT</b>\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения — ${minTopup} USDT</b>\n\nВведите сумму ещё раз:`)
-      : (lang === 'en' ? `❌ <b>Minimum top-up amount — ${minRub} ₽</b> (~${minTopup} USDT)\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения — ${minRub} ₽</b> (~${minTopup} USDT)\n\nВведите сумму ещё раз:`);
+      ? (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minTopup} USDT</b>\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minTopup} USDT</b>\n\nВведите сумму ещё раз:`)
+      : (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minRub} ₽</b> (~${minTopup} USDT)\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minRub} ₽</b> (~${minTopup} USDT)\n\nВведите сумму ещё раз:`);
     await ctx.reply(errMsg, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')]]),
@@ -348,7 +348,7 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
         `① Send <b>${amountUSDT.toFixed(2)} USDT</b> to this address:\n` +
         `<code>${escapeHtml(topupAddr)}</code>` + copyHint(lang) + `\n\n` +
         `② After sending, click the button below and paste the TXID.\n\n` +
-        `⚠️ DO NOT use other networks — funds will be lost.\n` +
+        `⚠️ DO NOT use other networks - funds will be lost.\n` +
         `⚠️ Make sure it is ${label} and ${coin}.`
       : `🌐 <b>Пополнение USDT (${network.toUpperCase()})</b>\n\n` +
         `🪙 Монета: ${coin}\n` +
@@ -357,7 +357,7 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
         `① Отправьте <b>${amountUSDT.toFixed(2)} USDT</b> на этот адрес:\n` +
         `<code>${escapeHtml(topupAddr)}</code>` + copyHint(lang) + `\n\n` +
         `② После отправки нажмите кнопку ниже и вставьте TXID.\n\n` +
-        `⚠️ НЕ используйте другие сети — средства будут потеряны.\n` +
+        `⚠️ НЕ используйте другие сети - средства будут потеряны.\n` +
         `⚠️ Убедитесь, что это ${label} и ${coin}.`;
   } else {
     text = lang === 'en'
@@ -373,7 +373,7 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 
   const buttons = [];
   if (isAutoCrypto) {
-    buttons.push([Markup.button.callback(network === 'uid' ? (lang === 'en' ? '🔎 I sent it — enter UID' : '🔎 Я перевёл — отправить UID') : (lang === 'en' ? '🔎 I sent it — enter TXID' : '🔎 Я отправил — ввести TXID'), 'topup:enter_txid')]);
+    buttons.push([Markup.button.callback(network === 'uid' ? (lang === 'en' ? '🔎 I sent it - enter UID' : '🔎 Я перевёл - отправить UID') : (lang === 'en' ? '🔎 I sent it - enter TXID' : '🔎 Я отправил - ввести TXID'), 'topup:enter_txid')]);
     buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]);
   } else {
     buttons.push([Markup.button.callback(lang === 'en' ? '✅ I paid' : '✅ Я оплатил', 'topup:card_paid')]);
@@ -469,8 +469,8 @@ const handleTopupProof = async (ctx) => {
   let finalTxid = proofText; // По умолчанию (для блокчейнов) TXID = присланный текст
 
   if (isAutoCrypto && proofText && !proofFileId) {
-    // В случае с блокчейном присланный текст — это TXID.
-    // В случае с UID присланный текст — это UID отправителя.
+    // В случае с блокчейном присланный текст - это TXID.
+    // В случае с UID присланный текст - это UID отправителя.
     
     if (network !== 'uid') {
       const exists = await TopupRequest.findOne({ txid: proofText });
@@ -485,9 +485,9 @@ const handleTopupProof = async (ctx) => {
     // Защита от impersonation для Bybit UID: юзер сам указывает UID отправителя,
     // поэтому без привязки к user._id злоумышленник мог бы заявить чужой UID
     // и получить его депозит. Логика:
-    //   1) Если у этого юзера уже есть привязанный UID и он не совпадает с введённым —
+    //   1) Если у этого юзера уже есть привязанный UID и он не совпадает с введённым -
     //      отказ. Смена UID разрешена только через поддержку.
-    //   2) Если этот UID уже привязан к ДРУГОМУ юзеру — отказ.
+    //   2) Если этот UID уже привязан к ДРУГОМУ юзеру - отказ.
     // First-claim wins: первый, кто успешно пополнится с UID, закрепляет его за собой
     // (привязка произойдёт ниже, после подтверждённой транзакции).
     if (network === 'uid') {
@@ -496,8 +496,8 @@ const handleTopupProof = async (ctx) => {
       if (user.bybitUid && user.bybitUid !== uidInput) {
         const mask = `***${String(user.bybitUid).slice(-4)}`;
         const errTxt = lang === 'en'
-          ? `❌ <b>UID does not match yours</b>\n\nUID <code>${mask}</code> is already linked to your account.\nIf you changed your Bybit account — contact support.`
-          : `❌ <b>UID не совпадает с вашим</b>\n\nК вашему аккаунту уже привязан UID: <code>${mask}</code>.\nЕсли вы сменили Bybit-аккаунт — обратитесь в поддержку.`;
+          ? `❌ <b>UID does not match yours</b>\n\nUID <code>${mask}</code> is already linked to your account.\nIf you changed your Bybit account - contact support.`
+          : `❌ <b>UID не совпадает с вашим</b>\n\nК вашему аккаунту уже привязан UID: <code>${mask}</code>.\nЕсли вы сменили Bybit-аккаунт - обратитесь в поддержку.`;
         const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
         if (topup.msgId) { await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts)); } else { await ctx.reply(errTxt, errOpts); }
         return true;
@@ -508,7 +508,7 @@ const handleTopupProof = async (ctx) => {
         if (claimedByOther) {
           const errTxt = lang === 'en' 
             ? '❌ <b>This UID is already linked to another account.</b>\n\nIf this is an error, please contact support.'
-            : '❌ <b>Этот UID уже привязан к другому аккаунту.</b>\n\nЕсли это ошибка — напишите в поддержку.';
+            : '❌ <b>Этот UID уже привязан к другому аккаунту.</b>\n\nЕсли это ошибка - напишите в поддержку.';
           const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
           if (topup.msgId) { await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(() => ctx.reply(errTxt, errOpts)); } else { await ctx.reply(errTxt, errOpts); }
           return true;
@@ -551,7 +551,7 @@ const handleTopupProof = async (ctx) => {
     } else if (network === 'bep20') {
       bResult = await blockchain.verifyBep20Usdt(proofText, topupAddr);
     } else if (network === 'uid') {
-      // Для UID proofText — это UID отправителя. 
+      // Для UID proofText - это UID отправителя. 
       // Проверяем API!
       bResult = await blockchain.verifyUidUsdt(proofText);
       if (bResult.success && bResult.matches) {
@@ -584,20 +584,20 @@ const handleTopupProof = async (ctx) => {
       }
     } else if (bResult.blocked) {
       // Bybit/RPC заблокировал запрос (CloudFront 403, rate-limit, сеть). API сейчас
-      // недоступен — отправляем заявку на ручную проверку оператором.
+      // недоступен - отправляем заявку на ручную проверку оператором.
       statusReason = `⚠️ ${bResult.reason || (lang === 'en' ? 'Auto-check temporarily unavailable.' : 'Авто-проверка временно недоступна.')}`;
       requestStatus = 'pending';
     } else {
       statusReason = lang === 'en' ? `⚠️ Auto-check error: ${bResult.reason}.` : `⚠️ Ошибка авто-проверки: ${bResult.reason}.`;
     }
 
-    // UX-16: останавливаем прогресс-анимацию — дальше финальный editMessageText сам перепишет msg.
+    // UX-16: останавливаем прогресс-анимацию - дальше финальный editMessageText сам перепишет msg.
     if (progress) progress.stop(lang === 'en' ? '⏳ Generating response...' : '⏳ Формирую ответ...').catch(() => {});
   }
 
   // Дедупликация: после автопроверки (или если её не было) сверяем по финальной
   // сумме. Раньше было до API, что давало погрешность при коррекции суммы.
-  // Сравниваем pending-заявки (та же сумма ±1%) — защищает от двойной отправки чека.
+  // Сравниваем pending-заявки (та же сумма ±1%) - защищает от двойной отправки чека.
   {
     const dupAmount = finalAmountUSDT;
     const duplicateRequest = await TopupRequest.findOne({
@@ -632,7 +632,7 @@ const handleTopupProof = async (ctx) => {
     proofFileId,
     status: requestStatus
   };
-  // txid только для авто-крипты — иначе не устанавливаем поле (sparse index)
+  // txid только для авто-крипты - иначе не устанавливаем поле (sparse index)
   if (isAutoCrypto && finalTxid && !proofFileId) {
     requestData.txid = finalTxid;
   }
@@ -656,7 +656,7 @@ const handleTopupProof = async (ctx) => {
         freshUser.balance = parseFloat((freshUser.balance + finalAmountUSDT).toFixed(8));
 
         // First-claim wins: привязываем UID к юзеру при первом успешном топапе.
-        // Если параллельно другой аккаунт успел занять этот UID — unique-index
+        // Если параллельно другой аккаунт успел занять этот UID - unique-index
         // выбросит DuplicateKey, мы это ловим и откатываем.
         if (network === 'uid' && !freshUser.bybitUid && proofText) {
           freshUser.bybitUid = proofText.trim();
@@ -676,7 +676,7 @@ const handleTopupProof = async (ctx) => {
         }).save(session ? { session } : undefined);
       });
     } catch (err) {
-      // Конфликт на sparse unique index bybitUid_string_unique — кто-то
+      // Конфликт на sparse unique index bybitUid_string_unique - кто-то
       // успел привязать UID первым между pre-check и commit. Разворачиваем
       // транзакцию заявки в pending, чтобы админ разобрался вручную.
       if (err && err.code === 11000 && String(err.message || '').includes('bybitUid')) {

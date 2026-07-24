@@ -189,7 +189,7 @@ const createBot = () => {
   // Каждую минуту проверяем заказы старше 30 минут
   cronHandles.push(setInterval(async () => {
     try {
-      // Если нет активного подключения к БД — пропускаем итерацию
+      // Если нет активного подключения к БД - пропускаем итерацию
       if (mongoose.connection.readyState !== 1) return;
 
       const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
@@ -259,7 +259,7 @@ const createBot = () => {
   // ─────────────────── RETRY АКТИВАЦИИ ───────────────────
   // Каждую минуту проверяем заказы в статусе retry с наступившим nextRetryAt.
   // Внутренний хелпер атомарно делает rollback (статус→failed, возврат
-  // баланса, проводка Transaction, освобождение ключа) одной транзакцией —
+  // баланса, проводка Transaction, освобождение ключа) одной транзакцией -
   // защищает от частичных state'ов при падении процесса между шагами.
   const failOrderWithRefund = async (orderId, reason, txDescription) => {
     let cancelledOrder = null;
@@ -307,7 +307,7 @@ const createBot = () => {
   };
 
   // Guard: предотвращаем наложение итераций retry-крона при лагах БД/API.
-  // Если предыдущий тик ещё работает — пропускаем текущий.
+  // Если предыдущий тик ещё работает - пропускаем текущий.
   let retryCronBusy = false;
   cronHandles.push(setInterval(async () => {
     if (retryCronBusy) return;
@@ -323,14 +323,14 @@ const createBot = () => {
       }).populate('productId');
 
       for (const order of retryOrders) {
-        // Перечитываем — статус мог измениться
+        // Перечитываем - статус мог измениться
         const fresh = await Order.findById(order._id).populate('productId');
         if (!fresh || fresh.status !== 'retry') continue;
         const provider = resolveOrderProvider(fresh, fresh.productId);
 
         const key = await Key.findById(fresh.keyId);
 
-        // Нет ключа или токена — фейлим атомарно
+        // Нет ключа или токена - фейлим атомарно
         if (!key || !fresh.tokenRaw) {
           const { user } = await failOrderWithRefund(
             fresh._id,
@@ -347,7 +347,7 @@ const createBot = () => {
           continue;
         }
 
-        // Нет apiOrderId — нельзя повторить шаг 2, фейлим
+        // Нет apiOrderId - нельзя повторить шаг 2, фейлим
         if (!fresh.apiOrderId) {
           await failOrderWithRefund(
             fresh._id,
@@ -378,7 +378,7 @@ const createBot = () => {
               `✅ <b>Retry-активация успешна</b>\n📋 Заказ: <code>${fresh._id}</code> (попытка ${fresh.retryCount})`
             );
           } else {
-            // Снова ошибка — увеличиваем retryCount
+            // Снова ошибка - увеличиваем retryCount
             const canRetry = result.retryable !== false;
             if (!canRetry || fresh.retryCount >= MAX_RETRIES) {
               const { user } = await failOrderWithRefund(
@@ -560,7 +560,7 @@ const createBot = () => {
     }
   }, 60_000));
 
-  // Экспортируем функцию очистки всех интервалов на объекте bot —
+  // Экспортируем функцию очистки всех интервалов на объекте bot -
   // вызовется при SIGINT/SIGTERM из index.js.
   bot.context.__clearCronHandles = async () => {
     for (const h of cronHandles) {
@@ -578,12 +578,12 @@ const createBot = () => {
     const user = ctx.user;
     const t = ctx.t;
 
-    // Если первый раз — предлагаем выбрать язык
+    // Если первый раз - предлагаем выбрать язык
     if (!user) {
       return ctx.reply('⚠️ Не удалось загрузить профиль. Попробуйте позже или обратитесь в поддержку.').catch(() => {});
     }
 
-    // ToS-гейт: пока не принял — показываем экран согласия. Админы пропущены
+    // ToS-гейт: пока не принял - показываем экран согласия. Админы пропущены
     // на уровне tosMiddleware, но дублируем условие здесь для надёжности.
     if (!user.acceptedToS && user.role !== 'admin') {
       return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
@@ -741,9 +741,9 @@ const createBot = () => {
     await ctx.editMessageText(
       `🏪 <b>Добро пожаловать, ${escapeHtml(ctx.user.firstName)}!</b>\n\n` +
       `💡 <b>Быстрый старт:</b>\n` +
-      `🛒 <b>Магазин</b> — выберите товар и оплатите с баланса\n` +
-      `💰 <b>Пополнить</b> — карта, USDT (TRC-20/BEP-20), Bybit UID\n` +
-      `👤 <b>Профиль</b> — баланс, заказы, реферальный код\n\n` +
+      `🛒 <b>Магазин</b> - выберите товар и оплатите с баланса\n` +
+      `💰 <b>Пополнить</b> - карта, USDT (TRC-20/BEP-20), Bybit UID\n` +
+      `👤 <b>Профиль</b> - баланс, заказы, реферальный код\n\n` +
       `💰 Баланс: ${ctx.user.balance.toFixed(2)} USDT (~${toRub(ctx.user.balance)} ₽)`,
       { parse_mode: 'HTML', ...mainKeyboard(ctx.t, ctx.isSeller) }
     ).catch(() => {});
@@ -756,9 +756,9 @@ const createBot = () => {
     await ctx.editMessageText(
       `🏪 <b>Welcome, ${escapeHtml(ctx.user.firstName)}!</b>\n\n` +
       `💡 <b>Quick start:</b>\n` +
-      `🛒 <b>Shop</b> — pick a product & pay from balance\n` +
-      `💰 <b>Top up</b> — card, USDT (TRC-20/BEP-20), Bybit UID\n` +
-      `👤 <b>Profile</b> — balance, orders, referral code\n\n` +
+      `🛒 <b>Shop</b> - pick a product & pay from balance\n` +
+      `💰 <b>Top up</b> - card, USDT (TRC-20/BEP-20), Bybit UID\n` +
+      `👤 <b>Profile</b> - balance, orders, referral code\n\n` +
       `💰 Balance: ${ctx.user.balance.toFixed(2)} USDT (~${toRub(ctx.user.balance)} ₽)`,
       { parse_mode: 'HTML', ...mainKeyboard(ctx.t, ctx.isSeller) }
     ).catch(() => {});
@@ -820,8 +820,8 @@ const createBot = () => {
     await topupScene.startTopupWithAmount(ctx, amount);
   });
 
-  // ─────────────────── ПОПОЛНЕНИЕ — выбор способа ───────────────────
-  // Авто-оплата (стаб) — ничего не делаем
+  // ─────────────────── ПОПОЛНЕНИЕ - выбор способа ───────────────────
+  // Авто-оплата (стаб) - ничего не делаем
   bot.action('topup:auto_stub', (ctx) => ctx.answerCbQuery('⚠️ Временно недоступно', { show_alert: true }));
 
   // Прямой перевод
@@ -842,13 +842,13 @@ const createBot = () => {
     await topupScene.showCardDetails(ctx);
   });
 
-  // Bybit — выбор сети
+  // Bybit - выбор сети
   bot.action('topup:pay:bybit', async (ctx) => {
     await ctx.answerCbQuery();
     await topupScene.showBybitOptions(ctx);
   });
 
-  // Bybit — конкретная сеть
+  // Bybit - конкретная сеть
   bot.action(/^topup:network:(trc20|bep20|uid)$/, async (ctx) => {
     await ctx.answerCbQuery();
     await topupScene.showBybitNetwork(ctx, ctx.match[1]);
@@ -865,7 +865,7 @@ const createBot = () => {
     await topupScene.handleEnterTxid(ctx);
   });
 
-  // «Я оплатил» — подтверждение оплаты картой
+  // «Я оплатил» - подтверждение оплаты картой
   bot.action('topup:card_paid', async (ctx) => {
     const topup = ctx.session?.topup;
     if (!topup || topup.method !== 'card') {
@@ -938,7 +938,7 @@ const createBot = () => {
     await shopScene.showShopPage(ctx);
   });
 
-  // Формат: shop:product:<id>:<page?> — page опционален для обратной совместимости.
+  // Формат: shop:product:<id>:<page?> - page опционален для обратной совместимости.
   bot.action(/^shop:product:([^:]+)(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
@@ -1064,7 +1064,7 @@ const createBot = () => {
     await profileScene.showLanguageSelect(ctx);
   });
 
-  // ─────────────────── ADMIN — ГЛАВНОЕ МЕНЮ ───────────────────
+  // ─────────────────── ADMIN - ГЛАВНОЕ МЕНЮ ───────────────────
   bot.action('admin:main', adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     await adminScene.showAdminMain(ctx);
@@ -1125,7 +1125,7 @@ const createBot = () => {
     await productsScene.cloneProduct(ctx, ctx.match[1]);
   });
 
-  // Рассылка нового товара — сначала экран выбора сегмента (№16).
+  // Рассылка нового товара - сначала экран выбора сегмента (№16).
   bot.action(/^admin:product:broadcast:(.+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     const productId = ctx.match[1];
@@ -1149,7 +1149,7 @@ const createBot = () => {
 
     const rows = notif.SEGMENTS.map((s, i) => [
       Markup.button.callback(
-        `${s.icon} ${SEGMENT_LABELS[s.key]} — ${counts[i]}`,
+        `${s.icon} ${SEGMENT_LABELS[s.key]} - ${counts[i]}`,
         `admin:broadcast:${productId}:${s.key}`
       ),
     ]);
@@ -1158,7 +1158,7 @@ const createBot = () => {
     const text =
       `📢 <b>Рассылка товара</b>\n\n` +
       `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b>\n\n` +
-      `<blockquote>Выберите сегмент получателей. Число рядом — это сколько людей в сегменте.</blockquote>`;
+      `<blockquote>Выберите сегмент получателей. Число рядом - это сколько людей в сегменте.</blockquote>`;
 
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
@@ -1226,7 +1226,7 @@ const createBot = () => {
     }
     const type = ctx.match[1];
     ctx.session.newProduct.type = type;
-    // Поставщик выбирается автоматически в handleProductInput — шаг выбора убран
+    // Поставщик выбирается автоматически в handleProductInput - шаг выбора убран
     await productsScene.askNameForNewProduct(ctx, type);
   });
 
@@ -1524,7 +1524,7 @@ const createBot = () => {
         return '▓'.repeat(filled) + '░'.repeat(empty) + ` ${pct}%`;
       };
       const step2Msg = await ctx.reply(
-        `⚙️ <b>Шаг 2 из 2</b> — Привязка токена...\n${progressBar(10)} 🔄 Запускаю привязку...`,
+        `⚙️ <b>Шаг 2 из 2</b> - Привязка токена...\n${progressBar(10)} 🔄 Запускаю привязку...`,
         { parse_mode: 'HTML' }
       );
 
@@ -1541,7 +1541,7 @@ const createBot = () => {
         const dotStr = '.'.repeat(animDots);
         ctx.telegram.editMessageText(
           ctx.chat.id, step2Msg.message_id, null,
-          `⚙️ <b>Шаг 2 из 2</b> — Привязка токена...\n${animStates[animIndex]}${dotStr}`,
+          `⚙️ <b>Шаг 2 из 2</b> - Привязка токена...\n${animStates[animIndex]}${dotStr}`,
           { parse_mode: 'HTML' }
         ).catch(() => {});
         if (animDots === 3) animIndex++;
@@ -1563,7 +1563,7 @@ const createBot = () => {
         await ctx.telegram.editMessageText(
           ctx.chat.id, step2Msg.message_id, null,
           `🎉 <b>Активация завершена!</b>\n\n` +
-          `<blockquote>✅ Шаг 2 из 2 — Токен привязан!</blockquote>\n\n` +
+          `<blockquote>✅ Шаг 2 из 2 - Токен привязан!</blockquote>\n\n` +
           `Спасибо за покупку! Ваша подписка активирована.`,
           {
             parse_mode: 'HTML',
@@ -1585,14 +1585,14 @@ const createBot = () => {
           `💰 ${order.price} USDT`
         );
       } else {
-        // Шаг 2 провалился — ставим в retry (до 3 попыток), потом failed
+        // Шаг 2 провалился - ставим в retry (до 3 попыток), потом failed
         const MAX_RETRIES = 3;
         const RETRY_DELAY = 5 * 60 * 1000; // 5 минут
 
         const currentRetryCount = order.retryCount || 0;
 
         if (currentRetryCount < MAX_RETRIES) {
-          // Ставим в retry — крон попробует снова
+          // Ставим в retry - крон попробует снова
           order.status = 'retry';
           order.provider = provider;
           order.apiOrderId = pending.apiOrderId;
@@ -1618,7 +1618,7 @@ const createBot = () => {
             `❌ ${String(result.message).substring(0, 200)}`
           );
         } else {
-          // Исчерпаны попытки — откатываем
+          // Исчерпаны попытки - откатываем
           const key = await Key.findById(pending.keyId);
           if (key) { key.isUsed = false; key.usedByOrder = null; await key.save(); }
 
@@ -1658,13 +1658,13 @@ const createBot = () => {
       }
 
     } else {
-      // ── Пользователь нажал «Нет» — откатываем ключ, возвращаем деньги ──
+      // ── Пользователь нажал «Нет» - откатываем ключ, возвращаем деньги ──
       // Возвращаем ключ в пул
       const key = await Key.findById(pending.keyId);
       if (key) { key.isUsed = false; key.usedByOrder = null; await key.save(); }
 
       // Сбрасываем заказ обратно в awaiting_token
-      // retryCount/apiOrderId/nextRetryAt также сбрасываются — для нового
+      // retryCount/apiOrderId/nextRetryAt также сбрасываются - для нового
       // токена это «чистая» попытка активации, а не продолжение предыдущей.
       order.status = 'awaiting_token';
       order.keyId = null;
@@ -1677,7 +1677,7 @@ const createBot = () => {
       ctx.session.pendingActivation = null;
 
       await ctx.reply(
-        `🔄 <b>Понял, не ваш аккаунт.</b>\n\nПожалуйста, отправьте токен ещё раз — возможно, он был неверным или устаревшим.`,
+        `🔄 <b>Понял, не ваш аккаунт.</b>\n\nПожалуйста, отправьте токен ещё раз - возможно, он был неверным или устаревшим.`,
         { parse_mode: 'HTML' }
       );
 
@@ -1749,7 +1749,7 @@ const createBot = () => {
     // Управление категориями (admin)
     if (await categoriesScene.handleCategoryInput(ctx)) return;
 
-    // Добавление товара (admin) — включает назначение продавца
+    // Добавление товара (admin) - включает назначение продавца
     if (await productsScene.handleProductInput(ctx)) return;
 
     // Добавление ключей (admin)

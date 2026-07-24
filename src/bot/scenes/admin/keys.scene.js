@@ -44,12 +44,12 @@ const showKeysList = async (ctx) => {
   try {
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
   } catch (err) {
-    // «message is not modified» — нормальное состояние после clearUsedKeys,
+    // «message is not modified» - нормальное состояние после clearUsedKeys,
     // когда ничего не изменилось. Не ломаем поток.
     if (err.description?.includes('message is not modified')) {
       return ctx.answerCbQuery('✅ Уже актуально').catch(() => {});
     }
-    // Все прочие — fallback на новое сообщение.
+    // Все прочие - fallback на новое сообщение.
     await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
   }
 };

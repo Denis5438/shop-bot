@@ -43,7 +43,7 @@ const showProductsList = async (ctx) => {
     const status = product.isActive ? '✅' : '🔴';
     const sellerTag = product.sellerId ? ' 👤' : '';
 
-    text += `${status} ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)} — ${product.price} USDT | Остаток: ${stock}${sellerTag}\n`;
+    text += `${status} ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)} - ${product.price} USDT | Остаток: ${stock}${sellerTag}\n`;
     buttons.push([Markup.button.callback(`✏️ ${product.name.substring(0, 25)}`, `admin:product:edit:${product._id}`)]);
   }
 
@@ -123,9 +123,9 @@ const startAddProduct = async (ctx) => {
   await ctx.editMessageText(
     `➕ <b>Новый товар</b>\n\n` +
     `Сначала выберите <b>тип товара</b>:\n\n` +
-    `🔑 <b>Ключи</b> — бот сразу отправляет ключ/код из базы\n` +
-    `🤖 <b>GPT Активация</b> — авто-активация на аккаунте пользователя\n` +
-    `✋ <b>Ручной</b> — выдаёте товар сами вручную`,
+    `🔑 <b>Ключи</b> - бот сразу отправляет ключ/код из базы\n` +
+    `🤖 <b>GPT Активация</b> - авто-активация на аккаунте пользователя\n` +
+    `✋ <b>Ручной</b> - выдаёте товар сами вручную`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
@@ -216,7 +216,7 @@ const pickSellerForProduct = async (ctx, productId, sellerId) => {
   await ctx.reply(
     `👤 Продавец: @${escapeHtml(seller.username)}\n\n` +
     `Введите сколько USDT из цены товара получает продавец:\n` +
-    `<i>Цена товара: ${product.price} USDT — введите меньше этой суммы.</i>`,
+    `<i>Цена товара: ${product.price} USDT - введите меньше этой суммы.</i>`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]])  ,
@@ -233,7 +233,7 @@ const askManualSellerInput = async (ctx, productId) => {
   await ctx.answerCbQuery().catch(() => {});
   await ctx.reply(
     `✏️ Введите @username продавца (без @):\n` +
-    `<i>Если продавец ещё не зарегистрирован в боте — запись будет создана автоматически.</i>`,
+    `<i>Если продавец ещё не зарегистрирован в боте - запись будет создана автоматически.</i>`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
@@ -262,7 +262,7 @@ const handleProductInput = async (ctx) => {
     let seller = await Seller.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
 
     if (!seller) {
-      // Продавца нет — создаём запись (без telegramId, он не зарегистрирован в боте)
+      // Продавца нет - создаём запись (без telegramId, он не зарегистрирован в боте)
       seller = new Seller({ username: username.toLowerCase(), displayName: username });
       await seller.save();
       // Отправляем уведомление (оно сработает, когда telegramId появится, но пока его нет)
@@ -283,7 +283,7 @@ const handleProductInput = async (ctx) => {
     await ctx.reply(
       `👤 Продавец: @${escapeHtml(seller.username)}\n\n` +
       `Введите сколько USDT из цены товара идёт продавцу:\n` +
-      `<i>Например, если цена товара 3 USDT, введите 2 — и 2 USDT идут продавцу, 1 вам.</i>`,
+      `<i>Например, если цена товара 3 USDT, введите 2 - и 2 USDT идут продавцу, 1 вам.</i>`,
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
@@ -609,7 +609,7 @@ const cloneProduct = async (ctx, productId) => {
     descriptionEn: original.descriptionEn,
     icon: original.icon,
     isActive: false,
-    // Seller не клонируем — назначать нужно явно
+    // Seller не клонируем - назначать нужно явно
   });
 
   await clone.save();

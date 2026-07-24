@@ -16,7 +16,7 @@ const logger = require('../config/logger');
  *   - «скопировал не весь токен»
  *   - «вставил случайный текст»
  *   - «токен уже истёк»
- *   - «забыл войти — кука пустая»
+ *   - «забыл войти - кука пустая»
  *
  * Метод НЕ гарантирует, что provider примет токен (там могут быть
  * региональные блокировки, rate-limits и т.п.), но даёт пользователю
@@ -24,7 +24,7 @@ const logger = require('../config/logger');
  */
 
 // ─── Конфиг ────────────────────────────────────────────────────────────────
-const MIN_TOKEN_LENGTH = 200;   // короче — точно обрезок
+const MIN_TOKEN_LENGTH = 200;   // короче - точно обрезок
 const MIN_ACCESS_TOKEN_LENGTH = 50;
 
 // ─── Результат ─────────────────────────────────────────────────────────────
@@ -97,15 +97,15 @@ const validateChatgptToken = (raw) => {
   // Проверяем user.email
   const email = parsed?.user?.email;
   if (!email || typeof email !== 'string' || !email.includes('@')) {
-    issues.push('Не найдено поле user.email — возможно, вы не авторизованы на chatgpt.com.');
+    issues.push('Не найдено поле user.email - возможно, вы не авторизованы на chatgpt.com.');
   }
 
   // Проверяем accessToken
   const accessToken = parsed?.accessToken;
   if (!accessToken || typeof accessToken !== 'string') {
-    issues.push('Не найдено поле accessToken — токен неполный.');
+    issues.push('Не найдено поле accessToken - токен неполный.');
   } else if (accessToken.length < MIN_ACCESS_TOKEN_LENGTH) {
-    issues.push(`Поле accessToken слишком короткое (${accessToken.length} симв.) — возможно, обрезано.`);
+    issues.push(`Поле accessToken слишком короткое (${accessToken.length} симв.) - возможно, обрезано.`);
   }
 
   // Проверяем expires
@@ -123,12 +123,12 @@ const validateChatgptToken = (raw) => {
       if (diffMs <= 0) {
         issues.push(`Токен уже истёк (${expiresAt.toLocaleString('ru-RU')}). Обновите страницу /api/auth/session и скопируйте заново.`);
       } else if (expiresInH < 1) {
-        issues.push('Токен истекает меньше чем через час — может не успеть пройти активацию.');
+        issues.push('Токен истекает меньше чем через час - может не успеть пройти активацию.');
       }
     }
   } else {
-    // Нет срока — подозрительно, но не фатально.
-    issues.push('Не найдено поле expires — тип токена неизвестен.');
+    // Нет срока - подозрительно, но не фатально.
+    issues.push('Не найдено поле expires - тип токена неизвестен.');
   }
 
   // Определяем итоговый severity
@@ -173,7 +173,7 @@ const formatCheckReport = (result) => {
       lines.push(`⏱ Срок действия: <b>${timeLeft}</b>`);
     }
     lines.push('');
-    lines.push('<blockquote>🎯 Токен готов к активации. Можете оформлять заказ — мы используем именно этот токен.</blockquote>');
+    lines.push('<blockquote>🎯 Токен готов к активации. Можете оформлять заказ - мы используем именно этот токен.</blockquote>');
   } else if (result.severity === 'warning') {
     lines.push('⚠️ <b>Токен есть, но с предупреждениями:</b>');
     lines.push('');

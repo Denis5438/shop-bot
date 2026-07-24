@@ -55,11 +55,11 @@ const sendToUser = async (telegramId, message, extra = {}) => {
   }
 };
 
-// Новый заказ — уведомление администраторам
+// Новый заказ - уведомление администраторам
 const notifyAdminNewOrder = async (order, user, product) => {
   const providerLabel = getProviderLabel(resolveOrderProvider(order, product));
-  // Краткая строка для digest (если включён — уходит в буфер, а не сразу).
-  const digestLine = `@${user.username || user.telegramId} — ${product?.name || 'Товар'} (${order.price} USDT)`;
+  // Краткая строка для digest (если включён - уходит в буфер, а не сразу).
+  const digestLine = `@${user.username || user.telegramId} - ${product?.name || 'Товар'} (${order.price} USDT)`;
   if (digest.queue('NEW_ORDER', digestLine)) return;
 
   const qtyLine = order.qty > 1 ? `📊 Количество: ${order.qty} шт\n` : '';
@@ -76,9 +76,9 @@ const notifyAdminNewOrder = async (order, user, product) => {
   await sendToAdmins(msg);
 };
 
-// Токен получен — уведомление администраторам
+// Токен получен - уведомление администраторам
 const notifyAdminTokenReceived = async (order, user, product) => {
-  const digestLine = `@${user.username || user.telegramId} — ${product?.name || 'Товар'} (заказ ${String(order._id).slice(-6)})`;
+  const digestLine = `@${user.username || user.telegramId} - ${product?.name || 'Товар'} (заказ ${String(order._id).slice(-6)})`;
   if (digest.queue('TOKEN_RECEIVED', digestLine)) return;
 
   const msg =
@@ -92,7 +92,7 @@ const notifyAdminTokenReceived = async (order, user, product) => {
   await sendToAdmins(msg);
 };
 
-// Запрос на пополнение — уведомление администраторам
+// Запрос на пополнение - уведомление администраторам
 const notifyAdminTopupRequest = async (request, user, method = 'unknown', network = null, amounts = null) => {
   const methodLabels = {
     card:    '🏦 Карта Idbank (Т-Банк / Сбербанк)',
@@ -106,13 +106,13 @@ const notifyAdminTopupRequest = async (request, user, method = 'unknown', networ
   };
 
   // Дайджест: сворачиваем «обычные» pending-заявки в сводку. Подтверждённые
-  // (status=confirmed) уходят сразу — это деньги уже на балансе, админу важно
+  // (status=confirmed) уходят сразу - это деньги уже на балансе, админу важно
   // увидеть их в реальном времени.
   if (request?.status === 'pending') {
     const amountStr = amounts
       ? `${amounts.amountUSDT.toFixed(2)} USDT (~${amounts.amountRUB.toFixed(0)} ₽)`
       : (request.amount ? `${request.amount.toFixed(2)} USDT` : '? USDT');
-    const digestLine = `@${user.username || user.telegramId} — ${amountStr} · ${methodLabels[method] || method}` +
+    const digestLine = `@${user.username || user.telegramId} - ${amountStr} · ${methodLabels[method] || method}` +
       (network ? ` · ${networkLabels[network] || network}` : '');
     if (digest.queue('NEW_TOPUP', digestLine)) return;
   }
@@ -156,7 +156,7 @@ const notifyAdminTopupRequest = async (request, user, method = 'unknown', networ
     },
   });
 
-  // Если есть скриншот — шлём фото отдельно
+  // Если есть скриншот - шлём фото отдельно
   if (request.proofFileId && botInstance) {
     const proofCaption =
       `📎 Чек от ${user.firstName} (@${user.username || user.telegramId})\n` +
@@ -176,7 +176,7 @@ const notifyAdminTopupRequest = async (request, user, method = 'unknown', networ
   }
 };
 
-// Заказ выполнен — уведомление пользователю
+// Заказ выполнен - уведомление пользователю
 const notifyUserOrderCompleted = async (user, order, product, result) => {
   const productId = product?._id || order.productId;
   const lang = user?.language || 'ru';
@@ -194,7 +194,7 @@ const notifyUserOrderCompleted = async (user, order, product, result) => {
   await sendToUser(user.telegramId, msg, keyboard);
 };
 
-// Заказ отменён — уведомление пользователю
+// Заказ отменён - уведомление пользователю
 const notifyUserOrderCancelled = async (user, order, product, reason) => {
   const lang = user?.language || 'ru';
   const msg = i18n.translate(lang, 'order_cancelled', {
@@ -207,7 +207,7 @@ const notifyUserOrderCancelled = async (user, order, product, reason) => {
   await sendToUser(user.telegramId, msg);
 };
 
-// Баланс пополнен — уведомление пользователю
+// Баланс пополнен - уведомление пользователю
 const notifyUserTopupConfirmed = async (user, amount) => {
   const fmt = parseFloat(amount).toFixed(2);
   const lang = user?.language || 'ru';
@@ -233,7 +233,7 @@ const notifyUserTopupRejected = async (user, amount, reason) => {
 // Предупреждение об окончании ключей
 const notifyAdminLowStock = async (product, remaining) => {
   const providerLabel = getProviderLabel(resolveProductProvider(product));
-  const digestLine = `${product?.name || 'Товар'} — осталось ${remaining} шт.`;
+  const digestLine = `${product?.name || 'Товар'} - осталось ${remaining} шт.`;
   if (digest.queue('LOW_STOCK', digestLine)) return;
 
   const msg =
@@ -319,7 +319,7 @@ const SEGMENTS = [
   { key: 'no_purchases', icon: '🆕' },
 ];
 
-// ─── Рассылка нового товара пользователям (опционально — сегменту) ───────────
+// ─── Рассылка нового товара пользователям (опционально - сегменту) ───────────
 const broadcastNewProduct = async (product, stock, segment = 'all') => {
   if (!botInstance) return { sent: 0, failed: 0 };
 

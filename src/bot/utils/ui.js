@@ -7,10 +7,10 @@ const { EMOJI, TEXTS, SLA } = require('../constants/ux');
  * (error screen, empty state, copy hints, balance header, confirm).
  */
 
-// ─── safeEdit — всегда корректно рисует сообщение ──────────────────────────
+// ─── safeEdit - всегда корректно рисует сообщение ──────────────────────────
 /**
  * Пытается отредактировать сообщение (если пришли из callback),
- * при неудаче — шлёт новое. Всегда вызывает answerCbQuery.
+ * при неудаче - шлёт новое. Всегда вызывает answerCbQuery.
  * Используется вместо голых ctx.editMessageText/ctx.reply.
  */
 const safeEdit = async (ctx, text, extra = {}) => {
@@ -33,7 +33,7 @@ const safeEdit = async (ctx, text, extra = {}) => {
 
 // ─── Header с балансом ─────────────────────────────────────────────────────
 /**
- * Строка «💳 Ваш баланс: X USDT» — используется в карточке товара,
+ * Строка «💳 Ваш баланс: X USDT» - используется в карточке товара,
  * на подтверждении покупки, на экране пополнения и т.д.
  */
 const balanceHeader = (user) => {
@@ -41,9 +41,9 @@ const balanceHeader = (user) => {
   return `${EMOJI.BALANCE} <b>Баланс:</b> ${user.balance.toFixed(2)} USDT\n\n`;
 };
 
-// ─── Copy-hint — подсказка про копирование ─────────────────────────────────
+// ─── Copy-hint - подсказка про копирование ─────────────────────────────────
 /**
- * Добавляет подсказку «💡 Нажмите на значение — скопируется».
+ * Добавляет подсказку «💡 Нажмите на значение - скопируется».
  * Добавлять после блока с <code>...</code>.
  */
 const copyHint = () => `\n${TEXTS.COPY_HINT}`;
@@ -92,7 +92,7 @@ const errorScreen = async (ctx, opts = {}) => {
  *   - icon: эмодзи (по умолчанию 📭)
  *   - title: заголовок
  *   - message: описание (зачем это, что сделать)
- *   - cta: { label, action } — основная кнопка
+ *   - cta: { label, action } - основная кнопка
  *   - backAction: callback_data для "Назад"
  */
 const emptyScreen = async (ctx, opts = {}) => {
@@ -125,7 +125,7 @@ const emptyScreen = async (ctx, opts = {}) => {
  *   - message: описание последствий
  *   - yesLabel / yesAction: кнопка подтверждения
  *   - noLabel / noAction: кнопка отмены
- *   - danger: если true — используется красный стиль
+ *   - danger: если true - используется красный стиль
  */
 const confirmScreen = async (ctx, opts = {}) => {
   const {
@@ -178,7 +178,7 @@ const parseAmount = (raw) => {
     return { ok: false, reason: 'Не понял сумму. Введите цифрами: например <code>5</code> или <code>500</code>.' };
   }
 
-  // Несколько точек — оставляем первую
+  // Несколько точек - оставляем первую
   const firstDot = cleaned.indexOf('.');
   if (firstDot !== -1) {
     cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');

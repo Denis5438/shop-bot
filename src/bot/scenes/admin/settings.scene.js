@@ -8,7 +8,7 @@ const { escapeHtml } = require('../../utils/ui');
 
 /**
  * Возвращает настройки для ЧТЕНИЯ (showSettings, отображение).
- * Использует кэш — быстрее, но возвращает plain object без .save().
+ * Использует кэш - быстрее, но возвращает plain object без .save().
  */
 const getSettings = async () => {
   const cached = await getCachedSettings();
@@ -21,7 +21,7 @@ const getSettings = async () => {
 
 /**
  * Возвращает настройки как Mongoose-документ для ЗАПИСИ (.save() работает).
- * Всегда идёт в БД — использовать только в toggle* и handleSettingsInput,
+ * Всегда идёт в БД - использовать только в toggle* и handleSettingsInput,
  * где нужно мутировать и сохранять.
  */
 const getLiveSettings = async () => {
@@ -152,9 +152,9 @@ const toggleDigest = async (ctx) => {
   } else {
     digest.setDigestEnabled(false);
     digest.stopAutoFlush();
-    // Финальный flush перед остановкой — чтобы накопленное не потерялось.
+    // Финальный flush перед остановкой - чтобы накопленное не потерялось.
     await digest.flush();
-    await ctx.answerCbQuery('✅ Сводка выключена — всё отправляется сразу');
+    await ctx.answerCbQuery('✅ Сводка выключена - всё отправляется сразу');
   }
 
   await showSettings(ctx);
@@ -210,7 +210,7 @@ const handleSettingsInput = async (ctx) => {
       await ctx.reply('❌ Неверное числовое значение. Введите положительное число:');
       return true;
     }
-    // Для интервала сводки — ограничиваем разумным диапазоном (5 мин — 24 ч).
+    // Для интервала сводки - ограничиваем разумным диапазоном (5 мин - 24 ч).
     if (field === 'adminDigestIntervalMinutes' && (num < 5 || num > 1440)) {
       await ctx.reply('❌ Интервал должен быть от 5 до 1440 минут.');
       return true;
@@ -225,7 +225,7 @@ const handleSettingsInput = async (ctx) => {
   await settings.save();
   invalidateCache();
 
-  // Если меняли интервал и digest включён — перезапускаем auto-flush с новым значением.
+  // Если меняли интервал и digest включён - перезапускаем auto-flush с новым значением.
   if (field === 'adminDigestIntervalMinutes' && settings.adminDigestEnabled) {
     digest.startAutoFlush(settings.adminDigestIntervalMinutes * 60 * 1000);
   }

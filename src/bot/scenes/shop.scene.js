@@ -49,8 +49,8 @@ const getEffectivePrice = async (product, stockCount) => {
 const stockIndicator = (stock, t) => {
   if (stock === '∞') return t ? t('shop_stock_infinite') : '♾️ Unlimited';
   if (stock > 10) return t ? t('shop_stock_high', { count: stock }) : `🟢 ${stock} pcs`;
-  if (stock > 3) return t ? t('shop_stock_medium', { count: stock }) : `🟡 ${stock} pcs — low`;
-  if (stock > 0) return t ? t('shop_stock_low', { count: stock }) : `🔴 ${stock} pcs — last`;
+  if (stock > 3) return t ? t('shop_stock_medium', { count: stock }) : `🟡 ${stock} pcs - low`;
+  if (stock > 0) return t ? t('shop_stock_low', { count: stock }) : `🔴 ${stock} pcs - last`;
   return t ? t('shop_out_of_stock') : '⛔ Out of stock';
 };
 
@@ -686,7 +686,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
         );
       }
     } else if (product.lowStockNotifiedAt) {
-      // Запасы восполнили — сбрасываем флаг, чтобы в следующий раз уведомить сразу.
+      // Запасы восполнили - сбрасываем флаг, чтобы в следующий раз уведомить сразу.
       await Product.updateOne(
         { _id: product._id },
         { $set: { lowStockNotifiedAt: null } }
