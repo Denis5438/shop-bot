@@ -1731,7 +1731,7 @@ const createBot = () => {
   });
 
 
-  bot.on('text', async (ctx, next) => {
+  bot.on(['text', 'photo', 'video', 'document'], async (ctx, next) => {
     const session = ctx.session || {};
 
     // Бесплатная проверка токена (№6): пользователь прислал токен без оплаты.
@@ -1802,13 +1802,29 @@ const createBot = () => {
       const Product = require('../models/Product');
       const order = await Order.findById(session.claimOrderId);
       if (order && order.userId.toString() === ctx.user._id.toString()) {
-        const textReason = ctx.message.text || ctx.message.caption || 'Заявка на замену (прикреплен файл)';
+        let mediaType = null;
+        let mediaFileId = null;
+
+        if (ctx.message.photo && ctx.message.photo.length > 0) {
+          mediaType = 'photo';
+          mediaFileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        } else if (ctx.message.video) {
+          mediaType = 'video';
+          mediaFileId = ctx.message.video.file_id;
+        } else if (ctx.message.document) {
+          mediaType = 'document';
+          mediaFileId = ctx.message.document.file_id;
+        }
+
+        const textReason = ctx.message.caption || ctx.message.text || (mediaType ? `[Прикреплён медиафайл: ${mediaType}]` : 'Заявка на замену');
         order.replacementStatus = 'pending';
         order.replacementReason = textReason;
+        order.replacementMediaId = mediaFileId;
+        order.replacementMediaType = mediaType;
         await order.save();
 
         const product = await Product.findById(order.productId);
-        await notif.notifyWarrantyClaim(order, ctx.user, product, textReason);
+        await notif.notifyWarrantyClaim(order, ctx.user, product, textReason, mediaFileId, mediaType);
 
         session.userAction = null;
         session.claimOrderId = null;

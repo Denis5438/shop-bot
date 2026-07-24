@@ -494,7 +494,27 @@ const notifyWaitlist = async (product) => {
   await Waitlist.deleteMany({ productId: product._id });
 };
 
-const notifyWarrantyClaim = async (order, user, product, reason) => {
+const sendMediaToAdmins = async (mediaType, mediaId, caption, extra = {}) => {
+  if (!botInstance) return;
+  const opts = { parse_mode: 'HTML', caption, ...extra };
+  for (const adminId of ADMIN_IDS) {
+    try {
+      if (mediaType === 'photo') {
+        await botInstance.telegram.sendPhoto(adminId, mediaId, opts);
+      } else if (mediaType === 'video') {
+        await botInstance.telegram.sendVideo(adminId, mediaId, opts);
+      } else if (mediaType === 'document') {
+        await botInstance.telegram.sendDocument(adminId, mediaId, opts);
+      } else {
+        await botInstance.telegram.sendMessage(adminId, caption, opts);
+      }
+    } catch (err) {
+      logger.warn(`❌ Не удалось отправить медиа админу ${adminId}: ${err.message}`);
+    }
+  }
+};
+
+const notifyWarrantyClaim = async (order, user, product, reason, mediaId = null, mediaType = null) => {
   if (!botInstance) return;
 
   const buyerUsername = user.username ? `@${escapeHtml(user.username)}` : escapeHtml(user.firstName);
@@ -511,13 +531,28 @@ const notifyWarrantyClaim = async (order, user, product, reason) => {
     [Markup.button.callback('❌ Отклонить', `admin:warranty:reject:${order._id}`)],
   ]);
 
-  await sendToAdmins(text, keyboard);
+  if (mediaId && mediaType) {
+    await sendMediaToAdmins(mediaType, mediaId, text, keyboard);
+  } else {
+    await sendToAdmins(text, keyboard);
+  }
 
   if (product?.sellerId) {
     const Seller = require('../models/Seller');
     const seller = await Seller.findById(product.sellerId);
     if (seller && seller.telegramId) {
-      await sendToUser(seller.telegramId, text, keyboard).catch(() => {});
+      const opts = { parse_mode: 'HTML', caption: text, ...keyboard };
+      try {
+        if (mediaType === 'photo') {
+          await botInstance.telegram.sendPhoto(seller.telegramId, mediaId, opts);
+        } else if (mediaType === 'video') {
+          await botInstance.telegram.sendVideo(seller.telegramId, mediaId, opts);
+        } else if (mediaType === 'document') {
+          await botInstance.telegram.sendDocument(seller.telegramId, mediaId, opts);
+        } else {
+          await sendToUser(seller.telegramId, text, keyboard);
+        }
+      } catch (_) {}
     }
   }
 };

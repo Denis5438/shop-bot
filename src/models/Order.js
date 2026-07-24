@@ -39,6 +39,8 @@ const orderSchema = new mongoose.Schema({
   replacementStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
   replacementReason: { type: String, default: null },
   replacementRejectReason: { type: String, default: null },
+  replacementMediaId: { type: String, default: null },
+  replacementMediaType: { type: String, default: null },
   replacedKeyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Key', default: null },
   replacedAt: { type: Date, default: null },
 });

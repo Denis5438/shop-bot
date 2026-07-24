@@ -233,9 +233,21 @@ const viewWarrantyClaim = async (ctx, orderId) => {
     [Markup.button.callback('⬅️ К списку замен', 'admin:warranties:list')],
   ];
 
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  const opts = { parse_mode: 'HTML', caption: text, ...Markup.inlineKeyboard(buttons) };
   try {
-    await ctx.editMessageText(text, opts);
+    if (order.replacementMediaId && order.replacementMediaType) {
+      if (order.replacementMediaType === 'photo') {
+        await ctx.replyWithPhoto(order.replacementMediaId, opts);
+      } else if (order.replacementMediaType === 'video') {
+        await ctx.replyWithVideo(order.replacementMediaId, opts);
+      } else if (order.replacementMediaType === 'document') {
+        await ctx.replyWithDocument(order.replacementMediaId, opts);
+      } else {
+        await ctx.editMessageText(text, opts);
+      }
+    } else {
+      await ctx.editMessageText(text, opts);
+    }
   } catch (_) {
     await ctx.reply(text, opts);
   }
