@@ -236,6 +236,52 @@ const escapeHtml = (value) => {
   return escaped;
 };
 
+/**
+ * Красивое форматирование цифрового товара (логин:пароль:2fa, ссылка, ключ)
+ * @param {string} rawValue
+ * @param {string} lang 'ru' | 'en'
+ */
+const formatDigitalItem = (rawValue, lang = 'ru') => {
+  if (!rawValue) return '';
+  const val = String(rawValue).trim();
+  
+  if (/^https?:\/\//i.test(val)) {
+    const linkLbl = lang === 'en' ? '🔗 <b>Link / URL:</b>' : '🔗 <b>Ссылка:</b>';
+    return `${linkLbl}\n<code>${escapeHtml(val)}</code>`;
+  }
+
+  let parts = [];
+  if (val.includes('|')) {
+    parts = val.split('|').map(s => s.trim());
+  } else if (val.includes('\t')) {
+    parts = val.split('\t').map(s => s.trim());
+  } else if (val.includes(';')) {
+    parts = val.split(';').map(s => s.trim());
+  } else if (val.includes(':')) {
+    parts = val.split(':').map(s => s.trim());
+  }
+
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    const login = parts[0];
+    const pass = parts[1];
+    const extra2fa = parts.slice(2).join(' : ');
+
+    const loginLbl = lang === 'en' ? '👤 <b>Login:</b>' : '👤 <b>Логин:</b>';
+    const passLbl = lang === 'en' ? '🔑 <b>Password:</b>' : '🔑 <b>Пароль:</b>';
+    const faLbl = lang === 'en' ? '🛡 <b>2FA / Code:</b>' : '🛡 <b>2FA / Код:</b>';
+
+    let res = `${loginLbl} <code>${escapeHtml(login)}</code>\n` +
+              `${passLbl} <code>${escapeHtml(pass)}</code>`;
+
+    if (extra2fa) {
+      res += `\n${faLbl} <code>${escapeHtml(extra2fa)}</code>`;
+    }
+    return res;
+  }
+
+  return `<code>${escapeHtml(val)}</code>`;
+};
+
 module.exports = {
   safeEdit,
   balanceHeader,
@@ -246,6 +292,7 @@ module.exports = {
   parseAmount,
   extractTextWithEmojis,
   escapeHtml,
+  formatDigitalItem,
   EMOJI,
   TEXTS,
   SLA,

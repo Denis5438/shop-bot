@@ -11,10 +11,10 @@ const { escapeHtml } = require('../../utils/ui');
 const notif = require('../../../services/notification.service');
 
 const showKeysList = async (ctx) => {
-  const products = await Product.find({ type: { $in: ['key', 'gpt_activation'] } });
+  const products = await Product.find({ isActive: true }).sort({ sortOrder: 1 });
 
   if (products.length === 0) {
-    return ctx.editMessageText('🔑 Нет товаров для ключей.', {
+    return ctx.editMessageText('🔑 Нет созданных товаров.', {
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:main')]]),
     });
   }
@@ -59,17 +59,17 @@ const askKeysAfterCreate = async (ctx, product) => {
   ctx.session.keysProductId = product._id.toString();
   ctx.session.keysProductAfterCreate = true;
 
-  const typeLabel = product.type === 'gpt_activation' ? '🤖 GPT Активация' : '🔑 Ключи';
-  const providerLabel = getProviderLabel(resolveProductProvider(product));
-
   await ctx.reply(
-    `✅ <b>Товар «${escapeHtml(product.name)}» создан!</b>\n` +
-    `📦 Тип: ${typeLabel}\n` +
-    `🧩 Поставщик: ${escapeHtml(providerLabel)}\n\n` +
-    `🔑 <b>Добавьте ключи / коды доступа:</b>\n\n` +
-    `▪️ Отправьте <b>txt-файл</b> с ключами (каждый с новой строки)\n` +
-    `▪️ Или введите вручную каждый с новой строки:\n\n` +
-    `<code>ключ1\nключ2\nключ3</code>`,
+    `✅ <b>Товар «${escapeHtml(product.name)}» создан!</b>\n\n` +
+    `🔑 <b>Загрузка авто-товаров / аккаунтов / ключей:</b>\n\n` +
+    `▫️ Отправьте <b>.txt файл</b> (каждый товар с новой строки)\n` +
+    `▫️ Или отправьте <b>текстовое сообщение</b>:\n\n` +
+    `<i>Поддерживаемые форматы (по 1 строке на товар):</i>\n` +
+    `• <code>login:pass</code>\n` +
+    `• <code>login:pass:2fa</code>\n` +
+    `• <code>login|pass|2fa</code>\n` +
+    `• <code>https://ссылка</code>\n` +
+    `• <code>промокод_или_ключ</code>`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
@@ -88,24 +88,27 @@ const startAddKeys = async (ctx, productId) => {
   ctx.session.adminAction = 'add_keys';
   ctx.session.keysProductId = productId;
 
-  const providerLabel = getProviderLabel(resolveProductProvider(product));
+  const text =
+    `🔑 <b>Загрузка товаров для: ${escapeHtml(product.name)}</b>\n\n` +
+    `▫️ Отправьте <b>.txt файл</b> (каждый товар с новой строки)\n` +
+    `▫️ Или отправьте <b>текстовое сообщение</b>:\n\n` +
+    `<i>Поддерживаемые форматы (по 1 строке на товар):</i>\n` +
+    `• <code>login:pass</code>\n` +
+    `• <code>login:pass:2fa</code>\n` +
+    `• <code>login|pass|2fa</code>\n` +
+    `• <code>https://ссылка</code>\n` +
+    `• <code>промокод_или_ключ</code>`;
 
   try {
-    await ctx.editMessageText(
-      `🔑 <b>Добавление ключей для: ${escapeHtml(product.name)}</b>\n` +
-      `🧩 <b>Поставщик:</b> ${escapeHtml(providerLabel)}\n\n` +
-      `Отправьте список ключей, <b>каждый с новой строки</b>:\n\n` +
-      `<code>ключ1\nключ2\nключ3</code>`,
-      {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:keys')]]),
-      }
-    );
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+    });
   } catch (_) {
-    await ctx.reply(
-      `🔑 Отправьте ключи, каждый с новой строки:`,
-      Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:keys')]])
-    );
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+    });
   }
   await ctx.answerCbQuery().catch(() => {});
 };

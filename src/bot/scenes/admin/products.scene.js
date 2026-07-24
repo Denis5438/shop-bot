@@ -57,9 +57,12 @@ const showProductEdit = async (ctx, productId) => {
   const product = await Product.findById(productId).populate('sellerId').populate('categoryId');
   if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
 
-  const stock = product.type === 'manual'
-    ? (product.manualStock === -1 ? '∞' : product.manualStock)
-    : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+  const autoKeysCount = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+  const stock = autoKeysCount > 0
+    ? `${autoKeysCount} шт. (автовыдача ⚡)`
+    : (product.type === 'manual'
+        ? (product.manualStock === -1 ? '∞ (ручной остаток)' : `${product.manualStock} шт. (ручной остаток)`)
+        : '0 шт. (нет в наличии)');
 
   const deliveryLabel = product.deliveryMethod === 'ready_account'
     ? '📦 Готовый аккаунт'
@@ -89,7 +92,7 @@ const showProductEdit = async (ctx, productId) => {
     [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}`)],
     [Markup.button.callback('📝 Описание (EN)', `admin:product:field:descriptionEn:${productId}`)],
     [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}`)],
-    [Markup.button.callback('🔑 Добавить ключи', `admin:keys:add:${productId}`)],
+    [Markup.button.callback('🔑 Загрузить товары (TXT / Текст)', `admin:keys:add:${productId}`)],
     [Markup.button.callback('📣 Разослать', `admin:product:broadcast:${productId}`)],
     [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
   ];

@@ -16,7 +16,7 @@ const {
 const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
-const { balanceHeader, errorScreen, escapeHtml } = require('../utils/ui');
+const { balanceHeader, errorScreen, escapeHtml, formatDigitalItem } = require('../utils/ui');
 
 const getEffectivePrice = async (product, stockCount) => {
   const settings = await getSettings();
@@ -55,10 +55,12 @@ const stockIndicator = (stock, t) => {
 };
 
 const getStock = async (product) => {
+  const autoKeys = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+  if (autoKeys > 0) return autoKeys;
   if (product.type === 'manual') {
     return product.manualStock === -1 ? '∞' : product.manualStock;
   }
-  return Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+  return autoKeys;
 };
 
 const getCategoryStockStatus = async (categoryId) => {
@@ -418,7 +420,8 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   }
 
   const provider = resolveProductProvider(product);
-  const isAutoKeyProduct = product.type === 'key';
+  const autoKeysAvailable = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+  const isAutoKeyProduct = autoKeysAvailable >= qty;
 
   const User = require('../../models/User');
   const { withTransaction } = require('../../services/transactionHelper.service');
@@ -458,7 +461,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       await freshUser.save(sessionOptions);
       ctx.user = freshUser;
 
-      if (product.type === 'manual') {
+      if (!isAutoKeyProduct && product.type === 'manual') {
         if (product.manualStock !== -1) {
           if (product.manualStock < qty) throw new Error('OUT_OF_STOCK');
           product.manualStock -= qty;
@@ -615,10 +618,10 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     
     let keysText = '';
     if (qty === 1) {
-      keysText = `<pre>${escapeHtml(allocatedKeys[0].value)}</pre>`;
+      keysText = formatDigitalItem(allocatedKeys[0].value, lang);
     } else {
       allocatedKeys.forEach((k, idx) => {
-        keysText += `${idx + 1}. <code>${escapeHtml(k.value)}</code>\n`;
+        keysText += `<b>#${idx + 1}</b>\n${formatDigitalItem(k.value, lang)}\n\n`;
       });
     }
 
