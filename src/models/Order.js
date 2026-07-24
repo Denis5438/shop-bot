@@ -33,6 +33,14 @@ const orderSchema = new mongoose.Schema({
   deliveryData: { type: String, default: null }, // Текст/ID файла, который выдал продавец
   disputeOpenedAt: { type: Date, default: null },
   disputeStatus: { type: String, enum: ['open', 'resolved'], default: 'open' },
+
+  // ─── Замены по гарантии ──────────────────────────────────────────────────
+  warrantyDays: { type: Number, default: 5 },
+  replacementStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
+  replacementReason: { type: String, default: null },
+  replacementRejectReason: { type: String, default: null },
+  replacedKeyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Key', default: null },
+  replacedAt: { type: Date, default: null },
 });
 
 orderSchema.index({ status: 1, createdAt: -1 });

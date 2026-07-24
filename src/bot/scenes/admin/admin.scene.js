@@ -12,6 +12,7 @@ const showAdminMain = async (ctx) => {
   const pendingPayments = await TopupRequest.countDocuments({ status: 'pending' });
   const pendingSellerWithdrawals = await SellerWithdrawal.countDocuments({ status: 'pending' });
   const pendingDisputes = await Order.countDocuments({ status: 'disputed' });
+  const pendingWarranties = await Order.countDocuments({ replacementStatus: 'pending' });
 
   // Статистика за сегодня
   const todayStart = new Date();
@@ -31,6 +32,9 @@ const showAdminMain = async (ctx) => {
   const disputesLine = pendingDisputes > 0
     ? `\n⚠️ Активные споры: <b>${pendingDisputes}</b>`
     : '';
+  const warrantiesLine = pendingWarranties > 0
+    ? `\n🛡 Запросы замен по гарантии: <b>${pendingWarranties}</b>`
+    : '';
 
   const text =
     `👨‍💻 <b>Панель Управления</b>\n\n` +
@@ -38,17 +42,17 @@ const showAdminMain = async (ctx) => {
     `📦 Заказов выполнено: <b>${todayOrders}</b>\n` +
     `🔴 Требуют внимания (заказы): <b>${pendingOrders}</b>\n` +
     `💳 Новые платежи: <b>${pendingPayments}</b>\n` +
-    `👥 Новых юзеров: <b>${newUsersToday}</b>${sellerLine}${disputesLine}</blockquote>`;
+    `👥 Новых юзеров: <b>${newUsersToday}</b>${sellerLine}${disputesLine}${warrantiesLine}</blockquote>`;
 
   try {
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
-      ...adminMainKeyboard({ pendingOrders, pendingPayments, pendingSellerWithdrawals, pendingDisputes }),
+      ...adminMainKeyboard({ pendingOrders, pendingPayments, pendingSellerWithdrawals, pendingDisputes, pendingWarranties }),
     });
   } catch (_) {
     await ctx.reply(text, {
       parse_mode: 'HTML',
-      ...adminMainKeyboard({ pendingOrders, pendingPayments, pendingSellerWithdrawals, pendingDisputes }),
+      ...adminMainKeyboard({ pendingOrders, pendingPayments, pendingSellerWithdrawals, pendingDisputes, pendingWarranties }),
     });
   }
 };

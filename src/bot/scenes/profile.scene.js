@@ -152,8 +152,12 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
     text += `   <code>${order._id}</code></blockquote>\n\n`;
   }
 
-  // Кнопки фильтра
-  const buttons = [];
+  const detailBtns = orders.map(o => [
+    Markup.button.callback(`🔍 Заказ #${o._id.toString().slice(-6)}: ${escapeHtml(o.productId?.name || 'Товар').slice(0, 20)}`, `profile:order:detail:${o._id}`)
+  ]);
+
+  // Кнопки депо/деталей и фильтра
+  const buttons = [...detailBtns];
   buttons.push([
     Markup.button.callback(filter === 'all'    ? t('orders_tab_all') : '📋 ' + t('orders_tab_all').replace('☑️ ', ''), 'profile:orders:all:1'),
     Markup.button.callback(filter === 'active' ? t('orders_tab_active') : '📋 ' + t('orders_tab_active').replace('🔄 ', ''), 'profile:orders:active:1'),
@@ -197,4 +201,81 @@ const showAchievements = async (ctx) => {
   }
 };
 
-module.exports = { showProfile, showLanguageSelect, showOrders, showAchievements };
+const showOrderDetail = async (ctx, orderId) => {
+  const order = await Order.findById(orderId)
+    .populate('productId')
+    .populate('keyId')
+    .populate('replacedKeyId');
+
+  if (!order || order.userId.toString() !== ctx.user._id.toString()) {
+    return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
+  }
+
+  const lang = ctx.user?.language || 'ru';
+
+  const product = order.productId;
+  const productName = escapeHtml(product?.name || 'Товар');
+  const date = new Date(order.createdAt).toLocaleDateString('ru-RU');
+  const statusLbl = localizedOrderStatus(ctx, order.status);
+
+  const warrantyDays = order.warrantyDays ?? product?.warrantyDays ?? 5;
+  const confirmedBase = order.confirmedAt || order.createdAt;
+  const warrantyExpiresAt = new Date(confirmedBase.getTime() + warrantyDays * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const isWarrantyActive = now < warrantyExpiresAt && order.status === 'completed';
+
+  let warrantyStr = '';
+  if (order.status === 'completed') {
+    if (isWarrantyActive) {
+      const diffMs = warrantyExpiresAt.getTime() - now.getTime();
+      const daysLeft = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+      warrantyStr = `🛡 <b>Гарантия:</b> 🟢 Активна (осталось ${daysLeft} дн. из ${warrantyDays})`;
+    } else {
+      warrantyStr = `🛡 <b>Гарантия:</b> 🔴 Истёкла (${warrantyDays} дн.)`;
+    }
+  }
+
+  let replacementStr = '';
+  if (order.replacementStatus === 'pending') {
+    replacementStr = `\n⏳ <b>Статус замены:</b> На рассмотрении модератором`;
+  } else if (order.replacementStatus === 'approved') {
+    replacementStr = `\n✅ <b>Статус замены:</b> Заявка одобрена (новый аккаунт выдан)`;
+  } else if (order.replacementStatus === 'rejected') {
+    const reason = order.replacementRejectReason ? ` (${escapeHtml(order.replacementRejectReason)})` : '';
+    replacementStr = `\n❌ <b>Статус замены:</b> Отклонена${reason}`;
+  }
+
+  let issuedDataStr = '';
+  const itemValue = order.replacedKeyId?.value || order.deliveryData || order.keyId?.value;
+  if (itemValue) {
+    const { formatDigitalItem } = require('../utils/ui');
+    issuedDataStr = `\n\n📦 <b>Выданные данные товара:</b>\n${formatDigitalItem(itemValue, lang)}`;
+  }
+
+  const text =
+    `📋 <b>Детали заказа</b> <code>${order._id}</code>\n\n` +
+    `📦 <b>Товар:</b> ${escapeHtml(product?.icon || '📦')} ${productName}\n` +
+    `💰 <b>Сумма:</b> ${order.price} USDT\n` +
+    `📅 <b>Дата:</b> ${date}\n` +
+    `🔘 <b>Статус:</b> ${statusLbl}\n` +
+    (warrantyStr ? `${warrantyStr}\n` : '') +
+    replacementStr +
+    issuedDataStr;
+
+  const buttons = [];
+
+  if (isWarrantyActive && order.replacementStatus === 'none') {
+    buttons.push([Markup.button.callback('🔄 Запросить замену по гарантии', `profile:warranty:claim:${order._id}`)]);
+  }
+
+  buttons.push([Markup.button.callback('⬅️ К заказам', 'profile:orders:all:1')]);
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  try {
+    await ctx.editMessageText(text, opts);
+  } catch (_) {
+    await ctx.reply(text, opts);
+  }
+};
+
+module.exports = { showProfile, showLanguageSelect, showOrders, showOrderDetail, showAchievements };

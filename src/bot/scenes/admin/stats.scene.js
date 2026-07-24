@@ -82,6 +82,10 @@ const showStats = async (ctx) => {
   const keysTotal = await Key.countDocuments();
   const keysFree = await Key.countDocuments({ isUsed: false });
 
+  const approvedReplacements = await Order.countDocuments({ replacementStatus: 'approved' });
+  const rejectedReplacements = await Order.countDocuments({ replacementStatus: 'rejected' });
+  const replacementRate = totalOrders > 0 ? ((approvedReplacements / totalOrders) * 100).toFixed(1) : '0';
+
   const text =
     `📊 <b>Статистика магазина</b>\n\n` +
     `👥 Всего пользователей: <b>${totalUsers}</b>\n` +
@@ -90,7 +94,9 @@ const showStats = async (ctx) => {
     `✅ Заказов сегодня: <b>${todayOrders}</b>\n\n` +
     `💰 Выручка всего: <b>${totalRevenue.toFixed(2)} USDT</b> (~${toRub(totalRevenue)} ₽)\n` +
     `💰 Выручка за месяц: <b>${monthRevenue.toFixed(2)} USDT</b> (~${toRub(monthRevenue)} ₽)\n\n` +
-    `🔑 Ключей в базе: ${keysTotal} (свободных: ${keysFree})\n\n` +
+    `🔑 Ключей в базе: ${keysTotal} (свободных: ${keysFree})\n` +
+    `🛡 Замен по гарантии: <b>${approvedReplacements}</b> (отклонено: ${rejectedReplacements})\n` +
+    `📉 Процент замен / брака: <b>${replacementRate}%</b>\n\n` +
     `💱 Курс: 1 USD = ${getRate()} ₽ (обновлён ${getUpdatedAt()})`;
 
   try {

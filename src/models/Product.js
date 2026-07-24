@@ -33,6 +33,7 @@ const productSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   lastSoldAt: { type: Date, default: Date.now },
   lowStockNotifiedAt: { type: Date, default: null },
+  warrantyDays: { type: Number, default: 5 },
 
   // ─── Seller-система ───────────────────────────────────────────────────────
   // Привязанный продавец (только для товаров типа manual)

@@ -494,6 +494,34 @@ const notifyWaitlist = async (product) => {
   await Waitlist.deleteMany({ productId: product._id });
 };
 
+const notifyWarrantyClaim = async (order, user, product, reason) => {
+  if (!botInstance) return;
+
+  const buyerUsername = user.username ? `@${escapeHtml(user.username)}` : escapeHtml(user.firstName);
+  const text =
+    `🛡 <b>Заявка на замену по гарантии!</b>\n\n` +
+    `📦 <b>Товар:</b> ${escapeHtml(product?.icon || '📦')} ${escapeHtml(product?.name || 'Товар')}\n` +
+    `👤 <b>Покупатель:</b> ${buyerUsername} (ID: <code>${user.telegramId}</code>)\n` +
+    `📋 <b>Заказ:</b> <code>${order._id}</code>\n\n` +
+    `💬 <b>Описание проблемы:</b>\n<i>${escapeHtml(reason)}</i>`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔍 Посмотреть в админке', `admin:warranty:view:${order._id}`)],
+    [Markup.button.callback('✅ Одобрить (Автовыдача)', `admin:warranty:approve:${order._id}`)],
+    [Markup.button.callback('❌ Отклонить', `admin:warranty:reject:${order._id}`)],
+  ]);
+
+  await sendToAdmins(text, keyboard);
+
+  if (product?.sellerId) {
+    const Seller = require('../models/Seller');
+    const seller = await Seller.findById(product.sellerId);
+    if (seller && seller.telegramId) {
+      await sendToUser(seller.telegramId, text, keyboard).catch(() => {});
+    }
+  }
+};
+
 module.exports = {
   setBot,
   sendToAdmins,
@@ -513,6 +541,7 @@ module.exports = {
   notifyAdminSellerWithdrawal,
   notifySellerWelcome,
   notifyWaitlist,
+  notifyWarrantyClaim,
   // №16 Сегментация
   buildSegmentQuery,
   countSegment,

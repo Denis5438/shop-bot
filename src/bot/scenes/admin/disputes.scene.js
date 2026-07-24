@@ -156,9 +156,212 @@ const resolvePaySeller = async (ctx, orderId) => {
   await listDisputes(ctx, 1);
 };
 
+// ─────────────────── ГАРАНТИЙНЫЕ ЗАМЕНЫ ───────────────────
+const listWarrantyClaims = async (ctx, page = 1) => {
+  const skip = (page - 1) * PAGE_SIZE;
+  const filter = { replacementStatus: 'pending' };
+
+  const total = await Order.countDocuments(filter);
+  const claims = await Order.find(filter)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(PAGE_SIZE)
+    .populate('userId')
+    .populate('productId');
+
+  if (!claims.length) {
+    const opts = {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В панель', 'admin:main')]]),
+    };
+    const txt = '🛡 <b>Заявки на замену отсутствуют</b>\n\nВсе заказы работают без проблем!';
+    try {
+      await ctx.editMessageText(txt, opts);
+    } catch (_) {
+      await ctx.reply(txt, opts);
+    }
+    return;
+  }
+
+  let text = `🛡 <b>Заявки на замену по гарантии (${page}/${Math.ceil(total / PAGE_SIZE)})</b>\n\n`;
+  const buttons = [];
+
+  for (const o of claims) {
+    const buyerStr = o.userId?.username ? `@${o.userId.username}` : (o.userId?.telegramId || '?');
+    const pName = escapeHtml(o.productId?.name || 'Товар');
+    text += `🔹 Заказ <code>${o._id}</code>\n`;
+    text += `   📦 ${pName} | Покупатель: ${buyerStr}\n\n`;
+
+    buttons.push([Markup.button.callback(`🔍 Заказ ${o._id.toString().slice(-6)}`, `admin:warranty:view:${o._id}`)]);
+  }
+
+  const pagination = [];
+  if (page > 1) pagination.push(Markup.button.callback('⬅️ Назад', `admin:warranties:page:${page - 1}`));
+  if (skip + PAGE_SIZE < total) pagination.push(Markup.button.callback('Вперёд ➡️', `admin:warranties:page:${page + 1}`));
+  if (pagination.length) buttons.push(pagination);
+
+  buttons.push([Markup.button.callback('⬅️ В панель', 'admin:main')]);
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  try {
+    await ctx.editMessageText(text, opts);
+  } catch (_) {
+    await ctx.reply(text, opts);
+  }
+};
+
+const viewWarrantyClaim = async (ctx, orderId) => {
+  const order = await Order.findById(orderId).populate('userId').populate('productId').populate('keyId');
+  if (!order) return ctx.answerCbQuery('Заявка не найдена', { show_alert: true });
+
+  const buyerStr = order.userId?.username ? `@${order.userId.username}` : order.userId?.telegramId;
+  const pName = escapeHtml(order.productId?.name || 'Товар');
+  const reason = escapeHtml(order.replacementReason || 'Не указана');
+
+  const text =
+    `🛡 <b>Заявка на замену по гарантии</b>\n\n` +
+    `📋 <b>Заказ:</b> <code>${order._id}</code>\n` +
+    `📦 <b>Товар:</b> ${pName}\n` +
+    `👤 <b>Покупатель:</b> ${buyerStr}\n` +
+    `💰 <b>Сумма:</b> ${order.price} USDT\n\n` +
+    `💬 <b>Описание проблемы от покупателя:</b>\n<i>${reason}</i>`;
+
+  const buttons = [
+    [Markup.button.callback('✅ Одобрить (Автовыдача)', `admin:warranty:approve:${order._id}`)],
+    [Markup.button.callback('✍️ Выдать замену вручную', `admin:warranty:manual_start:${order._id}`)],
+    [Markup.button.callback('❌ Отклонить замену', `admin:warranty:reject:${order._id}`)],
+    [Markup.button.callback('⬅️ К списку замен', 'admin:warranties:list')],
+  ];
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  try {
+    await ctx.editMessageText(text, opts);
+  } catch (_) {
+    await ctx.reply(text, opts);
+  }
+};
+
+const approveWarrantyClaim = async (ctx, orderId) => {
+  const order = await Order.findById(orderId).populate('productId').populate('userId');
+  if (!order || order.replacementStatus !== 'pending') {
+    return ctx.answerCbQuery('❌ Заявка не найдена или уже обработана', { show_alert: true });
+  }
+
+  const Key = require('../../../models/Key');
+  const { buildKeyQueryForProduct } = require('../../../services/provider.service');
+  const { formatDigitalItem } = require('../../utils/ui');
+
+  const product = order.productId;
+  const availableKey = await Key.findOne(buildKeyQueryForProduct(product, { isUsed: false }));
+
+  if (availableKey) {
+    availableKey.isUsed = true;
+    availableKey.usedAt = new Date();
+    availableKey.usedByOrder = order._id;
+    await availableKey.save();
+
+    order.replacementStatus = 'approved';
+    order.replacedKeyId = availableKey._id;
+    order.replacedAt = new Date();
+    await order.save();
+
+    if (order.userId) {
+      const userLang = order.userId.language || 'ru';
+      const itemFormatted = formatDigitalItem(availableKey.value, userLang);
+      const msgText =
+        `✅ <b>Ваша заявка на замену по гарантии одобрена!</b>\n\n` +
+        `📦 <b>Товар:</b> ${escapeHtml(product?.name || 'Товар')}\n\n` +
+        `📦 <b>Ваш новый аккаунт / ключ:</b>\n${itemFormatted}`;
+
+      await notif.sendToUser(order.userId.telegramId, msgText).catch(() => {});
+    }
+
+    await ctx.answerCbQuery('✅ Заявка одобрена! Новый товар выдан авто-выдачей.');
+  } else {
+    ctx.session.adminAction = 'manual_warranty_replace';
+    ctx.session.warrantyOrderId = order._id.toString();
+
+    await ctx.reply(
+      `⚠️ <b>В базе нет свободных авто-товаров для «${escapeHtml(product?.name)}»!</b>\n\n` +
+      `Отправьте новую строку с данными аккаунта (например: <code>login:pass:2fa</code> или ссылку) в ответе на это сообщение для ручной выдачи:`,
+      { parse_mode: 'HTML' }
+    );
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  await listWarrantyClaims(ctx, 1);
+};
+
+const rejectWarrantyClaim = async (ctx, orderId) => {
+  const order = await Order.findById(orderId).populate('userId');
+  if (!order || order.replacementStatus !== 'pending') {
+    return ctx.answerCbQuery('❌ Заявка не найдена', { show_alert: true });
+  }
+
+  order.replacementStatus = 'rejected';
+  order.replacementRejectReason = 'Не подтверждено модератором';
+  await order.save();
+
+  if (order.userId) {
+    await notif.sendToUser(
+      order.userId.telegramId,
+      `❌ <b>Заявка на замену по гарантии отклонена.</b>\nАдминистратор/модератор проверил заявку и отклонил запрос.`
+    ).catch(() => {});
+  }
+
+  await ctx.answerCbQuery('❌ Заявка отклонена');
+  await listWarrantyClaims(ctx, 1);
+};
+
+const handleManualWarrantyReplaceInput = async (ctx) => {
+  const session = ctx.session || {};
+  if (session.adminAction !== 'manual_warranty_replace' || !session.warrantyOrderId) return false;
+
+  const orderId = session.warrantyOrderId;
+  const order = await Order.findById(orderId).populate('productId').populate('userId');
+
+  if (!order) {
+    session.adminAction = null;
+    session.warrantyOrderId = null;
+    await ctx.reply('❌ Заказ не найден.');
+    return true;
+  }
+
+  const newValue = ctx.message.text.trim();
+  const { formatDigitalItem } = require('../../utils/ui');
+
+  order.replacementStatus = 'approved';
+  order.deliveryData = newValue;
+  order.replacedAt = new Date();
+  await order.save();
+
+  session.adminAction = null;
+  session.warrantyOrderId = null;
+
+  if (order.userId) {
+    const userLang = order.userId.language || 'ru';
+    const itemFormatted = formatDigitalItem(newValue, userLang);
+    const msgText =
+      `✅ <b>Ваша заявка на замену по гарантии одобрена!</b>\n\n` +
+      `📦 <b>Товар:</b> ${escapeHtml(order.productId?.name || 'Товар')}\n\n` +
+      `📦 <b>Ваш новый аккаунт / данные:</b>\n${itemFormatted}`;
+
+    await notif.sendToUser(order.userId.telegramId, msgText).catch(() => {});
+  }
+
+  await ctx.reply(`✅ <b>Замена по заказу #${order._id} успешно отправлена покупателю!</b>`, { parse_mode: 'HTML' });
+  return true;
+};
+
 module.exports = {
   listDisputes,
   viewDispute,
   resolveRefundBuyer,
-  resolvePaySeller
+  resolvePaySeller,
+  listWarrantyClaims,
+  viewWarrantyClaim,
+  approveWarrantyClaim,
+  rejectWarrantyClaim,
+  handleManualWarrantyReplaceInput,
 };

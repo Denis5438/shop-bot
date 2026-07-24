@@ -1,10 +1,11 @@
 const { Markup } = require('telegraf');
 
 // Главная клавиатура администратора
-const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pendingSellerWithdrawals: 0, pendingDisputes: 0 }) => {
+const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pendingSellerWithdrawals: 0, pendingDisputes: 0, pendingWarranties: 0 }) => {
   const ordersBadge = counts.pendingOrders > 0 ? ` (🔴 ${counts.pendingOrders})` : '';
   const paymentsBadge = counts.pendingPayments > 0 ? ` (🔴 ${counts.pendingPayments})` : '';
   const sellersBadge = counts.pendingSellerWithdrawals > 0 ? ` (🔴 ${counts.pendingSellerWithdrawals})` : '';
+  const warrantiesBadge = counts.pendingWarranties > 0 ? ` (🔴 ${counts.pendingWarranties})` : '';
 
   return Markup.inlineKeyboard([
     [
@@ -26,6 +27,9 @@ const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pend
     ],
     [
       Markup.button.callback(`💸 Продавцы${sellersBadge}`, 'admin:sellers:withdrawals'),
+      Markup.button.callback(`🛡 Замены${warrantiesBadge}`, 'admin:warranties:list'),
+    ],
+    [
       Markup.button.callback(`⚠️ Споры${counts.pendingDisputes > 0 ? ` (🔴 ${counts.pendingDisputes})` : ''}`, 'admin:disputes:list')
     ],
     [Markup.button.callback('⚙️ Настройки', 'admin:settings')],

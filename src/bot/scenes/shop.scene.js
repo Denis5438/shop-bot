@@ -478,6 +478,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           keyId: null,
           confirmedAt: null,
           activationResult: null,
+          warrantyDays: product.warrantyDays ?? 5,
         });
         await order.save(sessionOptions);
         orders.push(order);
@@ -495,6 +496,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
             keyId: allocatedKey ? allocatedKey._id : null,
             confirmedAt: isAutoKeyProduct ? new Date() : null,
             activationResult: isAutoKeyProduct ? 'Ключ выдан автоматически' : null,
+            warrantyDays: product.warrantyDays ?? 5,
           });
           await order.save(sessionOptions);
           orders.push(order);

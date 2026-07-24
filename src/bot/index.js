@@ -1040,6 +1040,28 @@ const createBot = () => {
     await profileScene.showOrders(ctx, ctx.match[1], parseInt(ctx.match[2]));
   });
 
+  bot.action(/^profile:order:detail:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    await profileScene.showOrderDetail(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^profile:warranty:claim:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const orderId = ctx.match[1];
+    ctx.session = ctx.session || {};
+    ctx.session.userAction = 'warranty_claim';
+    ctx.session.claimOrderId = orderId;
+
+    await ctx.reply(
+      `🛡 <b>Запрос замены по гарантии</b>\n\n` +
+      `Пожалуйста, напишите описание проблемы (что не работает в аккаунте), и при желании отправьте скриншот ошибки:`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `profile:order:detail:${orderId}`)]]),
+      }
+    );
+  });
+
   // №20 Достижения
   bot.action('profile:achievements', async (ctx) => {
     await ctx.answerCbQuery();
@@ -1431,6 +1453,28 @@ const createBot = () => {
     await disputesScene.resolvePaySeller(ctx, ctx.match[1]);
   });
 
+  // ─── ADMIN: Замены по гарантии ───
+  bot.action('admin:warranties:list', adminMiddleware, async (ctx) => {
+    await disputesScene.listWarrantyClaims(ctx, 1);
+  });
+  bot.action(/^admin:warranties:page:(\d+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.listWarrantyClaims(ctx, parseInt(ctx.match[1], 10));
+  });
+  bot.action(/^admin:warranty:view:(.+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.viewWarrantyClaim(ctx, ctx.match[1]);
+  });
+  bot.action(/^admin:warranty:approve:(.+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.approveWarrantyClaim(ctx, ctx.match[1]);
+  });
+  bot.action(/^admin:warranty:reject:(.+)$/, adminMiddleware, async (ctx) => {
+    await disputesScene.rejectWarrantyClaim(ctx, ctx.match[1]);
+  });
+  bot.action(/^admin:warranty:manual_start:(.+)$/, adminMiddleware, async (ctx) => {
+    ctx.session.adminAction = 'manual_warranty_replace';
+    ctx.session.warrantyOrderId = ctx.match[1];
+    await ctx.reply('Отправьте новые данные (например: <code>login:pass:2fa</code> или ссылку) для этого заказа:', { parse_mode: 'HTML' });
+  });
+
   // ─── ADMIN: Статистика ───
   bot.action('admin:stats', adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
@@ -1748,6 +1792,34 @@ const createBot = () => {
 
     // Управление категориями (admin)
     if (await categoriesScene.handleCategoryInput(ctx)) return;
+
+    // Ручная замена по гарантии (admin)
+    if (await disputesScene.handleManualWarrantyReplaceInput(ctx)) return;
+
+    // Прием заявления на замену по гарантии (user)
+    if (session.userAction === 'warranty_claim' && session.claimOrderId) {
+      const Order = require('../models/Order');
+      const Product = require('../models/Product');
+      const order = await Order.findById(session.claimOrderId);
+      if (order && order.userId.toString() === ctx.user._id.toString()) {
+        const textReason = ctx.message.text || ctx.message.caption || 'Заявка на замену (прикреплен файл)';
+        order.replacementStatus = 'pending';
+        order.replacementReason = textReason;
+        await order.save();
+
+        const product = await Product.findById(order.productId);
+        await notif.notifyWarrantyClaim(order, ctx.user, product, textReason);
+
+        session.userAction = null;
+        session.claimOrderId = null;
+
+        await ctx.reply('✅ <b>Заявка на замену успешно отправлена!</b>\nМодераторы/продавец проверит её в ближайшее время.', {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('📋 К деталям заказа', `profile:order:detail:${order._id}`)]]),
+        });
+        return;
+      }
+    }
 
     // Добавление товара (admin) - включает назначение продавца
     if (await productsScene.handleProductInput(ctx)) return;

@@ -81,6 +81,7 @@ const showProductEdit = async (ctx, productId) => {
     `🗂 Категория: ${product.categoryId ? escapeHtml(product.categoryId.name) : 'Нет'}\n` +
     `🚚 Выдача: ${deliveryLabel}\n` +
     `📦 Остаток ключей: ${stock}\n` +
+    `🛡 Гарантия: ${product.warrantyDays ?? 5} дн.\n` +
     `${sellerLine}\n` +
     `🔘 Статус: ${product.isActive ? '✅ Активен' : '🔴 Скрыт'}`;
 
@@ -92,6 +93,7 @@ const showProductEdit = async (ctx, productId) => {
     [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}`)],
     [Markup.button.callback('📝 Описание (EN)', `admin:product:field:descriptionEn:${productId}`)],
     [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}`)],
+    [Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}`)],
     [Markup.button.callback('🔑 Загрузить товары (TXT / Текст)', `admin:keys:add:${productId}`)],
     [Markup.button.callback('📣 Разослать', `admin:product:broadcast:${productId}`)],
     [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
@@ -468,6 +470,13 @@ const handleProductInput = async (ctx) => {
       const num = parseFloat(value.replace(',', '.'));
       if (Number.isNaN(num)) {
         await ctx.reply('❌ Неверное число. Попробуйте ещё раз.');
+        return true;
+      }
+      update[field] = num;
+    } else if (field === 'warrantyDays') {
+      const num = parseInt(value, 10);
+      if (Number.isNaN(num) || num < 0) {
+        await ctx.reply('❌ Введите корректное число дней гарантии (например: 5):');
         return true;
       }
       update[field] = num;
