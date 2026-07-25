@@ -40,9 +40,9 @@ const tosMiddleware = async (ctx, next) => {
     return next();
   }
 
-  // tos:accept / tos:decline - наши собственные обработчики.
+  // tos:accept / tos:decline / lang:ru / lang:en - разрешаем прохождение.
   const cbData = ctx.callbackQuery?.data;
-  if (typeof cbData === 'string' && cbData.startsWith('tos:')) {
+  if (typeof cbData === 'string' && (cbData.startsWith('tos:') || cbData.startsWith('lang:'))) {
     return next();
   }
 
