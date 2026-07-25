@@ -52,7 +52,7 @@ const {
   buildKeyQueryForProduct,
   resolveOrderProvider,
 } = require('../services/provider.service');
-const { escapeHtml } = require('./utils/ui');
+const { escapeHtml, formatDateTimeMSK } = require('./utils/ui');
 
 // Models & Core
 const mongoose = require('mongoose');
@@ -640,7 +640,7 @@ const createBot = () => {
     }
     const alertMsg = t('tos_accepted_alert') || '✅ Вы успешно приняли условия Оферты!';
     await ctx.answerCbQuery(alertMsg, { show_alert: true }).catch(() => {});
-    const dateStr = `${new Date().toLocaleDateString('ru-RU')} в ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+    const dateStr = formatDateTimeMSK(new Date());
     const acceptedBtnText = ctx.user?.language === 'en' ? `✅ Terms accepted (${dateStr})` : `✅ Оферта принята (${dateStr})`;
     await ctx.editMessageReplyMarkup(
       Markup.inlineKeyboard([[Markup.button.callback(acceptedBtnText, 'shop:noop')]]).reply_markup

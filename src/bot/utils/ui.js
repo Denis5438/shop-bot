@@ -7,6 +7,22 @@ const { EMOJI, TEXTS, SLA } = require('../constants/ux');
  * (error screen, empty state, copy hints, balance header, confirm).
  */
 
+/**
+ * Форматирует дату и время по Московскому времени (МСК / Europe/Moscow)
+ */
+const formatDateTimeMSK = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  const dateStr = d.toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
+  const timeStr = d.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' });
+  return `${dateStr} в ${timeStr} МСК`;
+};
+
+const formatDateMSK = (date) => {
+  if (!date) return '';
+  return new Date(date).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
+};
+
 // ─── safeEdit - всегда корректно рисует сообщение ──────────────────────────
 /**
  * Пытается отредактировать сообщение (если пришли из callback),
@@ -293,6 +309,8 @@ module.exports = {
   extractTextWithEmojis,
   escapeHtml,
   formatDigitalItem,
+  formatDateTimeMSK,
+  formatDateMSK,
   EMOJI,
   TEXTS,
   SLA,

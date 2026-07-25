@@ -5,7 +5,7 @@ const Transaction = require('../../../models/Transaction');
 const Seller = require('../../../models/Seller');
 const { toRub } = require('../../../services/currency.service');
 const mongoose = require('mongoose');
-const { escapeHtml } = require('../../utils/ui');
+const { escapeHtml, formatDateTimeMSK, formatDateMSK } = require('../../utils/ui');
 const i18n = require('../../middlewares/i18n');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -156,10 +156,7 @@ const showUserProfile = async (ctx, userId) => {
   const referralsCount = await User.countDocuments({ referredBy: user._id });
   const isSeller = await Seller.exists({ telegramId: user.telegramId, isActive: true });
 
-  const tosDate = user.acceptedToSAt;
-  const tosDateStr = tosDate
-    ? `${new Date(tosDate).toLocaleDateString('ru-RU')} в ${new Date(tosDate).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
-    : null;
+  const tosDateStr = user.acceptedToSAt ? formatDateTimeMSK(user.acceptedToSAt) : null;
 
   const tosLine = user.acceptedToS
     ? `📜 Оферта (ToS): ✅ <b>Принята</b> (${tosDateStr || 'Да'})\n`
@@ -183,7 +180,7 @@ const showUserProfile = async (ctx, userId) => {
     `📦 Заказов: ${ordersCount}\n` +
     `💸 Потрачено: ${user.totalSpent.toFixed(2)} USDT\n` +
     `👥 Рефералов: ${referralsCount}\n` +
-    `📅 Регистрация: ${new Date(user.createdAt).toLocaleDateString('ru-RU')}`;
+    `📅 Регистрация: ${formatDateMSK(user.createdAt)}`;
 
   const buttons = [
     [Markup.button.callback('💰 Изменить баланс', `admin:user:balance:${user._id}`)],
