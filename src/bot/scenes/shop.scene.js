@@ -867,4 +867,4 @@ const processPreorder = async (ctx, productId, qty = 1) => {
   ).catch(() => {});
 };
 
-module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder };
+module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder, showPreorderQuantitySelect };
