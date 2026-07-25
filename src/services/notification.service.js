@@ -490,8 +490,74 @@ const notifyWaitlist = async (product) => {
     }
   }
 
+  // Автовыдача предзаказов
+  await fulfillPreorders(product);
+
   // Remove them from waitlist since they've been notified
   await Waitlist.deleteMany({ productId: product._id });
+};
+
+const fulfillPreorders = async (product) => {
+  if (!botInstance || !product) return;
+
+  const Order = require('../models/Order');
+  const Key = require('../models/Key');
+  const { buildKeyQueryForProduct } = require('./provider.service');
+  const { formatDigitalItem, escapeHtml } = require('../bot/utils/ui');
+
+  const pendingPreorders = await Order.find({
+    productId: product._id,
+    status: 'preorder_pending',
+  }).sort({ createdAt: 1 }).populate('userId');
+
+  if (!pendingPreorders.length) return;
+
+  for (const preorder of pendingPreorders) {
+    if (!preorder.userId || !preorder.userId.telegramId) continue;
+
+    const keyQuery = buildKeyQueryForProduct(product, { isUsed: false });
+    const key = await Key.findOne(keyQuery);
+
+    if (!key) {
+      break;
+    }
+
+    key.isUsed = true;
+    key.usedAt = new Date();
+    key.orderId = preorder._id;
+    await key.save();
+
+    preorder.status = 'completed';
+    preorder.keyId = key._id;
+    preorder.deliveryData = key.value;
+    await preorder.save();
+
+    const Waitlist = require('../models/Waitlist');
+    await Waitlist.findOneAndDelete({ userId: preorder.userId._id, productId: product._id }).catch(() => {});
+
+    try {
+      const userLang = preorder.userId.language || 'ru';
+      const formattedItem = formatDigitalItem(key.value, userLang);
+      const msgText = userLang === 'en'
+        ? `🎉 <b>Your Pre-order #${preorder._id} has been fulfilled!</b>\n\n` +
+          `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n\n` +
+          `👇 <b>Your account data:</b>\n${formattedItem}\n\n` +
+          `<i>Thank you for waiting!</i>`
+        : `🎉 <b>Ваш Предзаказ #${preorder._id} выполнен!</b>\n\n` +
+          `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n\n` +
+          `👇 <b>Ваши данные товара:</b>\n${formattedItem}\n\n` +
+          `<i>Спасибо за ожидание!</i>`;
+
+      await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: '📋 Мои заказы', callback_data: `profile:order:${preorder._id}` }]],
+        },
+      });
+    } catch (e) {
+      logger.warn(`❌ Не удалось отправить предзаказанный товар пользователю ${preorder.userId.telegramId}: ${e.message}`);
+    }
+  }
 };
 
 const sendMediaToAdmins = async (mediaType, mediaId, caption, extra = {}) => {
@@ -577,6 +643,7 @@ module.exports = {
   notifySellerWelcome,
   notifyWaitlist,
   notifyWarrantyClaim,
+  fulfillPreorders,
   // №16 Сегментация
   buildSegmentQuery,
   countSegment,

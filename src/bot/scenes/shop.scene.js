@@ -208,6 +208,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     }
   } else {
     buttons.push([Markup.button.callback('🔔 Уведомить о наличии', `shop:notify:${productId}`)]);
+    buttons.push([Markup.button.callback(`⏳ Сделать предзаказ — ${effectivePrice} USDT`, `shop:preorder:${productId}`)]);
   }
   if (product.type === 'gpt_activation') {
     buttons.push([Markup.button.callback(t('shop_check_token'), `shop:check_token:${productId}`)]);
@@ -700,4 +701,105 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   }
 };
 
-module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist };
+const confirmPreorder = async (ctx, productId) => {
+  const product = await Product.findById(productId);
+  if (!product || !product.isActive) {
+    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+  }
+
+  const lang = ctx.user?.language || 'ru';
+  const name = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+  const stock = await getStock(product);
+  const effectivePrice = await getEffectivePrice(product, stock);
+
+  const isRu = lang === 'ru';
+  const title = isRu ? '⏳ <b>Подтверждение предзаказа</b>' : '⏳ <b>Pre-order Confirmation</b>';
+  const infoText = isRu
+    ? `Вы собираетесь зарезервировать товар <b>${escapeHtml(name)}</b>.\n\n` +
+      `💰 <b>Сумма списания:</b> ${effectivePrice} USDT (~${toRub(effectivePrice)} ₽)\n` +
+      `💳 <b>Ваш баланс:</b> ${ctx.user.balance.toFixed(2)} USDT\n\n` +
+      `<i>💡 Как только склад пополнится (появятся новые аккаунты), бот автоматически выдаст вам товар в личку первейшей очередью! Вы сможете отменить предзаказ в любой момент в «Мои заказы».</i>`
+    : `You are about to pre-order <b>${escapeHtml(name)}</b>.\n\n` +
+      `💰 <b>Price:</b> ${effectivePrice} USDT\n` +
+      `💳 <b>Your balance:</b> ${ctx.user.balance.toFixed(2)} USDT\n\n` +
+      `<i>💡 As soon as stock arrives, the bot will automatically deliver the item to your PM in priority queue! You can cancel anytime in "My Orders".</i>`;
+
+  const btnConfirm = isRu ? `✅ Подтвердить предзаказ — ${effectivePrice} USDT` : `✅ Confirm Pre-order — ${effectivePrice} USDT`;
+  const btnBack = isRu ? '⬅️ Назад' : '⬅️ Back';
+
+  const buttons = [
+    [Markup.button.callback(btnConfirm, `shop:preorder_confirm:${productId}`)],
+    [Markup.button.callback(btnBack, `shop:product:${productId}`)],
+  ];
+
+  try {
+    await ctx.editMessageText(`${title}\n\n${infoText}`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } catch (_) {
+    await ctx.reply(`${title}\n\n${infoText}`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  }
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+const processPreorder = async (ctx, productId) => {
+  const user = ctx.user;
+  const product = await Product.findById(productId);
+  if (!product || !product.isActive) {
+    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+  }
+
+  const stock = await getStock(product);
+  const effectivePrice = await getEffectivePrice(product, stock);
+
+  if (user.balance < effectivePrice) {
+    return ctx.answerCbQuery(`❌ Недостаточно средств. Нужно: ${effectivePrice} USDT, ваш баланс: ${user.balance.toFixed(2)} USDT`, { show_alert: true });
+  }
+
+  user.balance = parseFloat((user.balance - effectivePrice).toFixed(8));
+  user.totalSpent = parseFloat((user.totalSpent + effectivePrice).toFixed(8));
+  await user.save();
+
+  const order = new Order({
+    userId: user._id,
+    productId: product._id,
+    price: effectivePrice,
+    qty: 1,
+    status: 'preorder_pending',
+    warrantyDays: product.warrantyDays ?? 5,
+  });
+  await order.save();
+
+  await Waitlist.findOneAndDelete({ userId: user._id, productId: product._id });
+  await new Waitlist({ userId: user._id, productId: product._id }).save();
+
+  const isRu = (user.language || 'ru') === 'ru';
+  const msgText = isRu
+    ? `⏳ <b>Предзаказ #${order._id} успешно зарезервирован!</b>\n\n` +
+      `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n` +
+      `💰 <b>Списано:</b> ${effectivePrice} USDT\n\n` +
+      `<i>Ваш предзаказ поставлен в 1-ю очередь. Бот автоматически пришлёт данные товара вам в личные сообщения при первом пополнении склада!</i>`
+    : `⏳ <b>Pre-order #${order._id} successfully placed!</b>\n\n` +
+      `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n` +
+      `💰 <b>Deducted:</b> ${effectivePrice} USDT\n\n` +
+      `<i>Your pre-order is in priority queue. The bot will automatically send product data to your PM on stock arrival!</i>`;
+
+  const buttons = [
+    [Markup.button.callback(isRu ? '📋 Мои заказы' : '📋 My Orders', 'profile:orders:all:1')],
+    [Markup.button.callback(isRu ? '🛒 В магазин' : '🛒 Shop', 'shop:main')],
+  ];
+
+  try {
+    await ctx.editMessageText(msgText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } catch (_) {
+    await ctx.reply(msgText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  }
+  await ctx.answerCbQuery('⏳ Предзаказ успешно создан!').catch(() => {});
+
+  notif.sendToAdmins(
+    `⏳ <b>Новый Предзаказ!</b>\n\n` +
+    `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n` +
+    `👤 <b>Покупатель:</b> @${escapeHtml(user.username || user.telegramId)}\n` +
+    `💰 <b>Сумма:</b> ${effectivePrice} USDT`
+  ).catch(() => {});
+};
+
+module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder };

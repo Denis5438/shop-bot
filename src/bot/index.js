@@ -631,6 +631,10 @@ const createBot = () => {
     }
   });
 
+  bot.action(/^profile:cancel_preorder:(.+)$/, async (ctx) => {
+    await profileScene.cancelPreorder(ctx, ctx.match[1]);
+  });
+
   bot.action('tos:accept_broadcast', async (ctx) => {
     const t = ctx.t;
     if (ctx.user) {
@@ -970,6 +974,16 @@ const createBot = () => {
   bot.action(/^shop:notify:([^:]+)$/, async (ctx) => {
     const productId = ctx.match[1];
     await shopScene.handleWaitlist(ctx, productId);
+  });
+
+  bot.action(/^shop:preorder:([^:]+)$/, async (ctx) => {
+    const productId = ctx.match[1];
+    await shopScene.confirmPreorder(ctx, productId);
+  });
+
+  bot.action(/^shop:preorder_confirm:([^:]+)$/, async (ctx) => {
+    const productId = ctx.match[1];
+    await shopScene.processPreorder(ctx, productId);
   });
 
   bot.action(/^shop:qty:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {

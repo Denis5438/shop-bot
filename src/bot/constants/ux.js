@@ -59,6 +59,7 @@ const EMOJI = {
 
 // ─── Лейблы статусов заказа ──────────────────────────────────────────────────
 const ORDER_STATUS_LABELS = {
+  preorder_pending:      `${EMOJI.PENDING} Предзаказ (ожидает пополнения склада)`,
   pending:               `${EMOJI.PENDING} Ожидает`,
   awaiting_token:        `${EMOJI.AWAITING_KEY} Ожидает токен`,
   awaiting_confirmation: `${EMOJI.REVIEWING} На проверке`,

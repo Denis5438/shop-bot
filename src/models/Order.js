@@ -6,7 +6,7 @@ const orderSchema = new mongoose.Schema({
   provider: { type: String, enum: ['local', 'u1traby'], default: undefined },
   status: {
     type: String,
-    enum: ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'completed', 'cancelled', 'failed', 'retry', 'disputed'],
+    enum: ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'completed', 'cancelled', 'failed', 'retry', 'disputed', 'preorder_pending'],
     default: 'pending',
   },
   price: { type: Number, required: true },

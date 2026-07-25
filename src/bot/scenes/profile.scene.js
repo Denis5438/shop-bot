@@ -9,7 +9,7 @@ const { escapeHtml } = require('../utils/ui');
 const { getAllWithProgress, renderAchievementsText } = require('../../services/achievements.service');
 
 const PER_PAGE = 5;
-const ACTIVE_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'retry'];
+const ACTIVE_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'retry', 'preorder_pending'];
 
 // Уровень пользователя по сумме потраченного.
 // Возвращает { emoji, labelKey } - вызывающий код использует ctx.t(labelKey)
@@ -264,6 +264,10 @@ const showOrderDetail = async (ctx, orderId) => {
 
   const buttons = [];
 
+  if (order.status === 'preorder_pending') {
+    buttons.push([Markup.button.callback('❌ Отменить предзаказ (вернуть деньги)', `profile:cancel_preorder:${order._id}`)]);
+  }
+
   if (isWarrantyActive && order.replacementStatus === 'none') {
     buttons.push([Markup.button.callback('🔄 Запросить замену по гарантии', `profile:warranty:claim:${order._id}`)]);
   }
@@ -278,4 +282,29 @@ const showOrderDetail = async (ctx, orderId) => {
   }
 };
 
-module.exports = { showProfile, showLanguageSelect, showOrders, showOrderDetail, showAchievements };
+const cancelPreorder = async (ctx, orderId) => {
+  const order = await Order.findById(orderId).populate('productId');
+  if (!order || order.userId.toString() !== ctx.user._id.toString()) {
+    return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
+  }
+
+  if (order.status !== 'preorder_pending') {
+    return ctx.answerCbQuery('❌ Этот предзаказ уже не в очереди', { show_alert: true });
+  }
+
+  ctx.user.balance = parseFloat((ctx.user.balance + order.price).toFixed(8));
+  await ctx.user.save();
+
+  order.status = 'cancelled';
+  await order.save();
+
+  const isRu = (ctx.user.language || 'ru') === 'ru';
+  const alertMsg = isRu
+    ? `✅ Предзаказ отменён. ${order.price} USDT возвращены на ваш баланс!`
+    : `✅ Pre-order cancelled. ${order.price} USDT returned to your balance!`;
+
+  await ctx.answerCbQuery(alertMsg, { show_alert: true });
+  await showOrderDetail(ctx, orderId);
+};
+
+module.exports = { showProfile, showLanguageSelect, showOrders, showOrderDetail, showAchievements, cancelPreorder };
