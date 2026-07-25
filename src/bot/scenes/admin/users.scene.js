@@ -156,7 +156,7 @@ const showUserProfile = async (ctx, userId) => {
   const referralsCount = await User.countDocuments({ referredBy: user._id });
   const isSeller = await Seller.exists({ telegramId: user.telegramId, isActive: true });
 
-  const tosDate = user.acceptedToSAt || user.createdAt;
+  const tosDate = user.acceptedToSAt;
   const tosDateStr = tosDate
     ? `${new Date(tosDate).toLocaleDateString('ru-RU')} в ${new Date(tosDate).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
     : null;

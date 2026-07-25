@@ -758,7 +758,7 @@ const createBot = () => {
     const t = ctx.t || ((k) => k);
     await ctx.answerCbQuery('✅ Язык: Русский');
 
-    if (!ctx.user.acceptedToS && ctx.user.role !== 'admin') {
+    if (!ctx.user.acceptedToS) {
       return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
     }
 
@@ -776,7 +776,7 @@ const createBot = () => {
     const t = ctx.t || ((k) => k);
     await ctx.answerCbQuery('✅ Language: English');
 
-    if (!ctx.user.acceptedToS && ctx.user.role !== 'admin') {
+    if (!ctx.user.acceptedToS) {
       return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
     }
 
