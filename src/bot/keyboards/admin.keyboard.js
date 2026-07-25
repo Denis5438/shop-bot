@@ -1,8 +1,9 @@
 const { Markup } = require('telegraf');
 
 // Главная клавиатура администратора
-const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pendingSellerWithdrawals: 0, pendingDisputes: 0, pendingWarranties: 0 }) => {
+const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pendingSellerWithdrawals: 0, pendingDisputes: 0, pendingWarranties: 0, pendingPreorders: 0 }) => {
   const ordersBadge = counts.pendingOrders > 0 ? ` (🔴 ${counts.pendingOrders})` : '';
+  const preordersBadge = counts.pendingPreorders > 0 ? ` (⏳ ${counts.pendingPreorders})` : '';
   const paymentsBadge = counts.pendingPayments > 0 ? ` (🔴 ${counts.pendingPayments})` : '';
   const sellersBadge = counts.pendingSellerWithdrawals > 0 ? ` (🔴 ${counts.pendingSellerWithdrawals})` : '';
   const warrantiesBadge = counts.pendingWarranties > 0 ? ` (🔴 ${counts.pendingWarranties})` : '';
@@ -14,7 +15,7 @@ const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pend
     ],
     [
       Markup.button.callback('🔑 Ключи', 'admin:keys'),
-      Markup.button.callback(`📋 Заказы${ordersBadge}`, 'admin:orders'),
+      Markup.button.callback(`📋 Заказы${ordersBadge}${preordersBadge}`, 'admin:orders'),
     ],
     [
       Markup.button.callback('👥 Пользователи', 'admin:users'),

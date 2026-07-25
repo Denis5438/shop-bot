@@ -52,6 +52,9 @@ const showOrdersList = async (ctx, filter = 'active', page = 1) => {
   if (filter === 'active') {
     query = { status: { $in: ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'retry'] } };
     title = '📋 Активные заказы';
+  } else if (filter === 'preorder') {
+    query = { status: 'preorder_pending' };
+    title = '⏳ Ожидающие предзаказы';
   } else if (filter === 'completed') {
     query = { status: 'completed' };
     title = '✅ Выполненные заказы';
@@ -75,17 +78,23 @@ const showOrdersList = async (ctx, filter = 'active', page = 1) => {
     .populate('productId');
 
   if (!orders.length) {
+    const pendingPreordersCount = await Order.countDocuments({ status: 'preorder_pending' });
+    const preorderBadge = pendingPreordersCount > 0 ? ` (${pendingPreordersCount})` : '';
+
     return ctx.editMessageText(`${title}\n\n📭 Заказов нет`, {
       ...Markup.inlineKeyboard([
         [
           Markup.button.callback('🟡 Активные', 'admin:orders:active'),
-          Markup.button.callback('✅ Выполненные', 'admin:orders:completed'),
+          Markup.button.callback(`⏳ Предзаказы${preorderBadge}`, 'admin:orders:preorder'),
         ],
         [
+          Markup.button.callback('✅ Выполненные', 'admin:orders:completed'),
           Markup.button.callback('❌ Отменённые', 'admin:orders:cancelled'),
-          Markup.button.callback('📋 Все', 'admin:orders:all'),
         ],
-        [Markup.button.callback('⬅️ Назад', 'admin:main')],
+        [
+          Markup.button.callback('📋 Все', 'admin:orders:all'),
+          Markup.button.callback('⬅️ Назад', 'admin:main'),
+        ],
       ]),
     });
   }
@@ -112,15 +121,21 @@ const showOrdersList = async (ctx, filter = 'active', page = 1) => {
     buttons.push(navButtons);
   }
 
+  const pendingPreordersCount = await Order.countDocuments({ status: 'preorder_pending' });
+  const preorderBadge = pendingPreordersCount > 0 ? ` (${pendingPreordersCount})` : '';
+
   buttons.push([
     Markup.button.callback('🟡 Активные', 'admin:orders:active:1'),
-    Markup.button.callback('✅ Выполненные', 'admin:orders:completed:1'),
+    Markup.button.callback(`⏳ Предзаказы${preorderBadge}`, 'admin:orders:preorder:1'),
   ]);
   buttons.push([
+    Markup.button.callback('✅ Выполненные', 'admin:orders:completed:1'),
     Markup.button.callback('❌ Отменённые', 'admin:orders:cancelled:1'),
-    Markup.button.callback('📋 Все', 'admin:orders:all:1'),
   ]);
-  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:main')]);
+  buttons.push([
+    Markup.button.callback('📋 Все', 'admin:orders:all:1'),
+    Markup.button.callback('⬅️ Назад', 'admin:main'),
+  ]);
 
   try {
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });

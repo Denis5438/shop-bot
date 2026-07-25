@@ -13,6 +13,7 @@ const showAdminMain = async (ctx) => {
   const pendingSellerWithdrawals = await SellerWithdrawal.countDocuments({ status: 'pending' });
   const pendingDisputes = await Order.countDocuments({ status: 'disputed' });
   const pendingWarranties = await Order.countDocuments({ replacementStatus: 'pending' });
+  const pendingPreorders = await Order.countDocuments({ status: 'preorder_pending' });
 
   // Статистика за сегодня
   const todayStart = new Date();
@@ -26,6 +27,9 @@ const showAdminMain = async (ctx) => {
   const todayRevenue = (todayRevAgg[0]?.total || 0).toFixed(2);
   const newUsersToday = await User.countDocuments({ createdAt: { $gte: todayStart } });
 
+  const preordersLine = pendingPreorders > 0
+    ? `\n⏳ Ожидают предзаказов: <b>${pendingPreorders}</b>`
+    : '';
   const sellerLine = pendingSellerWithdrawals > 0
     ? `\n💸 Заявки продавцов: <b>${pendingSellerWithdrawals}</b>`
     : '';
@@ -42,17 +46,26 @@ const showAdminMain = async (ctx) => {
     `📦 Заказов выполнено: <b>${todayOrders}</b>\n` +
     `🔴 Требуют внимания (заказы): <b>${pendingOrders}</b>\n` +
     `💳 Новые платежи: <b>${pendingPayments}</b>\n` +
-    `👥 Новых юзеров: <b>${newUsersToday}</b>${sellerLine}${disputesLine}${warrantiesLine}</blockquote>`;
+    `👥 Новых юзеров: <b>${newUsersToday}</b>${preordersLine}${sellerLine}${disputesLine}${warrantiesLine}</blockquote>`;
+
+  const keyboard = adminMainKeyboard({
+    pendingOrders,
+    pendingPayments,
+    pendingSellerWithdrawals,
+    pendingDisputes,
+    pendingWarranties,
+    pendingPreorders,
+  });
 
   try {
     await ctx.editMessageText(text, {
       parse_mode: 'HTML',
-      ...adminMainKeyboard({ pendingOrders, pendingPayments, pendingSellerWithdrawals, pendingDisputes, pendingWarranties }),
+      ...keyboard,
     });
   } catch (_) {
     await ctx.reply(text, {
       parse_mode: 'HTML',
-      ...adminMainKeyboard({ pendingOrders, pendingPayments, pendingSellerWithdrawals, pendingDisputes, pendingWarranties }),
+      ...keyboard,
     });
   }
 };
