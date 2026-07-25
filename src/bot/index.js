@@ -976,14 +976,44 @@ const createBot = () => {
     await shopScene.handleWaitlist(ctx, productId);
   });
 
-  bot.action(/^shop:preorder:([^:]+)$/, async (ctx) => {
+  bot.action(/^shop:preorder_qty:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
-    await shopScene.confirmPreorder(ctx, productId);
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showPreorderQuantitySelect(ctx, productId, page, qty);
   });
 
-  bot.action(/^shop:preorder_confirm:([^:]+)$/, async (ctx) => {
+  bot.action(/^shop:preorder_qty_inc:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
-    await shopScene.processPreorder(ctx, productId);
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showPreorderQuantitySelect(ctx, productId, page, qty + 1);
+  });
+
+  bot.action(/^shop:preorder_qty_dec:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showPreorderQuantitySelect(ctx, productId, page, Math.max(1, qty - 1));
+  });
+
+  bot.action(/^shop:preorder_qty_set:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showPreorderQuantitySelect(ctx, productId, page, qty);
+  });
+
+  bot.action(/^shop:preorder:([^:]+)(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const qty = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await shopScene.confirmPreorder(ctx, productId, qty);
+  });
+
+  bot.action(/^shop:preorder_confirm:([^:]+)(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const qty = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await shopScene.processPreorder(ctx, productId, qty);
   });
 
   bot.action(/^shop:qty:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
