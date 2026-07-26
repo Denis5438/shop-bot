@@ -88,20 +88,41 @@ const start = (bot) => {
           const result = await retryActivation(provider, apiOrderId, fresh.tokenRaw);
 
           if (result.success) {
-            fresh.status = 'completed';
-            fresh.provider = provider;
-            fresh.activationResult = `api_order_id: ${apiOrderId} (retry OK, попытка ${fresh.retryCount})`;
-            fresh.nextRetryAt = null;
-            await fresh.save();
+            // Атомарное завершение ТОЛЬКО если заказ всё ещё retry. Если админ
+            // за время сетевого вызова к провайдеру успел отменить заказ
+            // (cancelled + возврат средств), безусловный save() «воскресил» бы
+            // его в completed - и товар выдан, и деньги возвращены.
+            const completed = await Order.findOneAndUpdate(
+              { _id: fresh._id, status: 'retry' },
+              {
+                $set: {
+                  status: 'completed',
+                  provider,
+                  activationResult: `api_order_id: ${apiOrderId} (retry OK, попытка ${fresh.retryCount})`,
+                  nextRetryAt: null,
+                },
+              },
+              { new: true }
+            ).populate('productId');
 
-            const user = await User.findById(fresh.userId);
-            if (user) {
-              await notif.notifyUserOrderCompleted(user, fresh, fresh.productId, 'Активация завершена после повторной попытки!');
-              await grantReferralBonusForFirstCompletedOrder(user._id);
+            if (!completed) {
+              // Заказ уже не в retry (отменён/обработан). Активация у провайдера
+              // прошла - сообщаем админам для ручной сверки, но повторно не
+              // начисляем и пользователю "выполнено" не шлём.
+              logger.warn(`[Retry] Заказ ${fresh._id}: активация успешна, но заказ уже не в статусе retry - пропускаю завершение.`);
+              await notif.sendToAdmins(
+                `⚠️ <b>Retry-активация прошла у провайдера, но заказ уже был обработан</b>\n📋 Заказ: <code>${fresh._id}</code>\nТребуется ручная сверка (возможно, заказ отменён с возвратом).`
+              ).catch(() => {});
+            } else {
+              const user = await User.findById(completed.userId);
+              if (user) {
+                await notif.notifyUserOrderCompleted(user, completed, completed.productId, 'Активация завершена после повторной попытки!');
+                await grantReferralBonusForFirstCompletedOrder(user._id);
+              }
+              await notif.sendToAdmins(
+                `✅ <b>Retry-активация успешна</b>\n📋 Заказ: <code>${completed._id}</code> (попытка ${completed.retryCount})`
+              );
             }
-            await notif.sendToAdmins(
-              `✅ <b>Retry-активация успешна</b>\n📋 Заказ: <code>${fresh._id}</code> (попытка ${fresh.retryCount})`
-            );
           } else {
             // Снова ошибка - увеличиваем retryCount
             const canRetry = result.retryable !== false;

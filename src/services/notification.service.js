@@ -55,6 +55,38 @@ const sendToUser = async (telegramId, message, extra = {}) => {
   }
 };
 
+// Дедуп алертов об ошибках: при массовом сбое (например, недоступна БД) каждый
+// упавший апдейт слал бы отдельное сообщение каждому админу - это и спам, и
+// самоусиление (упираемся в лимит Telegram → новые ошибки). Схлопываем
+// одинаковые сообщения в окне и добавляем счётчик повторов.
+const _alertWindowMs = 5 * 60 * 1000;
+const _alertSeen = new Map(); // ключ сообщения → { count, firstAt, timer }
+
+const sendAdminAlertThrottled = (message, extra = {}) => {
+  const key = String(message).slice(0, 200);
+  const now = Date.now();
+  const existing = _alertSeen.get(key);
+
+  if (existing && now - existing.firstAt < _alertWindowMs) {
+    existing.count += 1; // повтор в окне - просто считаем, не шлём
+    return;
+  }
+
+  // Первое появление (или окно истекло): шлём сразу
+  _alertSeen.set(key, { count: 1, firstAt: now });
+  sendToAdmins(message, extra).catch(() => {});
+
+  // По истечении окна: если были повторы - шлём сводку и очищаем
+  const timer = setTimeout(() => {
+    const entry = _alertSeen.get(key);
+    _alertSeen.delete(key);
+    if (entry && entry.count > 1) {
+      sendToAdmins(`🔁 Повтор предыдущей ошибки ×${entry.count} за последние 5 мин:\n${message}`.slice(0, 3500), extra).catch(() => {});
+    }
+  }, _alertWindowMs);
+  if (typeof timer.unref === 'function') timer.unref();
+};
+
 // Новый заказ - уведомление администраторам
 const notifyAdminNewOrder = async (order, user, product) => {
   const providerLabel = getProviderLabel(resolveOrderProvider(order, product));
@@ -470,7 +502,10 @@ const notifyWaitlist = async (product) => {
   const Waitlist = require('../models/Waitlist');
   if (!botInstance) return;
 
-  const usersWaiting = await Waitlist.find({ productId: product._id }).populate('userId');
+  // .lean() + проекция: нужен только telegramId подписчиков
+  const usersWaiting = await Waitlist.find({ productId: product._id })
+    .populate('userId', 'telegramId')
+    .lean();
   if (!usersWaiting.length) return;
 
   for (const wait of usersWaiting) {
@@ -487,6 +522,9 @@ const notifyWaitlist = async (product) => {
           }
         );
       } catch (e) {}
+      // Троттлинг ~40 мс между сообщениями (как в других рассылках) - иначе
+      // на популярном товаре упираемся в лимит Telegram 30 msg/sec
+      await new Promise((r) => setTimeout(r, 40));
     }
   }
 
@@ -563,12 +601,16 @@ const fulfillPreorders = async (product) => {
       await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
         parse_mode: 'HTML',
         reply_markup: {
-          inline_keyboard: [[{ text: '📋 Мои заказы', callback_data: `profile:order:${preorder._id}` }]],
+          // Роут ожидает profile:order:detail:<id> - без ":detail" кнопка мёртвая
+          inline_keyboard: [[{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]],
         },
       });
     } catch (e) {
       logger.warn(`❌ Не удалось отправить предзаказанный товар пользователю ${preorder.userId.telegramId}: ${e.message}`);
     }
+    // Троттлинг между выдачами предзаказов (защита от лимита Telegram при
+    // массовом пополнении склада)
+    await new Promise((r) => setTimeout(r, 40));
   }
 };
 
@@ -638,6 +680,7 @@ const notifyWarrantyClaim = async (order, user, product, reason, mediaId = null,
 module.exports = {
   setBot,
   sendToAdmins,
+  sendAdminAlertThrottled,
   sendToUser,
   notifyAdminNewOrder,
   notifyAdminTokenReceived,

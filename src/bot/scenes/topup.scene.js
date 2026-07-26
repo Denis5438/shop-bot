@@ -1,7 +1,7 @@
 const { Markup } = require('telegraf');
 const TopupRequest = require('../../models/TopupRequest');
 const User = require('../../models/User');
-const { toRub, getRate } = require('../../services/currency.service');
+const { getRate } = require('../../services/currency.service');
 const notif = require('../../services/notification.service');
 const { parseAmount, copyHint, escapeHtml, fmtUSDT } = require('../utils/ui');
 const { SLA } = require('../constants/ux');

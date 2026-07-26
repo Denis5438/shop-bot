@@ -626,13 +626,23 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           );
         } catch (_) {}
       }
-      if (balanceDebited && orders.length === 0) {
+      // Сколько заказов ДОЛЖНО было создаться: manual-товар без автоключей -
+      // один заказ на весь qty; остальное - по одному заказу на штуку.
+      const expectedOrders = (!isAutoKeyProduct && product.type === 'manual') ? 1 : qty;
+      if (balanceDebited && orders.length < expectedOrders) {
         try {
-          await User.updateOne(
-            { _id: user._id },
-            { $inc: { balance: totalCost, totalSpent: -totalCost } }
-          );
-          if (ctx.user) ctx.user.balance = parseFloat((ctx.user.balance + totalCost).toFixed(8));
+          // Возвращаем ПРОПОРЦИОНАЛЬНО числу несозданных заказов (раньше -
+          // только при 0 созданных, что при qty>1 давало недовозврат).
+          const missing = expectedOrders - orders.length;
+          const refundAmount = parseFloat((totalCost * missing / expectedOrders).toFixed(8));
+          if (refundAmount > 0) {
+            await User.updateOne(
+              { _id: user._id },
+              { $inc: { balance: refundAmount, totalSpent: -refundAmount } }
+            );
+            if (ctx.user) ctx.user.balance = parseFloat((ctx.user.balance + refundAmount).toFixed(8));
+            require('../../middlewares/user').invalidateUserCache(user.telegramId);
+          }
         } catch (_) {}
       }
       if (manualStockDebited && orders.length === 0) {
@@ -653,8 +663,8 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     await errorScreen(ctx, {
       title: lang === 'en' ? '💥 Order failed' : '💥 Не удалось оформить заказ',
       message: lang === 'en'
-        ? 'An unexpected error occurred. Money was not charged.\n\nYou can try again or contact support.'
-        : 'Произошла непредвиденная ошибка. Деньги не списаны.\n\nМожно попробовать снова или обратиться в поддержку.',
+        ? 'An unexpected error occurred. Any charged funds have been returned.\n\nYou can try again or contact support.'
+        : 'Произошла непредвиденная ошибка. Списанные средства возвращены.\n\nМожно попробовать снова или обратиться в поддержку.',
       retryAction: `shop:buy:${productId}`,
       backAction: 'menu:main',
     });

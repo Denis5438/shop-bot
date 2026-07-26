@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Seller = require('../models/Seller');
 const notif = require('../services/notification.service');
@@ -6,10 +7,14 @@ const logger = require('../config/logger');
 const i18n = require('../bot/middlewares/i18n');
 const { withTransaction } = require('../services/transactionHelper.service');
 
+// Возвращает node-cron задачу, чтобы её можно было остановить при shutdown.
 const init = () => {
   // Run every 15 minutes
-  cron.schedule('*/15 * * * *', async () => {
+  const task = cron.schedule('*/15 * * * *', async () => {
     try {
+      // Если нет активного подключения к БД - пропускаем тик (как в других кронах)
+      if (mongoose.connection.readyState !== 1) return;
+
       // Через общий кэш настроек (единый путь чтения Settings)
       const { getSettings } = require('../services/settingsCache.service');
       const settings = await getSettings();
@@ -84,6 +89,7 @@ const init = () => {
     }
   });
   logger.info('✅ Cron [AutoConfirm] запущен (каждые 15 мин)');
+  return task;
 };
 
 module.exports = { init };

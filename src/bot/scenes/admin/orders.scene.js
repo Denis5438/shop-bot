@@ -272,33 +272,39 @@ const confirmAndActivate = async (ctx, orderId) => {
     const step1 = await activationService.startActivation(provider, key.value);
 
     if (!step1.success) {
-      order.status = 'failed';
-      order.activationResult = step1.message;
-      await order.save();
-
-      key.isUsed = false;
-      key.usedAt = null;
-      key.usedByOrder = null;
-      await key.save();
-
-      // Атомарный $inc + сброс кэша middleware
-      const user = await User.findOneAndUpdate(
-        { _id: order.userId },
-        { $inc: { balance: order.price } },
+      // Атомарный захват: failed только из activating. Если админ за время
+      // активации уже отменил заказ (с возвратом), НЕ возвращаем деньги второй раз.
+      const failed = await Order.findOneAndUpdate(
+        { _id: order._id, status: 'activating' },
+        { $set: { status: 'failed', activationResult: step1.message } },
         { new: true }
       );
-      if (user) {
-        require('../../middlewares/user').invalidateUserCache(user.telegramId);
 
-        await new Transaction({
-          userId: user._id,
-          type: 'refund',
-          amount: order.price,
-          orderId: order._id,
-          description: 'Автовозврат: ошибка шага 1 активации',
-        }).save();
+      await Key.updateOne(
+        { _id: key._id },
+        { $set: { isUsed: false, usedAt: null, usedByOrder: null } }
+      );
 
-        await notif.notifyUserOrderCancelled(user, order, order.productId, `Ошибка: ${step1.message}`);
+      if (failed) {
+        // Атомарный $inc + сброс кэша middleware
+        const user = await User.findOneAndUpdate(
+          { _id: order.userId },
+          { $inc: { balance: order.price } },
+          { new: true }
+        );
+        if (user) {
+          require('../../middlewares/user').invalidateUserCache(user.telegramId);
+
+          await new Transaction({
+            userId: user._id,
+            type: 'refund',
+            amount: order.price,
+            orderId: order._id,
+            description: 'Автовозврат: ошибка шага 1 активации',
+          }).save();
+
+          await notif.notifyUserOrderCancelled(user, order, order.productId, `Ошибка: ${step1.message}`);
+        }
       }
 
       const safeErr = escapeHtml(step1.message);
@@ -315,11 +321,26 @@ const confirmAndActivate = async (ctx, orderId) => {
     const step2 = await activationService.finishActivation(provider, step1.order_id, order.tokenRaw);
 
     if (step2.success) {
-      order.status = 'completed';
-      order.provider = provider;
-      order.apiOrderId = step1.order_id;
-      order.activationResult = `api_order_id: ${step1.order_id}`;
-      await order.save();
+      // Атомарное завершение только из activating - иначе save() «воскресил» бы
+      // отменённый админом заказ (при этом деньги уже были бы возвращены).
+      const completed = await Order.findOneAndUpdate(
+        { _id: order._id, status: 'activating' },
+        {
+          $set: {
+            status: 'completed',
+            provider,
+            apiOrderId: step1.order_id,
+            activationResult: `api_order_id: ${step1.order_id}`,
+          },
+        },
+        { new: true }
+      );
+      if (!completed) {
+        await notif.sendToAdmins(
+          `⚠️ <b>Активация прошла у провайдера, но заказ уже закрыт</b>\n📋 Заказ: <code>${order._id}</code>\nТребуется ручная сверка.`
+        ).catch(() => {});
+        return;
+      }
 
       const user = await User.findById(order.userId);
       if (user) {
@@ -337,33 +358,38 @@ const confirmAndActivate = async (ctx, orderId) => {
       return;
     }
 
-    order.status = 'failed';
-    order.activationResult = step2.message;
-    await order.save();
-
-    key.isUsed = false;
-    key.usedAt = null;
-    key.usedByOrder = null;
-    await key.save();
-
-    // Атомарный $inc + сброс кэша middleware
-    const user = await User.findOneAndUpdate(
-      { _id: order.userId },
-      { $inc: { balance: order.price } },
+    // Шаг 2 провалился: захват failed только из activating (без двойного возврата)
+    const failed2 = await Order.findOneAndUpdate(
+      { _id: order._id, status: 'activating' },
+      { $set: { status: 'failed', activationResult: step2.message } },
       { new: true }
     );
-    if (user) {
-      require('../../middlewares/user').invalidateUserCache(user.telegramId);
 
-      await new Transaction({
-        userId: user._id,
-        type: 'refund',
-        amount: order.price,
-        orderId: order._id,
-        description: 'Автовозврат: ошибка шага 2 активации',
-      }).save();
+    await Key.updateOne(
+      { _id: key._id },
+      { $set: { isUsed: false, usedAt: null, usedByOrder: null } }
+    );
 
-      await notif.notifyUserOrderCancelled(user, order, order.productId, `Ошибка: ${step2.message}`);
+    if (failed2) {
+      // Атомарный $inc + сброс кэша middleware
+      const user = await User.findOneAndUpdate(
+        { _id: order.userId },
+        { $inc: { balance: order.price } },
+        { new: true }
+      );
+      if (user) {
+        require('../../middlewares/user').invalidateUserCache(user.telegramId);
+
+        await new Transaction({
+          userId: user._id,
+          type: 'refund',
+          amount: order.price,
+          orderId: order._id,
+          description: 'Автовозврат: ошибка шага 2 активации',
+        }).save();
+
+        await notif.notifyUserOrderCancelled(user, order, order.productId, `Ошибка: ${step2.message}`);
+      }
     }
 
     const safeErr = escapeHtml(step2.message);

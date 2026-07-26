@@ -8,6 +8,7 @@ const Key = require('../../models/Key');
 const Order = require('../../models/Order');
 const Transaction = require('../../models/Transaction');
 const User = require('../../models/User');
+const logger = require('../../config/logger');
 const notif = require('../../services/notification.service');
 const { Markup } = require('telegraf');
 const { escapeHtml } = require('../utils/ui');
@@ -90,11 +91,32 @@ module.exports = (bot) => {
       }
 
       if (result.success) {
-        order.status = 'completed';
-        order.provider = provider;
-        order.apiOrderId = pending.apiOrderId;
-        order.activationResult = `api_order_id: ${pending.apiOrderId}`;
-        await order.save();
+        // Атомарное завершение только если заказ не был закрыт админом
+        // (отмена+возврат) за время сетевого вызова к провайдеру - иначе
+        // безусловный save() «воскресил» бы отменённый заказ в completed.
+        const completed = await Order.findOneAndUpdate(
+          { _id: order._id, status: { $nin: ['completed', 'cancelled', 'failed'] } },
+          {
+            $set: {
+              status: 'completed',
+              provider,
+              apiOrderId: pending.apiOrderId,
+              activationResult: `api_order_id: ${pending.apiOrderId}`,
+            },
+          },
+          { new: true }
+        );
+        if (!completed) {
+          // Заказ уже закрыт (например, отменён с возвратом). Активация у
+          // провайдера прошла - сообщаем админам, но повторно не начисляем.
+          logger.warn(`[Activation] Заказ ${order._id}: активация успешна, но заказ уже закрыт - пропускаю завершение.`);
+          await notif.sendToAdmins(
+            `⚠️ <b>Активация прошла у провайдера, но заказ уже закрыт</b>\n📋 Заказ: <code>${order._id}</code>\nТребуется ручная сверка.`
+          ).catch(() => {});
+          return;
+        }
+        // order (с populated productId) используем для уведомлений;
+        // статус в БД уже переведён в completed атомарно выше.
 
         await ctx.telegram.editMessageText(
           ctx.chat.id, step2Msg.message_id, null,

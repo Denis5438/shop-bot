@@ -58,12 +58,13 @@ const getUpdatedAt = () => {
   return d.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
 };
 
-// Инициализация: загружаем из БД, потом сразу обновляем
+// Инициализация: загружаем из БД, потом сразу обновляем.
+// Возвращает node-cron задачу, чтобы её можно было остановить при shutdown.
 const init = async () => {
   await loadFromDB();
   await fetchRate();
   // Обновляем раз в час
-  cron.schedule('0 * * * *', fetchRate);
+  return cron.schedule('0 * * * *', fetchRate);
 };
 
 module.exports = { init, toRub, getRate, getUpdatedAt, fetchRate };

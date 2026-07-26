@@ -4,7 +4,6 @@
  * скорректированы только пути require).
  */
 
-const Order = require('../../models/Order');
 const profileScene = require('../scenes/profile.scene');
 const { Markup } = require('telegraf');
 

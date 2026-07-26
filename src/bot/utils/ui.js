@@ -106,38 +106,6 @@ const errorScreen = async (ctx, opts = {}) => {
   return safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 };
 
-// ─── Empty state с CTA ─────────────────────────────────────────────────────
-/**
- * Показывает пустое состояние (нет данных) с призывом к действию.
- *
- * @param {Object} ctx
- * @param {Object} opts
- *   - icon: эмодзи (по умолчанию 📭)
- *   - title: заголовок
- *   - message: описание (зачем это, что сделать)
- *   - cta: { label, action } - основная кнопка
- *   - backAction: callback_data для "Назад"
- */
-const emptyScreen = async (ctx, opts = {}) => {
-  const {
-    icon = EMOJI.EMPTY,
-    title = 'Пока пусто',
-    message = '',
-    cta = null,
-    backAction = 'menu:main',
-  } = opts;
-
-  const text = `${icon} <b>${title}</b>${message ? `\n\n${message}` : ''}`;
-
-  const buttons = [];
-  if (cta) {
-    buttons.push([Markup.button.callback(cta.label, cta.action)]);
-  }
-  buttons.push([Markup.button.callback(TEXTS.BACK, backAction)]);
-
-  return safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-};
-
 // ─── Confirm screen (для необратимых действий) ─────────────────────────────
 /**
  * Показывает экран подтверждения перед деструктивным действием.
@@ -311,7 +279,6 @@ module.exports = {
   balanceHeader,
   copyHint,
   errorScreen,
-  emptyScreen,
   confirmScreen,
   parseAmount,
   extractTextWithEmojis,

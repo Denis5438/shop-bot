@@ -189,10 +189,11 @@ const createBot = () => {
     if (err.message && err.message.includes('query is too old')) return;
 
     logger.error(`❌ Ошибка бота: ${err.message}`, { stack: err.stack });
-    
-    // Оповещаем админов о критической ошибке
+
+    // Оповещаем админов - через throttle, чтобы при массовом сбое (например,
+    // недоступна БД) не заспамить админов и не упереться в лимит Telegram.
     const errorMsg = `⚠️ <b>Критическая ошибка в боте!</b>\n\n<pre>${escapeHtml(err.message)}</pre>`;
-    notif.sendToAdmins(errorMsg, { parse_mode: 'HTML' }).catch(() => {});
+    notif.sendAdminAlertThrottled(errorMsg, { parse_mode: 'HTML' });
 
     ctx.reply('❌ Произошла ошибка. Попробуйте ещё раз.')
       .catch(() => { });

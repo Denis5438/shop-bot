@@ -61,7 +61,8 @@ const normalizeRetryArgs = (providerOrExternalId, externalIdOrToken, maybeToken)
 
 const startU1trabyActivation = async (cdkKey) => {
   try {
-    logger.info(`[Activation:u1traby] start key=${String(cdkKey).substring(0, 12)}...`);
+    // Не логируем даже часть ключа товара (складская ценность)
+    logger.info(`[Activation:u1traby] start (key length=${String(cdkKey).length})`);
 
     const res = await u1trabyApi.post('/api/activate/start', { key: cdkKey, lang: 'ru' });
     const data = res.data;
@@ -95,7 +96,8 @@ const finishU1trabyActivation = async (apiOrderId, userToken) => {
     });
 
     const data = res.data;
-    logger.info(`[Activation:u1traby] finish response: ${JSON.stringify(data)}`);
+    // Полный ответ провайдера может содержать данные аккаунта - логируем только статус
+    logger.info(`[Activation:u1traby] finish response ok=${data?.ok ?? '?'} order_id=${data?.order_id ?? '?'}`);
 
     if (data?.ok === false) {
       const message = data?.message || 'Сервер отклонил токен на шаге 2';
@@ -110,8 +112,9 @@ const finishU1trabyActivation = async (apiOrderId, userToken) => {
     const body = err.response?.data;
     const message = body?.message || err.message;
 
+    // Не логируем полное тело ответа (может содержать данные аккаунта)
     logger.error(
-      `[Activation:u1traby] finish error http=${status} body=${JSON.stringify(body)} message=${message}`
+      `[Activation:u1traby] finish error http=${status} message=${message}`
     );
 
     return { success: false, message };
@@ -213,7 +216,8 @@ const finishChatgptConnectActivation = async (uniqueCode, userToken) => {
     });
 
     const data = res.data || {};
-    logger.info(`[Activation:chatgptconnect] submit response: ${JSON.stringify(data)}`);
+    // Ответ провайдера может содержать чувствительные данные - логируем только статус
+    logger.info(`[Activation:chatgptconnect] submit response ok=${data?.ok ?? '?'} status=${data?.status ?? '?'}`);
 
     if (data.ok === false) {
       const message = data.message || 'Поставщик отклонил токен';
@@ -226,8 +230,9 @@ const finishChatgptConnectActivation = async (uniqueCode, userToken) => {
     const body = err.response?.data;
     const message = body?.message || err.message;
 
+    // Не логируем полное тело ответа (может содержать данные аккаунта)
     logger.error(
-      `[Activation:chatgptconnect] submit error http=${status} body=${JSON.stringify(body)} message=${message}`
+      `[Activation:chatgptconnect] submit error http=${status} message=${message}`
     );
 
     const retryable = !status || status >= 500;

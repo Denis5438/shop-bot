@@ -3,7 +3,6 @@ const Order = require('../../models/Order');
 const Transaction = require('../../models/Transaction');
 const User = require('../../models/User');
 const { toRub } = require('../../services/currency.service');
-const { mainKeyboard } = require('../keyboards/main.keyboard');
 const { ORDER_STATUS_LABELS } = require('../constants/ux');
 const { escapeHtml } = require('../utils/ui');
 const { getAllWithProgress, renderAchievementsText } = require('../../services/achievements.service');

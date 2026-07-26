@@ -5,10 +5,8 @@
  */
 
 const categoriesScene = require('../scenes/admin/categories.scene');
-const keysScene = require('../scenes/admin/keys.scene');
 const productsScene = require('../scenes/admin/products.scene');
 const { Markup } = require('telegraf');
-const { escapeHtml } = require('../utils/ui');
 
 module.exports = (bot) => {
   // ─────────────────── КАТЕГОРИИ (АДМИН) ───────────────────

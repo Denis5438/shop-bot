@@ -311,18 +311,31 @@ const approveWarrantyClaim = async (ctx, orderId) => {
   const { formatDigitalItem } = require('../../utils/ui');
 
   const product = order.productId;
-  const availableKey = await Key.findOne(buildKeyQueryForProduct(product, { isUsed: false }));
+
+  // Атомарный захват свободного ключа (isUsed:false в фильтре) - как при покупке.
+  // Раньше find + save() позволяли двум админам/двойному клику выдать по одной
+  // заявке два разных ключа со склада.
+  const availableKey = await Key.findOneAndUpdate(
+    buildKeyQueryForProduct(product, { isUsed: false }),
+    { $set: { isUsed: true, usedAt: new Date(), usedByOrder: order._id } },
+    { new: true }
+  );
 
   if (availableKey) {
-    availableKey.isUsed = true;
-    availableKey.usedAt = new Date();
-    availableKey.usedByOrder = order._id;
-    await availableKey.save();
-
-    order.replacementStatus = 'approved';
-    order.replacedKeyId = availableKey._id;
-    order.replacedAt = new Date();
-    await order.save();
+    // Атомарный захват самой заявки: replacementStatus меняется только из pending.
+    // Если параллельный вызов уже одобрил заявку - освобождаем захваченный ключ.
+    const claimed = await Order.findOneAndUpdate(
+      { _id: order._id, replacementStatus: 'pending' },
+      { $set: { replacementStatus: 'approved', replacedKeyId: availableKey._id, replacedAt: new Date() } },
+      { new: true }
+    );
+    if (!claimed) {
+      await Key.updateOne(
+        { _id: availableKey._id },
+        { $set: { isUsed: false, usedAt: null, usedByOrder: null } }
+      ).catch(() => {});
+      return ctx.answerCbQuery('❌ Заявка уже обработана', { show_alert: true });
+    }
 
     if (order.userId) {
       const userLang = order.userId.language || 'ru';
@@ -378,25 +391,24 @@ const handleManualWarrantyReplaceInput = async (ctx) => {
   if (session.adminAction !== 'manual_warranty_replace' || !session.warrantyOrderId) return false;
 
   const orderId = session.warrantyOrderId;
-  const order = await Order.findById(orderId).populate('productId').populate('userId');
-
-  if (!order) {
-    session.adminAction = null;
-    session.warrantyOrderId = null;
-    await ctx.reply('❌ Заказ не найден.');
-    return true;
-  }
-
   const newValue = ctx.message.text.trim();
   const { formatDigitalItem } = require('../../utils/ui');
 
-  order.replacementStatus = 'approved';
-  order.deliveryData = newValue;
-  order.replacedAt = new Date();
-  await order.save();
+  // Атомарный захват заявки: одобряем только из pending (защита от двойной
+  // ручной выдачи по одной заявке)
+  const order = await Order.findOneAndUpdate(
+    { _id: orderId, replacementStatus: 'pending' },
+    { $set: { replacementStatus: 'approved', deliveryData: newValue, replacedAt: new Date() } },
+    { new: true }
+  ).populate('productId').populate('userId');
 
   session.adminAction = null;
   session.warrantyOrderId = null;
+
+  if (!order) {
+    await ctx.reply('❌ Заказ не найден или заявка уже обработана.');
+    return true;
+  }
 
   if (order.userId) {
     const userLang = order.userId.language || 'ru';

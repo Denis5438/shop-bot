@@ -3,7 +3,6 @@ const User = require('../../../models/User');
 const Order = require('../../../models/Order');
 const Transaction = require('../../../models/Transaction');
 const Seller = require('../../../models/Seller');
-const { toRub } = require('../../../services/currency.service');
 const mongoose = require('mongoose');
 const { escapeHtml, formatDateTimeMSK, formatDateMSK, fmtUSDT } = require('../../utils/ui');
 const i18n = require('../../middlewares/i18n');
