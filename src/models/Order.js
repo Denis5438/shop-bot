@@ -49,5 +49,14 @@ orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ status: 1, nextRetryAt: 1 });
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ sellerId: 1, status: 1 });
+// Статистика и /admin считают выручку по {status:'completed', confirmedAt>=X}
+orderSchema.index({ status: 1, confirmedAt: -1 });
+// Счётчик заявок на замену по гарантии (только pending, поэтому partial)
+orderSchema.index(
+  { replacementStatus: 1 },
+  { partialFilterExpression: { replacementStatus: 'pending' } }
+);
+// Крон авто-подтверждения: {status:'awaiting_confirmation', deliveredAt < cutoff}
+orderSchema.index({ status: 1, deliveredAt: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);

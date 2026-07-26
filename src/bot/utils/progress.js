@@ -50,7 +50,7 @@ const startProgress = async (ctx, opts = {}) => {
       { label: 'Обработка',  pct: 60 },
       { label: 'Завершение', pct: 90 },
     ],
-    intervalMs = 1200,
+    intervalMs = 3000, // было 1200 - слишком агрессивно для Telegram rate-limit
     editMessageId = null,
   } = opts;
 

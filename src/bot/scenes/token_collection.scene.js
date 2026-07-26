@@ -89,16 +89,21 @@ const extractEmailFromToken = (token) => {
 
 const refundOrder = async (order, key, description) => {
   if (key) {
-    key.isUsed = false;
-    key.usedByOrder = null;
-    key.usedAt = null;
-    await key.save();
+    await Key.updateOne(
+      { _id: key._id },
+      { $set: { isUsed: false, usedByOrder: null, usedAt: null } }
+    );
   }
 
-  const user = await User.findById(order.userId);
+  // Атомарный $inc вместо read-modify-write (не теряет параллельные изменения)
+  const user = await User.findOneAndUpdate(
+    { _id: order.userId },
+    { $inc: { balance: order.price } },
+    { new: true }
+  );
+  // Сброс кэша middleware - возврат должен быть виден пользователю сразу
   if (user) {
-    user.balance = parseFloat((user.balance + order.price).toFixed(8));
-    await user.save();
+    require('../middlewares/user').invalidateUserCache(user.telegramId);
   }
 
   await new Transaction({
@@ -113,13 +118,26 @@ const refundOrder = async (order, key, description) => {
 };
 
 const finishWithFailure = async (ctx, order, key, provider, message, editMessageId = null, refundDescription = 'Activation error') => {
-  order.status = 'failed';
-  order.provider = provider;
-  order.activationResult = message;
-  order.nextRetryAt = null;
-  await order.save();
-
-  const user = await refundOrder(order, key, refundDescription);
+  // Атомарный захват заказа: рефанд только при первом переводе в failed
+  // (двойной вызов/гонка с кроном раньше возвращали деньги дважды)
+  const claimed = await Order.findOneAndUpdate(
+    { _id: order._id, status: { $nin: ['failed', 'cancelled', 'completed'] } },
+    {
+      $set: {
+        status: 'failed',
+        provider,
+        activationResult: message,
+        nextRetryAt: null,
+      },
+    },
+    { new: true }
+  );
+  let user = null;
+  if (claimed) {
+    user = await refundOrder(order, key, refundDescription);
+  } else {
+    user = await User.findById(order.userId);
+  }
   const safeError = String(message).replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const lang = ctx.user?.language || 'ru';
 
@@ -595,11 +613,12 @@ tokenCollectionScene.action(CANCEL_CONFIRM_ACTION, async (ctx) => {
         sessionOptions
       );
 
-      user = await User.findById(cancelledOrder.userId, null, sessionOptions);
-      if (user) {
-        user.balance = parseFloat((user.balance + cancelledOrder.price).toFixed(8));
-        await user.save(sessionOptions);
-      }
+      // Атомарный $inc вместо read-modify-write
+      user = await User.findOneAndUpdate(
+        { _id: cancelledOrder.userId },
+        { $inc: { balance: cancelledOrder.price } },
+        { new: true, ...(sessionOptions || {}) }
+      );
 
       await new Transaction({
         userId: cancelledOrder.userId,
@@ -611,6 +630,10 @@ tokenCollectionScene.action(CANCEL_CONFIRM_ACTION, async (ctx) => {
     });
 
     if (cancelledOrder) {
+      // Обновляем закэшированный ctx.user, чтобы возврат был виден сразу
+      if (user && ctx.user && String(ctx.user._id) === String(user._id)) {
+        ctx.user.balance = user.balance;
+      }
       const menuLabel = lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню';
       const cancelledText = lang === 'en'
         ? `❌ <b>Purchase cancelled.</b>\n💰 Funds returned to your balance.`

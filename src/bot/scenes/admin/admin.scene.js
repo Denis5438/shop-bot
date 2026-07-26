@@ -6,26 +6,38 @@ const SellerWithdrawal = require('../../../models/SellerWithdrawal');
 const User = require('../../../models/User');
 
 const showAdminMain = async (ctx) => {
-  const pendingOrders = await Order.countDocuments({
-    status: { $in: ['pending', 'awaiting_confirmation'] },
-  });
-  const pendingPayments = await TopupRequest.countDocuments({ status: 'pending' });
-  const pendingSellerWithdrawals = await SellerWithdrawal.countDocuments({ status: 'pending' });
-  const pendingDisputes = await Order.countDocuments({ status: 'disputed' });
-  const pendingWarranties = await Order.countDocuments({ replacementStatus: 'pending' });
-  const pendingPreorders = await Order.countDocuments({ status: 'preorder_pending' });
-
   // Статистика за сегодня
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const todayOrders = await Order.countDocuments({ status: 'completed', confirmedAt: { $gte: todayStart } });
-  const todayRevAgg = await Order.aggregate([
-    { $match: { status: 'completed', confirmedAt: { $gte: todayStart } } },
-    { $group: { _id: null, total: { $sum: '$price' } } },
+  // Все счётчики параллельно: раньше 9 последовательных запросов = сумма их
+  // задержек на каждое открытие /admin
+  const [
+    pendingOrders,
+    pendingPayments,
+    pendingSellerWithdrawals,
+    pendingDisputes,
+    pendingWarranties,
+    pendingPreorders,
+    todayStats,
+    newUsersToday,
+  ] = await Promise.all([
+    Order.countDocuments({ status: { $in: ['pending', 'awaiting_confirmation'] } }),
+    TopupRequest.countDocuments({ status: 'pending' }),
+    SellerWithdrawal.countDocuments({ status: 'pending' }),
+    Order.countDocuments({ status: 'disputed' }),
+    Order.countDocuments({ replacementStatus: 'pending' }),
+    Order.countDocuments({ status: 'preorder_pending' }),
+    // Заказы и выручка за сегодня одной агрегацией
+    Order.aggregate([
+      { $match: { status: 'completed', confirmedAt: { $gte: todayStart } } },
+      { $group: { _id: null, total: { $sum: '$price' }, count: { $sum: 1 } } },
+    ]),
+    User.countDocuments({ createdAt: { $gte: todayStart } }),
   ]);
-  const todayRevenue = (todayRevAgg[0]?.total || 0).toFixed(2);
-  const newUsersToday = await User.countDocuments({ createdAt: { $gte: todayStart } });
+
+  const todayOrders = todayStats[0]?.count || 0;
+  const todayRevenue = (todayStats[0]?.total || 0).toFixed(2);
 
   const preordersLine = pendingPreorders > 0
     ? `\n⏳ Ожидают предзаказов: <b>${pendingPreorders}</b>`

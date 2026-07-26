@@ -1,0 +1,446 @@
+/**
+ * Базовые маршруты: /start, ToS, язык, главное меню, топап-навигация, кабинет продавца, escrow-кнопки покупателя.
+ * Вынесено из src/bot/index.js БЕЗ изменения логики (код перенесён дословно,
+ * скорректированы только пути require).
+ */
+
+const User = require('../../models/User');
+const adminScene = require('../scenes/admin/admin.scene');
+const buyerEscrowScene = require('../scenes/buyer_escrow.scene');
+const logger = require('../../config/logger');
+const profileScene = require('../scenes/profile.scene');
+const sellerScene = require('../scenes/seller.scene');
+const shopScene = require('../scenes/shop.scene');
+const topupScene = require('../scenes/topup.scene');
+const { Markup } = require('telegraf');
+const { adminMiddleware } = require('../middlewares/auth');
+const { escapeHtml, formatDateTimeMSK } = require('../utils/ui');
+const { mainKeyboard, languageKeyboard } = require('../keyboards/main.keyboard');
+const { toRub } = require('../../services/currency.service');
+const { tosGateKeyboard, tosGateText, PRIVACY_URL, AGREEMENT_URL } = require('../middlewares/tos');
+
+module.exports = (bot) => {
+  bot.start(async (ctx) => {
+    const user = ctx.user;
+    const t = ctx.t;
+
+    // Если первый раз - предлагаем выбрать язык
+    if (!user) {
+      return ctx.reply('⚠️ Не удалось загрузить профиль. Попробуйте позже или обратитесь в поддержку.').catch(() => {});
+    }
+
+    // Показываем выбор языка ТОЛЬКО совершенно новым пользователям (первый запуск)
+    const isBrandNewUser = (Date.now() - new Date(user.createdAt).getTime() < 10000) && !user.languageSelected;
+
+    if (isBrandNewUser) {
+      return ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
+    }
+
+    // Экран Оферты (ToS) на языке пользователя (если не принял)
+    if (!user.acceptedToS) {
+      return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
+    }
+
+    await ctx.reply(
+      t('welcome_back', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
+      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+    );
+  });
+
+  // ─────────────────── ToS: согласие / отказ ───────────────────
+  bot.action('tos:accept', async (ctx) => {
+    const t = ctx.t;
+    if (ctx.user && !ctx.user.acceptedToS) {
+      // updateOne вместо save(): кэшированный документ общий для параллельных
+      // апдейтов (двойной клик по кнопке давал бы ParallelSaveError)
+      ctx.user.acceptedToS = true;
+      ctx.user.acceptedToSAt = new Date();
+      await User.updateOne(
+        { _id: ctx.user._id },
+        { $set: { acceptedToS: true, acceptedToSAt: ctx.user.acceptedToSAt } }
+      ).catch((err) => logger.error(`tos:accept save: ${err.message}`));
+    }
+    await ctx.answerCbQuery(t('tos_accepted_alert')).catch(() => {});
+    try {
+      await ctx.editMessageText(
+        t('welcome_back', {
+          name: escapeHtml(ctx.user.firstName),
+          balance: ctx.user.balance.toFixed(2),
+          balanceRub: toRub(ctx.user.balance),
+        }),
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+      );
+    } catch (_) {
+      await ctx.reply(
+        t('welcome_back', {
+          name: escapeHtml(ctx.user.firstName),
+          balance: ctx.user.balance.toFixed(2),
+          balanceRub: toRub(ctx.user.balance),
+        }),
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+      ).catch(() => {});
+    }
+  });
+
+  bot.action(/^profile:cancel_preorder:(.+)$/, async (ctx) => {
+    await profileScene.cancelPreorder(ctx, ctx.match[1]);
+  });
+
+  bot.action('tos:accept_broadcast', async (ctx) => {
+    const t = ctx.t;
+    if (ctx.user) {
+      ctx.user.acceptedToS = true;
+      ctx.user.acceptedToSAt = new Date();
+      await User.updateOne(
+        { _id: ctx.user._id },
+        { $set: { acceptedToS: true, acceptedToSAt: ctx.user.acceptedToSAt } }
+      ).catch((err) => logger.error(`tos:accept_broadcast save: ${err.message}`));
+    }
+    const alertMsg = t('tos_accepted_alert') || '✅ Вы успешно приняли условия Оферты!';
+    await ctx.answerCbQuery(alertMsg, { show_alert: true }).catch(() => {});
+    const dateStr = formatDateTimeMSK(new Date());
+    const acceptedBtnText = ctx.user?.language === 'en' ? `✅ Terms accepted (${dateStr})` : `✅ Оферта принята (${dateStr})`;
+    await ctx.editMessageReplyMarkup(
+      Markup.inlineKeyboard([[Markup.button.callback(acceptedBtnText, 'shop:noop')]]).reply_markup
+    ).catch(() => {});
+  });
+
+  bot.action('tos:decline', async (ctx) => {
+    const t = ctx.t;
+    await ctx.answerCbQuery().catch(() => {});
+    try {
+      await ctx.editMessageText(t('tos_declined'), { parse_mode: 'HTML' });
+    } catch (_) {
+      await ctx.reply(t('tos_declined'), { parse_mode: 'HTML' }).catch(() => {});
+    }
+  });
+
+  // ─── BUYER ESCROW ────────────────────────────────────────────────────────────
+  bot.action(/^buyer:confirm_order:(.+)$/, async (ctx) => {
+    await buyerEscrowScene.confirmOrder(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^buyer:dispute_order:(.+)$/, async (ctx) => {
+    await buyerEscrowScene.disputeOrder(ctx, ctx.match[1]);
+  });
+
+  // ─────────────────── ДОКУМЕНТЫ ───────────────────
+  bot.action('menu:documents', async (ctx) => {
+    const t = ctx.t;
+    await ctx.answerCbQuery().catch(() => {});
+    const lines = [
+      t('documents_title'),
+      '',
+      t('documents_text'),
+    ];
+    if (ctx.user?.acceptedToSAt) {
+      lines.push('');
+      lines.push(t('documents_accepted_at', {
+        date: new Date(ctx.user.acceptedToSAt).toLocaleString('ru-RU'),
+      }));
+    }
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.url(t('tos_privacy'), PRIVACY_URL)],
+      [Markup.button.url(t('tos_agreement'), AGREEMENT_URL)],
+      [Markup.button.callback(t('btn_back'), 'menu:main')],
+    ]);
+    try {
+      await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...keyboard });
+    } catch (_) {
+      await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+    }
+  });
+
+  bot.command('admin', adminMiddleware, async (ctx) => {
+    await adminScene.showAdminMain(ctx);
+  });
+
+  // ─── SELLER: Кабинет продавца ───
+  bot.command('seller', async (ctx) => {
+    await sellerScene.showSellerCabinet(ctx);
+  });
+
+  bot.action('seller:cabinet', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerCabinet(ctx);
+  });
+
+  bot.action('seller:orders', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerOrders(ctx, 'active');
+  });
+
+  bot.action('seller:orders:active', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerOrders(ctx, 'active');
+  });
+
+  bot.action('seller:orders:history', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.showSellerOrders(ctx, 'history');
+  });
+
+  bot.action(/^seller:order:complete:(.+)$/, async (ctx) => {
+    await sellerScene.completeSellerOrder(ctx, ctx.match[1]);
+  });
+
+  bot.action('seller:wallet:setup', async (ctx) => {
+    await sellerScene.startWalletSetup(ctx);
+  });
+
+  bot.action(/^seller:wallet:net:(.+)$/, async (ctx) => {
+    await sellerScene.handleWalletNetworkChoice(ctx, ctx.match[1]);
+  });
+
+  bot.action('seller:withdraw:start', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sellerScene.startWithdraw(ctx);
+  });
+
+  bot.action('seller:withdraw:all', async (ctx) => {
+    await sellerScene.handleWithdrawAll(ctx);
+  });
+
+  bot.action(/^seller:withdraw:confirm:([\d.]+)$/, async (ctx) => {
+    await sellerScene.confirmWithdraw(ctx, ctx.match[1]);
+  });
+
+  bot.action('seller:noop', (ctx) => ctx.answerCbQuery());
+
+  // ─── Привязка аккаунта продавца (подтверждение админом) ────────────────────
+  // Защита от захвата аккаунта по username: заявка создаётся в findSeller,
+  // привязка происходит только после явного подтверждения админа.
+  bot.action(/^seller:bind:approve:([a-f0-9]{24})$/, adminMiddleware, async (ctx) => {
+    const Seller = require('../../models/Seller');
+    const seller = await Seller.findOneAndUpdate(
+      { _id: ctx.match[1], telegramId: null, claimTelegramId: { $ne: null } },
+      [{
+        $set: {
+          telegramId: '$claimTelegramId',
+          claimTelegramId: null,
+          claimUsername: null,
+          claimRequestedAt: null,
+        },
+      }],
+      { new: true }
+    );
+    if (!seller) {
+      return ctx.answerCbQuery('❌ Заявка не найдена или уже обработана', { show_alert: true });
+    }
+    await ctx.answerCbQuery('✅ Продавец привязан');
+    // Сброс кэша middleware - флаг isSeller должен обновиться сразу
+    require('../middlewares/user').invalidateUserCache(seller.telegramId);
+    await ctx.editMessageText(`✅ Продавец <b>${seller.username}</b> привязан к Telegram ID <code>${seller.telegramId}</code>.`, { parse_mode: 'HTML' }).catch(() => {});
+    const notifService = require('../../services/notification.service');
+    await notifService.sendToUser(seller.telegramId, '✅ Ваш аккаунт продавца подтверждён! Откройте кабинет: /seller').catch(() => {});
+  });
+
+  bot.action(/^seller:bind:reject:([a-f0-9]{24})$/, adminMiddleware, async (ctx) => {
+    const Seller = require('../../models/Seller');
+    const seller = await Seller.findOneAndUpdate(
+      { _id: ctx.match[1], claimTelegramId: { $ne: null } },
+      { $set: { claimTelegramId: null, claimUsername: null, claimRequestedAt: null } },
+      { new: false }
+    );
+    if (!seller) {
+      return ctx.answerCbQuery('❌ Заявка не найдена или уже обработана', { show_alert: true });
+    }
+    await ctx.answerCbQuery('Заявка отклонена');
+    await ctx.editMessageText(`❌ Заявка на привязку продавца <b>${seller.username}</b> отклонена.`, { parse_mode: 'HTML' }).catch(() => {});
+  });
+
+  // ─────────────────── ЯЗЫК ───────────────────
+  bot.action('lang:ru', async (ctx) => {
+    // updateOne вместо save(): документ общий для параллельных апдейтов (кэш)
+    ctx.user.language = 'ru';
+    await User.updateOne({ _id: ctx.user._id }, { $set: { language: 'ru' } });
+    ctx.i18n?.setLocale('ru');
+    const t = ctx.t || ((k) => k);
+    await ctx.answerCbQuery('✅ Язык: Русский');
+
+    if (!ctx.user.acceptedToS) {
+      return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
+    }
+
+    await ctx.editMessageText(
+      t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
+      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+    ).catch(() => {});
+  });
+
+  bot.action('lang:en', async (ctx) => {
+    // updateOne вместо save(): документ общий для параллельных апдейтов (кэш)
+    ctx.user.language = 'en';
+    await User.updateOne({ _id: ctx.user._id }, { $set: { language: 'en' } });
+    ctx.i18n?.setLocale('en');
+    const t = ctx.t || ((k) => k);
+    await ctx.answerCbQuery('✅ Language: English');
+
+    if (!ctx.user.acceptedToS) {
+      return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
+    }
+
+    await ctx.editMessageText(
+      t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
+      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+    ).catch(() => {});
+  });
+
+  // Кнопка «Сменить язык» из главного меню
+  bot.action('menu:lang', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(
+      `🌐 <b>Выберите язык / Choose language:</b>`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🇷🇺 Русский', 'lang:ru'), Markup.button.callback('🇬🇧 English', 'lang:en')],
+          [Markup.button.callback('⬅️ Назад', 'menu:main')],
+        ]),
+      }
+    ).catch(() => {});
+  });
+
+  // ─────────────────── ГЛАВНОЕ МЕНЮ ───────────────────
+  bot.action('menu:main', async (ctx) => {
+    await ctx.answerCbQuery();
+    const t = ctx.t;
+    try {
+      await ctx.editMessageText(
+        t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+      );
+    } catch (_) {
+      await ctx.reply(
+        t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+      );
+    }
+  });
+
+  bot.action('menu:shop', async (ctx) => {
+    await shopScene.showShopPage(ctx, 1);
+  });
+
+  bot.action('menu:profile', async (ctx) => {
+    await ctx.answerCbQuery();
+    await profileScene.showProfile(ctx);
+  });
+
+  bot.action('menu:topup', async (ctx) => {
+    await ctx.answerCbQuery();
+    await topupScene.startTopup(ctx);
+  });
+
+  // Быстрое пополнение на нужную сумму (из карточки товара при нехватке средств)
+  bot.action(/^topup:quick:([\d.]+)$/, async (ctx) => {
+    const amount = parseFloat(ctx.match[1]);
+    if (!amount || amount <= 0) {
+      return ctx.answerCbQuery('⚠️ Некорректная сумма', { show_alert: true });
+    }
+    await ctx.answerCbQuery();
+    await topupScene.startTopupWithAmount(ctx, amount);
+  });
+
+  // ─────────────────── ПОПОЛНЕНИЕ - выбор способа ───────────────────
+  // Авто-оплата (стаб) - ничего не делаем
+  bot.action('topup:auto_stub', (ctx) => ctx.answerCbQuery('⚠️ Временно недоступно', { show_alert: true }));
+
+  // Прямой перевод
+  bot.action('topup:method:direct', async (ctx) => {
+    await ctx.answerCbQuery();
+    await topupScene.showDirectOptions(ctx);
+  });
+
+  // Назад (к выбору платёжной системы)
+  bot.action('topup:pay:back', async (ctx) => {
+    await ctx.answerCbQuery();
+    await topupScene.showDirectOptions(ctx);
+  });
+
+  // Карта
+  bot.action('topup:pay:card', async (ctx) => {
+    await ctx.answerCbQuery();
+    await topupScene.showCardDetails(ctx);
+  });
+
+  // Bybit - выбор сети
+  bot.action('topup:pay:bybit', async (ctx) => {
+    await ctx.answerCbQuery();
+    await topupScene.showBybitOptions(ctx);
+  });
+
+  // Bybit - конкретная сеть
+  bot.action(/^topup:network:(trc20|bep20|uid)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    await topupScene.showBybitNetwork(ctx, ctx.match[1]);
+  });
+
+
+
+  // UX-1: быстрые пресеты сумм на экране ввода.
+  bot.action(/^topup:preset:(usdt|rub):(\d+(?:\.\d+)?)$/, async (ctx) => {
+    await topupScene.handlePresetAmount(ctx, ctx.match[1], ctx.match[2]);
+  });
+
+  bot.action('topup:enter_txid', async (ctx) => {
+    await topupScene.handleEnterTxid(ctx);
+  });
+
+  // «Я оплатил» - подтверждение оплаты картой
+  bot.action('topup:card_paid', async (ctx) => {
+    const topup = ctx.session?.topup;
+    if (!topup || topup.method !== 'card') {
+      return ctx.answerCbQuery('⚠️ Сессия устарела', { show_alert: true });
+    }
+    if (topup.step === 'proof') {
+      return ctx.answerCbQuery('✅ Уже ожидаем скриншот чека');
+    }
+    topup.step = 'proof';
+    await ctx.answerCbQuery('✅ Отлично! Пришлите скриншот чека.');
+    await ctx.editMessageText(
+      `✅ <b>Оплата подтверждена!</b>\n\n📸 Теперь пришлите <b>скриншот чека</b> для проверки оператором:`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'menu:topup')]]),
+      }
+    ).catch(() => {});
+  });
+
+  bot.action('menu:support', async (ctx) => {
+    await ctx.answerCbQuery();
+    const t = ctx.t;
+    const lang = ctx.user?.language || 'ru';
+    const { TEXTS } = require('../constants/ux');
+    const supportLink = TEXTS.SUPPORT_URL;
+    const btnLabel = lang === 'en' ? '✉️ Write to Support' : '✉️ Написать поддержке';
+
+    try {
+      await ctx.editMessageText(
+        t('support_text'),
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.url(btnLabel, supportLink)],
+            [Markup.button.callback(t('btn_back'), 'menu:main')],
+          ]),
+        }
+      );
+    } catch (_) { }
+  });
+
+  bot.action('menu:about', async (ctx) => {
+    await ctx.answerCbQuery();
+    const t = ctx.t;
+
+    try {
+      await ctx.editMessageText(
+        t('about_text'),
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'menu:main')]]),
+        }
+      );
+    } catch (_) { }
+  });
+};

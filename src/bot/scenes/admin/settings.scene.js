@@ -243,6 +243,8 @@ const handleSettingsInput = async (ctx) => {
 const resetAllUserToS = async (ctx) => {
   const User = require('../../../models/User');
   const res = await User.updateMany({}, { $set: { acceptedToS: false, acceptedToSAt: null } });
+  // Массовое изменение затрагивает всех - сбрасываем весь кэш пользователей
+  require('../../middlewares/user').clearUserCache();
   await ctx.answerCbQuery(`📜 Оферта сброшена у ${res.modifiedCount} пользователей!`, { show_alert: true });
   await showSettings(ctx);
 };

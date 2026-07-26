@@ -1,5 +1,12 @@
 const { Markup } = require('telegraf');
 const { EMOJI, TEXTS, SLA } = require('../constants/ux');
+const { toRub } = require('../../services/currency.service');
+
+/**
+ * Единый формат суммы: «X.XX USDT (~Y ₽)».
+ * Используйте вместо ручной конкатенации toFixed + toRub.
+ */
+const fmtUSDT = (usdt) => `${usdt.toFixed(2)} USDT (~${toRub(usdt)} ₽)`;
 
 /**
  * Переиспользуемые UI-хелперы для сцен бота.
@@ -300,6 +307,7 @@ const formatDigitalItem = (rawValue, lang = 'ru') => {
 
 module.exports = {
   safeEdit,
+  fmtUSDT,
   balanceHeader,
   copyHint,
   errorScreen,

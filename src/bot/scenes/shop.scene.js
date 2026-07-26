@@ -54,8 +54,10 @@ const stockIndicator = (stock, t) => {
   return t ? t('shop_out_of_stock') : '⛔ Out of stock';
 };
 
-const getStock = async (product) => {
-  const autoKeys = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+const getStock = async (product, autoKeysPrecomputed = null) => {
+  const autoKeys = autoKeysPrecomputed !== null
+    ? autoKeysPrecomputed
+    : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   if (autoKeys > 0) return autoKeys;
   if (product.type === 'manual') {
     return product.manualStock === -1 ? '∞' : product.manualStock;
@@ -63,21 +65,51 @@ const getStock = async (product) => {
   return autoKeys;
 };
 
-const getCategoryStockStatus = async (categoryId) => {
-  const products = await Product.find({ categoryId, isActive: true });
-  if (products.length === 0) return 'danger';
-  
-  for (const p of products) {
-    const stock = await getStock(p);
-    if (stock === '∞' || stock > 0) return 'success';
+/**
+ * Остатки для СПИСКА товаров одной агрегацией вместо countDocuments на каждый
+ * товар (раньше открытие магазина делало до ~60-70 запросов к БД).
+ * Возвращает Map: productId(строка) → остаток (число или '∞').
+ * Семантика идентична getStock().
+ */
+const getStockMap = async (products) => {
+  const map = new Map();
+  if (!products.length) return map;
+
+  const rows = await Key.aggregate([
+    { $match: { productId: { $in: products.map((p) => p._id) }, isUsed: false } },
+    { $group: { _id: { productId: '$productId', provider: '$provider' }, cnt: { $sum: 1 } } },
+  ]);
+
+  // Счётчики по товару в разрезе провайдера (provider: null учитывается как совместимый)
+  const counts = new Map();
+  for (const r of rows) {
+    const pid = String(r._id.productId);
+    const prov = r._id.provider || '__null__';
+    if (!counts.has(pid)) counts.set(pid, {});
+    counts.get(pid)[prov] = r.cnt;
   }
-  return 'danger';
+
+  for (const p of products) {
+    const pid = String(p._id);
+    const c = counts.get(pid) || {};
+    const provider = resolveProductProvider(p);
+    const autoKeys = (c[provider] || 0) + (c['__null__'] || 0);
+    let stock = autoKeys;
+    if (autoKeys === 0 && p.type === 'manual') {
+      // ?? -1: lean() не подставляет схемные дефолты - у legacy-документов
+      // без поля manualStock иначе получился бы undefined вместо '∞'
+      const manualStock = p.manualStock ?? -1;
+      stock = manualStock === -1 ? '∞' : manualStock;
+    }
+    map.set(pid, stock);
+  }
+  return map;
 };
 
 const showShopPage = async (ctx) => {
   const t = ctx.t || ((k) => k);
-  const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
-  
+  const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
+
   if (categories.length === 0) {
     const msg = t('shop_empty') || 'Магазин пуст';
     if (ctx.callbackQuery) {
@@ -87,11 +119,26 @@ const showShopPage = async (ctx) => {
     return ctx.reply(msg, mainKeyboard(t, ctx.isSeller));
   }
 
+  // Статус наличия по всем категориям: один запрос товаров + одна агрегация
+  // остатков (раньше - запросы в цикле по каждой категории и каждому товару).
+  const allProducts = await Product.find({ isActive: true })
+    .select('categoryId type manualStock provider')
+    .lean();
+  const stockMap = await getStockMap(allProducts);
+  const statusByCat = new Map();
+  for (const p of allProducts) {
+    if (!p.categoryId) continue;
+    const catKey = String(p.categoryId);
+    if (statusByCat.get(catKey) === 'success') continue;
+    const stock = stockMap.get(String(p._id));
+    statusByCat.set(catKey, (stock === '∞' || stock > 0) ? 'success' : 'danger');
+  }
+
   const buttons = [];
   let currentRow = [];
 
   for (const cat of categories) {
-    const statusColor = await getCategoryStockStatus(cat._id);
+    const statusColor = statusByCat.get(String(cat._id)) || 'danger';
     const label = `${cat.icon || '📁'} ${cat.name}`;
     const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
     btn.style = statusColor;
@@ -124,7 +171,11 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     return ctx.answerCbQuery('❌ Категория не найдена', { show_alert: true });
   }
 
-  const products = await Product.find({ categoryId, isActive: true }).sort({ sortOrder: 1, createdAt: -1 });
+  // .lean() + .select(): для отрисовки кнопок не нужны полные Mongoose-документы
+  const products = await Product.find({ categoryId, isActive: true })
+    .sort({ sortOrder: 1, createdAt: -1 })
+    .select('name nameEn icon price costPrice type manualStock provider lastSoldAt createdAt')
+    .lean();
 
   if (products.length === 0) {
     return ctx.answerCbQuery('Пустая категория', { show_alert: true });
@@ -133,12 +184,15 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
   const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
   const paginated = products.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
-  
+
+  // Остатки страницы одной агрегацией вместо countDocuments на каждый товар
+  const stockMap = await getStockMap(paginated);
+
   const buttons = [];
   const lang = ctx.user?.language || 'ru';
 
   for (const product of paginated) {
-    const stock = await getStock(product);
+    const stock = stockMap.get(String(product._id));
     const effectivePrice = await getEffectivePrice(product, stock);
     const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
     const stockBadge = stock === '∞' ? '∞' : stock;
@@ -391,7 +445,9 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     return ctx.answerCbQuery(t('err_not_found'), { show_alert: true });
   }
 
-  const stock = await getStock(product);
+  // Один countDocuments вместо двух одинаковых (getStock ниже переиспользует счётчик)
+  const autoKeysAvailable = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+  const stock = await getStock(product, autoKeysAvailable);
   if (stock !== '∞' && qty > stock) {
     return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
   }
@@ -421,7 +477,6 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   }
 
   const provider = resolveProductProvider(product);
-  const autoKeysAvailable = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   const isAutoKeyProduct = autoKeysAvailable >= qty;
 
   const User = require('../../models/User');
@@ -429,43 +484,65 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
 
   let orders = [];
   let allocatedKeys = [];
+  let usedSession = null;      // была ли реальная MongoDB-транзакция
+  let balanceDebited = false;  // дошли ли до списания (для компенсации без транзакции)
+  let manualStockDebited = false;
 
   try {
     await withTransaction(async (session) => {
       const sessionOptions = session ? { session } : undefined;
-
-      const freshUser = await User.findById(user._id, null, sessionOptions);
-      if (!freshUser || freshUser.balance < totalCost) {
-        throw new Error('INSUFFICIENT_BALANCE');
-      }
+      usedSession = session;
+      // withTransaction может перезапустить callback при transient-ошибке -
+      // сбрасываем накопленное состояние.
+      orders = [];
+      allocatedKeys = [];
+      balanceDebited = false;
+      manualStockDebited = false;
 
       if (isAutoKeyProduct) {
-        // Резервируем qty ключей
-        const keyQuery = Key.find(buildKeyQueryForProduct(product, { isUsed: false })).limit(qty);
-        if (session) keyQuery.session(session);
-        allocatedKeys = await keyQuery;
-          
+        // Атомарный захват каждого ключа: findOneAndUpdate с условием isUsed:false
+        // гарантирует, что два параллельных покупателя НЕ получат один ключ
+        // (раньше find + updateMany без условия позволяли выдать ключ дважды).
+        for (let i = 0; i < qty; i++) {
+          const claimed = await Key.findOneAndUpdate(
+            buildKeyQueryForProduct(product, { isUsed: false }),
+            { $set: { isUsed: true, usedAt: new Date() } },
+            { new: true, ...(sessionOptions || {}) }
+          );
+          if (!claimed) break;
+          allocatedKeys.push(claimed);
+        }
         if (allocatedKeys.length < qty) {
           throw new Error('OUT_OF_STOCK');
         }
-
-        const keyIds = allocatedKeys.map(k => k._id);
-        await Key.updateMany(
-          { _id: { $in: keyIds } },
-          { $set: { isUsed: true, usedAt: new Date() } },
-          sessionOptions
-        );
       }
 
-      freshUser.balance = parseFloat((freshUser.balance - totalCost).toFixed(8));
-      freshUser.totalSpent = parseFloat((freshUser.totalSpent + totalCost).toFixed(8));
-      await freshUser.save(sessionOptions);
-      ctx.user = freshUser;
+      // Атомарное списание: условие balance >= totalCost прямо в фильтре.
+      // Раньше "прочитал → изменил → save()" позволяло двойным кликом купить
+      // дважды на один баланс.
+      const debitedUser = await User.findOneAndUpdate(
+        { _id: user._id, balance: { $gte: totalCost } },
+        { $inc: { balance: -totalCost, totalSpent: totalCost } },
+        { new: true, ...(sessionOptions || {}) }
+      );
+      if (!debitedUser) {
+        throw new Error('INSUFFICIENT_BALANCE');
+      }
+      balanceDebited = true;
+      ctx.user = debitedUser;
 
       if (!isAutoKeyProduct && product.type === 'manual') {
         if (product.manualStock !== -1) {
-          if (product.manualStock < qty) throw new Error('OUT_OF_STOCK');
-          product.manualStock -= qty;
+          // Атомарное уменьшение остатка с условием (без затирания параллельных
+          // правок админа полным product.save()).
+          const stockRes = await Product.updateOne(
+            { _id: product._id, manualStock: { $gte: qty } },
+            { $inc: { manualStock: -qty } },
+            sessionOptions
+          );
+          if (!stockRes.modifiedCount) throw new Error('OUT_OF_STOCK');
+          manualStockDebited = true;
+          product.manualStock -= qty; // локально для дальнейшего отображения
         }
 
         const order = new Order({
@@ -503,14 +580,22 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           orders.push(order);
 
           if (allocatedKey) {
+            await Key.updateOne(
+              { _id: allocatedKey._id },
+              { $set: { usedByOrder: order._id } },
+              sessionOptions
+            );
             allocatedKey.usedByOrder = order._id;
-            await allocatedKey.save(sessionOptions);
           }
         }
       }
 
-      product.lastSoldAt = Date.now();
-      await product.save(sessionOptions);
+      // lastSoldAt точечно, не затирая другие поля товара
+      await Product.updateOne(
+        { _id: product._id },
+        { $set: { lastSoldAt: new Date() } },
+        sessionOptions
+      );
 
       await new Transaction({
         userId: user._id,
@@ -521,14 +606,40 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       }).save(sessionOptions);
     });
   } catch (err) {
-    if (allocatedKeys.length > 0) {
+    // В режиме реальных транзакций откат вернул баланс в БД, но ctx.user уже
+    // мог быть заменён «списанным» документом - перечитываем актуальный.
+    if (usedSession && balanceDebited) {
       try {
-        const keyIds = allocatedKeys.map(k => k._id);
-        await Key.updateMany(
-          { _id: { $in: keyIds }, usedByOrder: null },
-          { $set: { isUsed: false, usedAt: null } }
-        );
+        const restored = await User.findById(user._id);
+        if (restored) ctx.user = restored;
       } catch (_) {}
+    }
+    // Компенсация для режима БЕЗ транзакций (standalone MongoDB): реальная
+    // транзакция откатывает всё сама, здесь возвращаем вручную.
+    if (!usedSession) {
+      if (allocatedKeys.length > 0) {
+        try {
+          const keyIds = allocatedKeys.map(k => k._id);
+          await Key.updateMany(
+            { _id: { $in: keyIds }, usedByOrder: null },
+            { $set: { isUsed: false, usedAt: null } }
+          );
+        } catch (_) {}
+      }
+      if (balanceDebited && orders.length === 0) {
+        try {
+          await User.updateOne(
+            { _id: user._id },
+            { $inc: { balance: totalCost, totalSpent: -totalCost } }
+          );
+          if (ctx.user) ctx.user.balance = parseFloat((ctx.user.balance + totalCost).toFixed(8));
+        } catch (_) {}
+      }
+      if (manualStockDebited && orders.length === 0) {
+        try {
+          await Product.updateOne({ _id: product._id }, { $inc: { manualStock: qty } });
+        } catch (_) {}
+      }
     }
 
     if (err.message === 'INSUFFICIENT_BALANCE') {
@@ -815,26 +926,79 @@ const processPreorder = async (ctx, productId, qty = 1) => {
     return ctx.answerCbQuery(`❌ Недостаточно средств. Нужно: ${totalCost} USDT, ваш баланс: ${user.balance.toFixed(2)} USDT`, { show_alert: true });
   }
 
-  user.balance = parseFloat((user.balance - totalCost).toFixed(8));
-  user.totalSpent = parseFloat((user.totalSpent + totalCost).toFixed(8));
-  await user.save();
-
+  // Атомарное списание с условием в фильтре: двойной клик по кнопке предзаказа
+  // раньше создавал 2×qty оплаченных предзаказов при одном списании.
+  const User = require('../../models/User');
+  const { withTransaction } = require('../../services/transactionHelper.service');
   const createdOrders = [];
-  for (let i = 0; i < qty; i++) {
-    const order = new Order({
-      userId: user._id,
-      productId: product._id,
-      price: effectivePrice,
-      qty: 1,
-      status: 'preorder_pending',
-      warrantyDays: product.warrantyDays ?? 5,
+  let preorderUsedSession = null;
+  let preorderDebited = false;
+
+  try {
+    await withTransaction(async (session) => {
+      const sessionOptions = session ? { session } : undefined;
+      preorderUsedSession = session;
+      createdOrders.length = 0;
+      preorderDebited = false;
+
+      const debitedUser = await User.findOneAndUpdate(
+        { _id: user._id, balance: { $gte: totalCost } },
+        { $inc: { balance: -totalCost, totalSpent: totalCost } },
+        { new: true, ...(sessionOptions || {}) }
+      );
+      if (!debitedUser) throw new Error('INSUFFICIENT_BALANCE');
+      preorderDebited = true;
+      ctx.user = debitedUser;
+
+      for (let i = 0; i < qty; i++) {
+        const order = new Order({
+          userId: user._id,
+          productId: product._id,
+          price: effectivePrice,
+          qty: 1,
+          status: 'preorder_pending',
+          warrantyDays: product.warrantyDays ?? 5,
+        });
+        await order.save(sessionOptions);
+        createdOrders.push(order);
+      }
+
+      const Transaction = require('../../models/Transaction');
+      await new Transaction({
+        userId: user._id,
+        type: 'purchase',
+        amount: -totalCost,
+        orderId: createdOrders[0]._id,
+        description: `Предзаказ: ${product.name} (x${qty})`,
+      }).save(sessionOptions);
     });
-    await order.save();
-    createdOrders.push(order);
+  } catch (err) {
+    // В режиме реальных транзакций откат вернул баланс в БД - перечитываем ctx.user
+    if (preorderUsedSession && preorderDebited) {
+      try {
+        const restored = await User.findById(user._id);
+        if (restored) ctx.user = restored;
+      } catch (_) {}
+    }
+    // Компенсация в режиме без транзакций
+    if (!preorderUsedSession && preorderDebited && createdOrders.length === 0) {
+      await User.updateOne(
+        { _id: user._id },
+        { $inc: { balance: totalCost, totalSpent: -totalCost } }
+      ).catch(() => {});
+      if (ctx.user) ctx.user.balance = parseFloat((ctx.user.balance + totalCost).toFixed(8));
+    }
+    if (err.message === 'INSUFFICIENT_BALANCE') {
+      return ctx.answerCbQuery(`❌ Недостаточно средств. Нужно: ${totalCost} USDT`, { show_alert: true });
+    }
+    throw err;
   }
 
-  await Waitlist.findOneAndDelete({ userId: user._id, productId: product._id });
-  await new Waitlist({ userId: user._id, productId: product._id }).save();
+  await Waitlist.updateOne(
+    { userId: user._id, productId: product._id },
+    { $setOnInsert: { userId: user._id, productId: product._id } },
+    { upsert: true }
+  );
 
   const isRu = (user.language || 'ru') === 'ru';
   const unit = isRu ? 'шт' : 'pcs';

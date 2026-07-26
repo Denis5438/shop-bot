@@ -42,4 +42,8 @@ const productSchema = new mongoose.Schema({
   sellerPrice: { type: Number, default: 0 },
 });
 
+// Магазин: товары категории с сортировкой; списки активных товаров в админке
+productSchema.index({ categoryId: 1, isActive: 1, sortOrder: 1 });
+productSchema.index({ isActive: 1, sortOrder: 1 });
+
 module.exports = mongoose.model('Product', productSchema);

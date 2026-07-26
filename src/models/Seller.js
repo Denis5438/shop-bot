@@ -18,6 +18,14 @@ const sellerSchema = new mongoose.Schema({
 
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
+
+  // Заявка на привязку аккаунта (защита от захвата по username):
+  // продавец, добавленный админом по нику, привязывается к telegramId только
+  // после подтверждения админом. Раньше первый зашедший с таким username
+  // получал аккаунт (и баланс) автоматически.
+  claimTelegramId: { type: Number, default: null },
+  claimUsername: { type: String, default: null },
+  claimRequestedAt: { type: Date, default: null },
 });
 
 sellerSchema.index({ telegramId: 1 }, { sparse: true });

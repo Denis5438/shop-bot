@@ -11,13 +11,16 @@ const listDisputes = async (ctx, page = 1) => {
   const skip = (page - 1) * PAGE_SIZE;
   const filter = { status: 'disputed' };
 
-  const total = await Order.countDocuments(filter);
-  const disputes = await Order.find(filter)
-    .sort({ disputeOpenedAt: 1, createdAt: 1 })
-    .skip(skip)
-    .limit(PAGE_SIZE)
-    .populate('userId')
-    .populate('sellerId');
+  const [total, disputes] = await Promise.all([
+    Order.countDocuments(filter),
+    Order.find(filter)
+      .sort({ disputeOpenedAt: 1, createdAt: 1 })
+      .skip(skip)
+      .limit(PAGE_SIZE)
+      .populate('userId', 'username telegramId')
+      .populate('sellerId', 'username telegramId')
+      .lean(),
+  ]);
 
   if (!disputes.length) {
     const opts = {
@@ -100,18 +103,37 @@ const viewDispute = async (ctx, orderId) => {
 };
 
 const resolveRefundBuyer = async (ctx, orderId) => {
-  const order = await Order.findById(orderId).populate('userId').populate('sellerId');
-  if (!order || order.status !== 'disputed') return ctx.answerCbQuery('Спор не найден', { show_alert: true });
+  // Атомарный захват спора: условие status:'disputed' прямо в фильтре.
+  // Раньше два клика (или два админа) проходили проверку оба → двойной возврат.
+  // Захват и возврат - в одной транзакции.
+  const { withTransaction } = require('../../../services/transactionHelper.service');
+  const User = require('../../../models/User');
+  let order = null;
+  await withTransaction(async (session) => {
+    const sessionOpt = session ? { session } : {};
+    order = await Order.findOneAndUpdate(
+      { _id: orderId, status: 'disputed' },
+      {
+        $set: {
+          status: 'cancelled',
+          disputeStatus: 'resolved',
+          activationResult: 'Спор: возврат средств покупателю',
+        },
+      },
+      { new: true, ...sessionOpt }
+    ).populate('userId').populate('sellerId');
+    if (!order) return;
 
-  order.status = 'cancelled';
-  order.disputeStatus = 'resolved';
-  order.activationResult = 'Спор: возврат средств покупателю';
-  await order.save();
+    // Return money to buyer
+    if (order.userId) {
+      await User.updateOne({ _id: order.userId._id }, { $inc: { balance: order.price } }, sessionOpt);
+    }
+  });
+  if (!order) return ctx.answerCbQuery('Спор не найден или уже обработан', { show_alert: true });
 
-  // Return money to buyer
   if (order.userId) {
-    const User = require('../../../models/User');
-    await User.updateOne({ _id: order.userId._id }, { $inc: { balance: order.price } });
+    // Сброс кэша middleware - возврат должен быть виден пользователю сразу
+    require('../../middlewares/user').invalidateUserCache(order.userId.telegramId);
     await notif.sendToUser(order.userId.telegramId, `✅ <b>Спор решён в вашу пользу!</b>\nДеньги (${order.price} USDT) возвращены на ваш баланс.`).catch(()=>null);
   }
 
@@ -125,22 +147,44 @@ const resolveRefundBuyer = async (ctx, orderId) => {
 };
 
 const resolvePaySeller = async (ctx, orderId) => {
-  const order = await Order.findById(orderId).populate('userId').populate('sellerId');
-  if (!order || order.status !== 'disputed') return ctx.answerCbQuery('Спор не найден', { show_alert: true });
+  // Атомарный захват спора (см. resolveRefundBuyer): двойной клик раньше
+  // приводил к двойной выплате продавцу. Захват и выплата - в одной транзакции.
+  const { withTransaction } = require('../../../services/transactionHelper.service');
+  const Seller = require('../../../models/Seller');
+  let order = null;
+  await withTransaction(async (session) => {
+    const sessionOpt = session ? { session } : {};
+    order = await Order.findOneAndUpdate(
+      { _id: orderId, status: 'disputed' },
+      {
+        $set: {
+          status: 'completed',
+          confirmedAt: new Date(),
+          disputeStatus: 'resolved',
+          activationResult: 'Спор: выплата продавцу',
+        },
+      },
+      { new: true, ...sessionOpt }
+    ).populate('userId').populate('sellerId');
+    if (!order) return;
+
+    if (order.sellerId && order.sellerPayout > 0) {
+      // $inc вместо read-modify-write: параллельные начисления не теряются
+      await Seller.updateOne(
+        { _id: order.sellerId._id },
+        { $inc: { balance: order.sellerPayout, totalEarned: order.sellerPayout } },
+        sessionOpt
+      );
+      await Order.updateOne({ _id: order._id }, { $set: { sellerPaidAt: new Date() } }, sessionOpt);
+    }
+  });
+  if (!order) return ctx.answerCbQuery('Спор не найден или уже обработан', { show_alert: true });
+
+  // Заказ стал completed - проверяем реферальный бонус покупателя
+  const { grantReferralBonusForFirstCompletedOrder } = require('../../../services/referral.service');
+  grantReferralBonusForFirstCompletedOrder(order.userId?._id || order.userId).catch(() => {});
 
   const seller = order.sellerId;
-  if (seller && order.sellerPayout > 0) {
-    seller.balance = parseFloat((seller.balance + order.sellerPayout).toFixed(8));
-    seller.totalEarned = parseFloat((seller.totalEarned + order.sellerPayout).toFixed(8));
-    await seller.save();
-    order.sellerPaidAt = new Date();
-  }
-
-  order.status = 'completed';
-  order.confirmedAt = new Date();
-  order.disputeStatus = 'resolved';
-  order.activationResult = 'Спор: выплата продавцу';
-  await order.save();
 
   // Notify seller
   if (seller) {
@@ -161,13 +205,16 @@ const listWarrantyClaims = async (ctx, page = 1) => {
   const skip = (page - 1) * PAGE_SIZE;
   const filter = { replacementStatus: 'pending' };
 
-  const total = await Order.countDocuments(filter);
-  const claims = await Order.find(filter)
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(PAGE_SIZE)
-    .populate('userId')
-    .populate('productId');
+  const [total, claims] = await Promise.all([
+    Order.countDocuments(filter),
+    Order.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(PAGE_SIZE)
+      .populate('userId', 'username telegramId')
+      .populate('productId', 'name icon')
+      .lean(),
+  ]);
 
   if (!claims.length) {
     const opts = {

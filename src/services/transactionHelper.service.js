@@ -42,6 +42,18 @@ const withTransaction = async (fn) => {
       if (transactionsAvailable !== false) {
         logger.warn('[TransactionHelper] Транзакции недоступны (standalone MongoDB). Операции выполняются без транзакций.');
         transactionsAvailable = false;
+        // Это серьёзное снижение гарантий для ВСЕХ денежных операций - молчать
+        // об этом нельзя. Шлём алерт админам (лениво, чтобы избежать циклического
+        // require notification.service ↔ transactionHelper).
+        try {
+          const notif = require('./notification.service');
+          notif.sendToAdmins(
+            '🚨 <b>ВНИМАНИЕ: MongoDB-транзакции недоступны</b>\n\n' +
+            'БД работает как standalone (не replica set). Все денежные операции ' +
+            'выполняются БЕЗ транзакций - при сбоях возможны рассогласования балансов.\n\n' +
+            'Рекомендуется перевести MongoDB в режим replica set (для одного сервера достаточно rs.initiate()).'
+          ).catch(() => {});
+        } catch (_) { /* notification service ещё не инициализирован */ }
       }
       try { await session.endSession(); } catch (_) {}
       sessionEnded = true;

@@ -18,7 +18,7 @@ const setBot = (bot) => { botInstance = bot; };
 const notifySellerWelcome = async (seller) => {
   if (!botInstance || !seller?.telegramId) return;
   try {
-    const sellerUser = await User.findOne({ telegramId: seller.telegramId });
+    const sellerUser = await User.findOne({ telegramId: seller.telegramId }).select('language').lean();
     const lang = sellerUser?.language || 'ru';
     await botInstance.telegram.sendMessage(
       seller.telegramId,
@@ -381,7 +381,7 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
 const notifySellerNewOrder = async (seller, order, product, buyer) => {
   if (!botInstance || !seller?.telegramId) return;
 
-  const sellerUser = await User.findOne({ telegramId: seller.telegramId });
+  const sellerUser = await User.findOne({ telegramId: seller.telegramId }).select('language').lean();
   const sellerLang = sellerUser?.language || 'ru';
 
   const buyerTag = buyer?.username ? `@${h(buyer.username)}` : `ID ${h(buyer?.telegramId)}`;
@@ -424,7 +424,7 @@ const notifySellerWithdrawalResult = async (seller, withdrawal, result) => {
   const NETWORK_LABELS = { trc20: 'TRC-20 (Tron)', bep20: 'BEP-20 (BSC)' };
   const networkLabel = NETWORK_LABELS[withdrawal.network] || withdrawal.network;
   
-  const sellerUser = await User.findOne({ telegramId: seller.telegramId });
+  const sellerUser = await User.findOne({ telegramId: seller.telegramId }).select('language').lean();
   const lang = sellerUser?.language || 'ru';
 
   let msg;
@@ -515,22 +515,34 @@ const fulfillPreorders = async (product) => {
   for (const preorder of pendingPreorders) {
     if (!preorder.userId || !preorder.userId.telegramId) continue;
 
-    const keyQuery = buildKeyQueryForProduct(product, { isUsed: false });
-    const key = await Key.findOne(keyQuery);
+    // Атомарный захват свободного ключа (isUsed:false в фильтре) - как при
+    // обычной покупке. И ВАЖНО: поле называется usedByOrder, а не orderId -
+    // раньше присвоение key.orderId молча отбрасывалось Mongoose (strict mode),
+    // ключ оставался без привязки к заказу и мог быть продан повторно при откатах.
+    const key = await Key.findOneAndUpdate(
+      buildKeyQueryForProduct(product, { isUsed: false }),
+      { $set: { isUsed: true, usedAt: new Date(), usedByOrder: preorder._id } },
+      { new: true }
+    );
 
     if (!key) {
       break;
     }
 
-    key.isUsed = true;
-    key.usedAt = new Date();
-    key.orderId = preorder._id;
-    await key.save();
-
-    preorder.status = 'completed';
-    preorder.keyId = key._id;
-    preorder.deliveryData = key.value;
-    await preorder.save();
+    // Атомарный захват предзаказа: если он параллельно отменён пользователем
+    // (деньги возвращены) - НЕ выдаём товар, освобождаем ключ обратно.
+    const claimedPreorder = await Order.findOneAndUpdate(
+      { _id: preorder._id, status: 'preorder_pending' },
+      { $set: { status: 'completed', keyId: key._id, deliveryData: key.value, confirmedAt: new Date() } },
+      { new: true }
+    );
+    if (!claimedPreorder) {
+      await Key.updateOne(
+        { _id: key._id },
+        { $set: { isUsed: false, usedAt: null, usedByOrder: null } }
+      ).catch(() => {});
+      continue;
+    }
 
     const Waitlist = require('../models/Waitlist');
     await Waitlist.findOneAndDelete({ userId: preorder.userId._id, productId: product._id }).catch(() => {});

@@ -5,7 +5,7 @@ const Transaction = require('../../../models/Transaction');
 const Seller = require('../../../models/Seller');
 const { toRub } = require('../../../services/currency.service');
 const mongoose = require('mongoose');
-const { escapeHtml, formatDateTimeMSK, formatDateMSK } = require('../../utils/ui');
+const { escapeHtml, formatDateTimeMSK, formatDateMSK, fmtUSDT } = require('../../utils/ui');
 const i18n = require('../../middlewares/i18n');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -16,18 +16,21 @@ const PAGE_SIZE = 12;
 const showAllUsers = async (ctx, page = 1) => {
   await ctx.answerCbQuery().catch(() => {});
 
-  const total = await User.countDocuments();
+  // Счётчики параллельно, список - только нужные поля без гидрации
+  const [total, banned, admins] = await Promise.all([
+    User.countDocuments(),
+    User.countDocuments({ isBanned: true }),
+    User.countDocuments({ role: 'admin' }),
+  ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
 
   const users = await User.find()
     .sort({ createdAt: -1 })
     .skip((safePage - 1) * PAGE_SIZE)
-    .limit(PAGE_SIZE);
-
-  // Быстрая статистика
-  const banned = await User.countDocuments({ isBanned: true });
-  const admins = await User.countDocuments({ role: 'admin' });
+    .limit(PAGE_SIZE)
+    .select('telegramId username firstName isBanned role')
+    .lean();
 
   let text =
     `👥 <b>Все пользователи</b> (${total} чел., стр. ${safePage}/${totalPages})
@@ -176,7 +179,7 @@ const showUserProfile = async (ctx, userId) => {
     `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n` +
     tosLine +
     tosLegalProof + '\n' +
-    `💰 Баланс: ${user.balance.toFixed(2)} USDT (~${toRub(user.balance)} ₽)\n` +
+    `💰 Баланс: ${fmtUSDT(user.balance)}\n` +
     `📦 Заказов: ${ordersCount}\n` +
     `💸 Потрачено: ${user.totalSpent.toFixed(2)} USDT\n` +
     `👥 Рефералов: ${referralsCount}\n` +
@@ -244,12 +247,34 @@ const handleBalanceChange = async (ctx) => {
     return true;
   }
 
-  const user = await User.findById(session.targetUserId);
+  // Атомарный $inc + защита от ухода в минус условием в фильтре
+  let user;
+  if (amount < 0) {
+    user = await User.findOneAndUpdate(
+      { _id: session.targetUserId, balance: { $gte: -amount } },
+      { $inc: { balance: amount } },
+      { new: true }
+    );
+    if (!user) {
+      // Не хватает баланса для списания - обнуляем (прежнее поведение "не ниже 0")
+      user = await User.findOneAndUpdate(
+        { _id: session.targetUserId },
+        { $set: { balance: 0 } },
+        { new: true }
+      );
+    }
+  } else {
+    user = await User.findOneAndUpdate(
+      { _id: session.targetUserId },
+      { $inc: { balance: amount } },
+      { new: true }
+    );
+  }
   if (!user) { ctx.session.adminAction = null; return true; }
 
-  user.balance = parseFloat((user.balance + amount).toFixed(8));
-  if (user.balance < 0) user.balance = 0;
-  await user.save();
+  // Пользователь мог быть закэширован middleware - сбрасываем
+  const { invalidateUserCache } = require('../../middlewares/user');
+  invalidateUserCache(user.telegramId);
 
   await new Transaction({
     userId: user._id,
@@ -278,6 +303,8 @@ const toggleBan = async (ctx, userId) => {
   if (!user) return ctx.answerCbQuery('❌ Не найден', { show_alert: true });
   user.isBanned = !user.isBanned;
   await user.save();
+  // Сброс кэша middleware, чтобы бан/разбан применился мгновенно
+  require('../../middlewares/user').invalidateUserCache(user.telegramId);
   await showUserProfile(ctx, userId);
 };
 
@@ -286,17 +313,23 @@ const toggleRole = async (ctx, userId) => {
   if (!user) return ctx.answerCbQuery('❌ Не найден', { show_alert: true });
   user.role = user.role === 'admin' ? 'user' : 'admin';
   await user.save();
+  // Сброс кэша middleware, чтобы смена роли применилась мгновенно
+  require('../../middlewares/user').invalidateUserCache(user.telegramId);
   await showUserProfile(ctx, userId);
 };
 
 const toggleSeller = async (ctx, userId) => {
   const user = await User.findById(userId);
   if (!user) return ctx.answerCbQuery('❌ Не найден', { show_alert: true });
+  // Флаг isSeller закэширован в middleware - сбрасываем ПОСЛЕ изменения
+  // (иначе апдейт юзера в промежутке снова закэширует старое значение)
+  const invalidateAfter = () => require('../../middlewares/user').invalidateUserCache(user.telegramId);
 
   let seller = await Seller.findOne({ telegramId: user.telegramId });
   if (seller) {
     seller.isActive = !seller.isActive;
     await seller.save();
+    invalidateAfter();
     await ctx.answerCbQuery(seller.isActive ? '✅ Назначен продавцом!' : '❌ Права продавца сняты');
   } else {
     // Пытаемся создать нового селлера
@@ -309,13 +342,15 @@ const toggleSeller = async (ctx, userId) => {
       existingSeller.isActive = true;
       existingSeller.displayName = user.firstName || username;
       await existingSeller.save();
+      invalidateAfter();
       await ctx.answerCbQuery('✅ Назначен продавцом!');
       await showUserProfile(ctx, userId);
       return;
     }
-    
+
     seller = new Seller({ telegramId: user.telegramId, username, displayName: user.firstName || username, isActive: true });
     await seller.save();
+    invalidateAfter();
     await ctx.answerCbQuery('✅ Назначен продавцом!');
   }
   await showUserProfile(ctx, userId);
@@ -362,6 +397,9 @@ const startTakeover = async (ctx, userId) => {
   targetUser.takeoverBy = ctx.from.id;
   targetUser.takeoverAt = new Date();
   await targetUser.save();
+  // Перехват-интерцептор читает takeoverBy из кэша middleware - сбрасываем,
+  // иначе до 30 сек сообщения пользователя не форвардятся админу
+  require('../../middlewares/user').invalidateUserCache(targetUser.telegramId);
 
   // Уведомляем юзера, что поддержка на связи
   try {
@@ -395,6 +433,8 @@ const stopTakeover = async (ctx, userId) => {
     targetUser.takeoverBy = null;
     targetUser.takeoverAt = null;
     await targetUser.save();
+    // Сброс кэша - иначе до 30 сек бот продолжает «глотать» сообщения юзера
+    require('../../middlewares/user').invalidateUserCache(targetUser.telegramId);
   }
   ctx.session.adminAction = null;
   ctx.session.takeoverUserId = null;
@@ -504,11 +544,12 @@ const executeCustomBroadcast = async (ctx) => {
   await ctx.answerCbQuery('🚀 Запускаю рассылку...');
   await ctx.reply('⏳ <b>Идёт процесс рассылки...</b> Бот уведомит вас по завершении.', { parse_mode: 'HTML' });
 
-  const users = await User.find({ isBanned: false }).select('telegramId language');
+  // Курсор + lean: не грузим всю коллекцию пользователей в память разом
+  const users = User.find({ isBanned: false }).select('telegramId language').lean().cursor();
   let sent = 0;
   let failed = 0;
 
-  for (const u of users) {
+  for await (const u of users) {
     try {
       const userLang = u.language || 'ru';
       const buttonText = userLang === 'en' ? '☑️ I accept the Terms & Offer' : '☑️ Я ознакомлен и принимаю условия Оферты';

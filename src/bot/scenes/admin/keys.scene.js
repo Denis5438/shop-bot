@@ -11,7 +11,7 @@ const { escapeHtml } = require('../../utils/ui');
 const notif = require('../../../services/notification.service');
 
 const showKeysList = async (ctx) => {
-  const products = await Product.find({ isActive: true }).sort({ sortOrder: 1 });
+  const products = await Product.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
 
   if (products.length === 0) {
     return ctx.editMessageText('🔑 Нет созданных товаров.', {
@@ -19,13 +19,36 @@ const showKeysList = async (ctx) => {
     });
   }
 
+  // Счётчики free/used всех товаров одной агрегацией (раньше - 2 запроса
+  // на каждый товар)
+  const keyAgg = await Key.aggregate([
+    { $match: { productId: { $in: products.map((p) => p._id) } } },
+    {
+      $group: {
+        _id: { productId: '$productId', provider: '$provider', isUsed: '$isUsed' },
+        cnt: { $sum: 1 },
+      },
+    },
+  ]);
+  const keyCounts = new Map(); // pid → { '<provider>|free': n, '<provider>|used': n }
+  for (const r of keyAgg) {
+    const pid = String(r._id.productId);
+    const prov = r._id.provider || '__null__';
+    const bucket = r._id.isUsed ? 'used' : 'free';
+    if (!keyCounts.has(pid)) keyCounts.set(pid, {});
+    keyCounts.get(pid)[`${prov}|${bucket}`] = r.cnt;
+  }
+
   const buttons = [];
   let text = `🔑 <b>Управление ключами</b>\n\n`;
 
   for (const product of products) {
-    const free = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
-    const used = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: true }));
-    const provider = getProviderLabel(resolveProductProvider(product));
+    const c = keyCounts.get(String(product._id)) || {};
+    const prov = resolveProductProvider(product);
+    // provider: null учитывается как совместимый (как в buildKeyQueryForProduct)
+    const free = (c[`${prov}|free`] || 0) + (c['__null__|free'] || 0);
+    const used = (c[`${prov}|used`] || 0) + (c['__null__|used'] || 0);
+    const provider = getProviderLabel(prov);
 
     text += `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b>\n`;
     text += `   🧩 ${escapeHtml(provider)}\n`;
@@ -146,7 +169,13 @@ const handleKeysInput = async (ctx) => {
     }
 
     const link = await ctx.telegram.getFileLink(file.file_id);
-    const res = await axios.get(link.href, { responseType: 'text' });
+    // Таймаут и лимит размера: единственный HTTP-вызов проекта без timeout
+    // мог зависнуть навсегда и загрузить файл любого размера в память
+    const res = await axios.get(link.href, {
+      responseType: 'text',
+      timeout: 15000,
+      maxContentLength: 5 * 1024 * 1024,
+    });
     lines = String(res.data).split('\n').map((line) => line.trim()).filter(Boolean);
   } else {
     return false;
@@ -157,8 +186,8 @@ const handleKeysInput = async (ctx) => {
     return true;
   }
 
-  const existing = await Key.find(buildKeyQueryForProduct(product)).select('value');
-  const existingValues = new Set(existing.map((item) => item.value));
+  // distinct вместо загрузки полных документов всех ключей товара в память
+  const existingValues = new Set(await Key.distinct('value', buildKeyQueryForProduct(product)));
   const newKeys = lines.filter((value) => !existingValues.has(value));
 
   if (newKeys.length === 0) {

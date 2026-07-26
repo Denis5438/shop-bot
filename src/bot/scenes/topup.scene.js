@@ -3,7 +3,7 @@ const TopupRequest = require('../../models/TopupRequest');
 const User = require('../../models/User');
 const { toRub, getRate } = require('../../services/currency.service');
 const notif = require('../../services/notification.service');
-const { parseAmount, copyHint, escapeHtml } = require('../utils/ui');
+const { parseAmount, copyHint, escapeHtml, fmtUSDT } = require('../utils/ui');
 const { SLA } = require('../constants/ux');
 const { startProgress } = require('../utils/progress');
 
@@ -17,8 +17,7 @@ const editOrReply = async (ctx, text, extra) => {
   return await ctx.reply(text, extra);
 };
 
-// Форматируем сумму: USDT + рубли рядом
-const fmtUSDT = (usdt) => `${usdt.toFixed(2)} USDT (~${toRub(usdt)} ₽)`;
+// Форматирование суммы: fmtUSDT теперь общий (из utils/ui)
 const fmtRUB = (rub) => {
   const rate = getRate();
   const usdt = rub / rate;
@@ -467,13 +466,35 @@ const handleTopupProof = async (ctx) => {
   let checkingMsgId = null;
   let statusReason = null;
   let finalTxid = proofText; // По умолчанию (для блокчейнов) TXID = присланный текст
+  let txVerifiedOnChain = false; // Транзакция реально найдена в блокчейне
+  let txFromAddress = null;
 
   if (isAutoCrypto && proofText && !proofFileId) {
     // В случае с блокчейном присланный текст - это TXID.
     // В случае с UID присланный текст - это UID отправителя.
-    
+
     if (network !== 'uid') {
-      const exists = await TopupRequest.findOne({ txid: proofText });
+      // Нормализация TXID (lowercase, префикс 0x) - без неё один хэш в разных
+      // написаниях обходит unique-индекс и зачисляется многократно.
+      const norm = blockchain.normalizeTxid(proofText, network);
+      if (!norm.ok) {
+        const errTxt = lang === 'en' ? '❌ This does not look like a valid transaction hash (TXID). Please check and send again.' : '❌ Это не похоже на корректный хэш транзакции (TXID). Проверьте и отправьте ещё раз.';
+        const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
+        if (topup.msgId) { await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, errTxt, errOpts).catch(()=>ctx.reply(errTxt, errOpts)); } else { await ctx.reply(errTxt, errOpts); }
+        return true;
+      }
+      proofText = norm.txid;
+      finalTxid = norm.txid;
+
+      // Ищем и по нормализованному виду, и по историческим "сырым" записям
+      // (другой регистр / с и без 0x), созданным до внедрения нормализации.
+      const bareHash = proofText.replace(/^0x/, '');
+      const exists = await TopupRequest.findOne({
+        $or: [
+          { txid: { $in: [proofText, bareHash, '0x' + bareHash] } },
+          { txid: { $regex: `^(0x)?${bareHash}$`, $options: 'i' } },
+        ],
+      });
       if (exists) {
         const errTxt = lang === 'en' ? '❌ This TXID has already been used for top-up!' : '❌ Этот TXID уже был использован для пополнения!';
         const errOpts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
@@ -540,7 +561,9 @@ const handleTopupProof = async (ctx) => {
         { label: lang === 'en' ? '💰 Verifying amount and recipient' : '💰 Сверяю сумму и адрес получателя', pct: 80 },
         { label: lang === 'en' ? '⏳ Finalizing' : '⏳ Финализация', pct: 95 },
       ],
-      intervalMs: 1500,
+      // 1500 мс editMessage на пользователя быстро выжигали общий rate-limit
+      // Telegram (30 msg/sec) при нескольких параллельных проверках
+      intervalMs: 3000,
       editMessageId: topup.msgId || null,
     });
     checkingMsgId = progress?.messageId || topup.msgId || null;
@@ -574,11 +597,30 @@ const handleTopupProof = async (ctx) => {
     }
 
     if (bResult.success) {
-      // Сумма может незначительно отличаться из-за комиссий, если прислали больше - засчитываем больше
-      // Если прислали чуть-чуть меньше - на усмотрение. Затребуем хотя бы 99%
-      if (bResult.amount >= amountUSDT * 0.99) {
+      txVerifiedOnChain = true;
+      txFromAddress = bResult.fromAddress || null;
+
+      // Защита от присвоения чужих переводов: старые транзакции (взятые из
+      // истории кошелька магазина) автоматически не зачисляем - только через
+      // оператора. Легитимный пользователь вводит TXID в течение минут.
+      const MAX_TX_AGE_MS = 6 * 60 * 60 * 1000; // 6 часов
+      const txTooOld = network !== 'uid' && bResult.timestamp && (Date.now() - bResult.timestamp > MAX_TX_AGE_MS);
+
+      if (txTooOld) {
+        statusReason = lang === 'en'
+          ? '⚠️ The transaction is older than 6 hours - sent for manual review by an operator.'
+          : '⚠️ Транзакция старше 6 часов - заявка отправлена на ручную проверку оператору.';
+      } else if (bResult.amount >= amountUSDT * 0.99 && bResult.amount <= amountUSDT * 1.05) {
+        // Сумма может незначительно отличаться из-за комиссий: принимаем коридор
+        // от 99% до 105% заявленной. Больше - подозрение на чужую транзакцию,
+        // отправляем оператору (раньше зачислялась ЛЮБАЯ сумма из блокчейна без
+        // верхней границы - вектор кражи).
         requestStatus = 'confirmed';
         finalAmountUSDT = bResult.amount; // Засчитываем реальную сумму
+      } else if (bResult.amount > amountUSDT * 1.05) {
+        statusReason = lang === 'en'
+          ? `⚠️ Amount in blockchain (${bResult.amount} USDT) is much larger than declared (${amountUSDT} USDT) - sent for manual review.`
+          : `⚠️ Сумма в блокчейне (${bResult.amount} USDT) значительно больше заявленной (${amountUSDT} USDT) - заявка отправлена на ручную проверку.`;
       } else {
         statusReason = lang === 'en' ? `⚠️ Amount in blockchain (${bResult.amount} USDT) is less than declared (${amountUSDT} USDT).` : `⚠️ Сумма в блокчейне (${bResult.amount} USDT) меньше заявленной (${amountUSDT} USDT).`;
       }
@@ -587,6 +629,33 @@ const handleTopupProof = async (ctx) => {
       // недоступен - отправляем заявку на ручную проверку оператором.
       statusReason = `⚠️ ${bResult.reason || (lang === 'en' ? 'Auto-check temporarily unavailable.' : 'Авто-проверка временно недоступна.')}`;
       requestStatus = 'pending';
+    } else if (network !== 'uid') {
+      // Транзакция не найдена / ещё не подтверждена / не на наш адрес.
+      // НЕ создаём заявку и НЕ убиваем сессию: пользователь просто отправляет
+      // TXID ещё раз (частый случай - индексация/подтверждения сети догоняют
+      // за 1-2 минуты). Раньше здесь создавалась pending-заявка, сессия
+      // сбрасывалась, а повторную попытку блокировал дедуп по сумме.
+      if (progress) await progress.stop(lang === 'en' ? '⏳ Generating response...' : '⏳ Формирую ответ...').catch(() => {});
+      topup.step = 'proof'; // остаёмся в режиме ввода TXID
+      const retryTxt = lang === 'en'
+        ? `❌ <b>Could not verify the transaction</b>\n\n${bResult.reason}\n\n👇 Check the TXID and send it again with the next message. If the problem persists - contact support.`
+        : `❌ <b>Не удалось подтвердить транзакцию</b>\n\n${bResult.reason}\n\n👇 Проверьте TXID и отправьте его ещё раз следующим сообщением. Если проблема повторяется - напишите в поддержку.`;
+      const retryOpts = {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
+          [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')],
+        ]),
+      };
+      const targetMsgId = checkingMsgId || topup.msgId;
+      if (targetMsgId) {
+        await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, retryTxt, retryOpts).catch(() => ctx.reply(retryTxt, retryOpts));
+        topup.msgId = targetMsgId;
+      } else {
+        const m = await ctx.reply(retryTxt, retryOpts);
+        topup.msgId = m.message_id;
+      }
+      return true;
     } else {
       statusReason = lang === 'en' ? `⚠️ Auto-check error: ${bResult.reason}.` : `⚠️ Ошибка авто-проверки: ${bResult.reason}.`;
     }
@@ -630,10 +699,20 @@ const handleTopupProof = async (ctx) => {
     network,
     proofText,
     proofFileId,
-    status: requestStatus
+    fromAddress: txFromAddress,
+    // Всегда создаём как pending; в confirmed заявка переводится атомарно
+    // ВМЕСТЕ с зачислением ниже. Раньше заявка сразу писалась confirmed до
+    // зачисления - при сбое оставалась "подтверждённой" без денег на балансе.
+    status: 'pending'
   };
-  // txid только для авто-крипты - иначе не устанавливаем поле (sparse index)
-  if (isAutoCrypto && finalTxid && !proofFileId) {
+  // txid пишем только если транзакция реально найдена в блокчейне (или получена
+  // из Bybit API для UID). Раньше сюда попадал сырой ввод пользователя даже при
+  // неудачной проверке - txid "сгорал" в unique-индексе, а для UID-топапов в
+  // поле txid записывался сам UID, навсегда блокируя пользователя.
+  const txidIsReal = isAutoCrypto && !proofFileId && (
+    network === 'uid' ? (finalTxid && finalTxid !== proofText) : txVerifiedOnChain
+  );
+  if (txidIsReal) {
     requestData.txid = finalTxid;
   }
   const request = new TopupRequest(requestData);
@@ -648,45 +727,94 @@ const handleTopupProof = async (ctx) => {
   if (requestStatus === 'confirmed') {
     // Начисляем баланс атомарно
     const { withTransaction } = require('../../services/transactionHelper.service');
+    const logger = require('../../config/logger');
     let uidBindingFailed = false;
+    let topupUsedSession = null;  // была ли реальная MongoDB-транзакция
+    let creditApplied = false;    // прошёл ли $inc баланса (для корректного catch)
     try {
       await withTransaction(async (session) => {
-        const freshUser = await User.findById(user._id, null, session ? { session } : undefined);
-        if (!freshUser) throw new Error('User not found');
-        freshUser.balance = parseFloat((freshUser.balance + finalAmountUSDT).toFixed(8));
+        const sessionOpt = session ? { session } : {};
+        topupUsedSession = session;
+        creditApplied = false;
 
+        // Идемпотентный "захват" заявки: pending → confirmed. Если параллельный
+        // вызов уже обработал её - выходим без второго зачисления.
+        const claimed = await TopupRequest.findOneAndUpdate(
+          { _id: request._id, status: 'pending' },
+          { $set: { status: 'confirmed', processedAt: new Date() } },
+          { new: true, ...sessionOpt }
+        );
+        if (!claimed) throw new Error('TOPUP_ALREADY_PROCESSED');
+
+        // Атомарный $inc вместо "прочитал → изменил → save()": исключает гонку
+        // и потерю параллельных изменений баланса.
+        const userUpdate = { $inc: { balance: finalAmountUSDT } };
         // First-claim wins: привязываем UID к юзеру при первом успешном топапе.
         // Если параллельно другой аккаунт успел занять этот UID - unique-index
         // выбросит DuplicateKey, мы это ловим и откатываем.
-        if (network === 'uid' && !freshUser.bybitUid && proofText) {
-          freshUser.bybitUid = proofText.trim();
+        if (network === 'uid' && !user.bybitUid && proofText) {
+          userUpdate.$set = { bybitUid: proofText.trim() };
         }
-
-        await freshUser.save(session ? { session } : undefined);
-        // Обновляем ctx.user
-        ctx.user = freshUser;
+        const updRes = await User.updateOne({ _id: user._id }, userUpdate, sessionOpt);
+        if (!updRes.matchedCount) throw new Error('User not found');
+        creditApplied = true;
 
         const Transaction = require('../../models/Transaction');
         await new Transaction({
-          userId: freshUser._id,
+          userId: user._id,
           type: 'topup',
           amount: finalAmountUSDT,
           orderId: request._id,
           description: lang === 'en' ? `Auto-topup ${network.toUpperCase()}` : `Авто-пополнение ${network.toUpperCase()}`
-        }).save(session ? { session } : undefined);
+        }).save(sessionOpt);
       });
+      // Обновляем баланс в контексте для отображения
+      if (ctx.user) {
+        ctx.user.balance = parseFloat((ctx.user.balance + finalAmountUSDT).toFixed(8));
+        if (network === 'uid' && !ctx.user.bybitUid && proofText) ctx.user.bybitUid = proofText.trim();
+      }
+      // Синхронизируем in-memory статус с БД (нужно для корректного уведомления админа)
+      request.status = 'confirmed';
+      request.processedAt = new Date();
     } catch (err) {
       // Конфликт на sparse unique index bybitUid_string_unique - кто-то
       // успел привязать UID первым между pre-check и commit. Разворачиваем
-      // транзакцию заявки в pending, чтобы админ разобрался вручную.
+      // заявку в pending, чтобы админ разобрался вручную.
       if (err && err.code === 11000 && String(err.message || '').includes('bybitUid')) {
         uidBindingFailed = true;
         await TopupRequest.updateOne(
           { _id: request._id },
-          { $set: { status: 'pending', txid: undefined } }
+          { $set: { status: 'pending' }, $unset: { txid: 1 } }
         ).catch(() => {});
+      } else if (err && err.message === 'TOPUP_ALREADY_PROCESSED') {
+        // Заявку уже обработал параллельный процесс (или админ успел
+        // подтвердить вручную). НИЧЕГО не трогаем в БД - иначе можно было бы
+        // сбросить уже оплаченную заявку обратно в pending и зачислить дважды.
+        logger.warn(`[Topup] Заявка ${request._id} уже обработана параллельно - пропускаю зачисление.`);
+        requestStatus = 'pending';
+      } else if (!topupUsedSession && creditApplied) {
+        // Режим без транзакций: деньги УЖЕ начислены, упал только последний шаг
+        // (запись Transaction-проводки). Заявку оставляем confirmed - возвращать
+        // её в pending нельзя (оператор зачислил бы второй раз).
+        logger.error(`[Topup] Проводка не записана для заявки ${request._id} (баланс зачислен): ${err.message}`);
+        if (ctx.user) {
+          ctx.user.balance = parseFloat((ctx.user.balance + finalAmountUSDT).toFixed(8));
+        }
+        request.status = 'confirmed';
+        request.processedAt = new Date();
+        // requestStatus остаётся 'confirmed' → пользователь увидит "Успешно"
       } else {
-        throw err;
+        // Деньги НЕ начислены (либо транзакция всё откатила) - возвращаем заявку
+        // в pending, оператор зачислит вручную. Обработчик не роняем.
+        logger.error(`[Topup] Ошибка авто-зачисления заявки ${request._id}: ${err.message}`);
+        await TopupRequest.updateOne(
+          { _id: request._id, status: 'confirmed' },
+          { $set: { status: 'pending', processedAt: null } }
+        ).catch(() => {});
+        requestStatus = 'pending';
+        statusReason = lang === 'en'
+          ? '⚠️ Auto-crediting failed - the request was sent for manual review.'
+          : '⚠️ Авто-зачисление не удалось - заявка отправлена на ручную проверку.';
       }
     }
 
@@ -695,14 +823,17 @@ const handleTopupProof = async (ctx) => {
         ? `⚠️ <b>Switching to manual verification</b>\n\nThere was an issue linking the UID. An operator will contact you shortly.`
         : `⚠️ <b>Переводим заявку на ручную проверку</b>\n\nВозникла проблема с привязкой UID. Оператор свяжется с вами в ближайшее время.`;
       await notif.notifyAdminTopupRequest(request, user, method, network, { amountUSDT, amountRUB, rate });
-    } else {
+    } else if (requestStatus === 'confirmed') {
       replyText = lang === 'en'
         ? `✅ <b>Success!</b>\n\nTransaction found. Your balance has been topped up by <b>${finalAmountUSDT.toFixed(2)} USDT</b>.`
         : `✅ <b>Успешно!</b>\n\nТранзакция найдена. Ваш баланс пополнен на <b>${finalAmountUSDT.toFixed(2)} USDT</b>.`;
       // Тихое уведомление админу
       await notif.notifyAdminTopupRequest(request, user, method, network, { amountUSDT: finalAmountUSDT, amountRUB, rate });
     }
-  } else {
+    // Если авто-зачисление сорвалось (catch выше перевёл requestStatus в
+    // 'pending'), replyText остался пустым - уйдём в общую ветку "Заявка принята".
+  }
+  if (!replyText) {
     // Честный SLA зависит от способа оплаты (карта медленнее, крипта быстрее).
     const slaText = method === 'card' ? SLA.CARD_MANUAL_REVIEW : SLA.CRYPTO_MANUAL;
     replyText = lang === 'en'

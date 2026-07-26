@@ -9,4 +9,7 @@ const categorySchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Главный экран магазина: активные категории по sortOrder
+categorySchema.index({ isActive: 1, sortOrder: 1 });
+
 module.exports = mongoose.model('Category', categorySchema);

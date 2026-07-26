@@ -16,7 +16,17 @@ const sanitizeMongoUri = (uri) => {
 
 const connectDB = async () => {
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI, {
+      // Пул: дефолтные 100 соединений избыточны для одного процесса и могут
+      // исчерпать лимит Atlas; 20 достаточно с запасом.
+      maxPoolSize: 20,
+      minPoolSize: 2,
+      // При недоступности БД дефолтные 30 сек serverSelection означали, что
+      // КАЖДЫЙ апдейт бота висит 30 сек - падаем быстро и идём в bot.catch.
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxIdleTimeMS: 60000,
+    });
     logger.info(`MongoDB connected: ${sanitizeMongoUri(MONGODB_URI)}`);
 
     const Settings = require('../models/Settings');
@@ -42,18 +52,38 @@ const connectDB = async () => {
     const { invalidateCache } = require('../services/settingsCache.service');
     invalidateCache();
 
+    // Синхронизируем индексы ВСЕХ моделей (раньше - только четырёх: User,
+    // Transaction, Waitlist и Category оставались без индексов в production,
+    // где autoIndex обычно выключен).
     const TopupRequest = require('../models/TopupRequest');
     const Product = require('../models/Product');
     const Key = require('../models/Key');
     const Order = require('../models/Order');
-    await Promise.all([
-      TopupRequest.syncIndexes(),
-      Product.createIndexes(),
-      Key.createIndexes(),
-      Order.createIndexes(),
-    ]);
-
     const User = require('../models/User');
+    const Transaction = require('../models/Transaction');
+    const Waitlist = require('../models/Waitlist');
+    const Category = require('../models/Category');
+    const Seller = require('../models/Seller');
+    const SellerWithdrawal = require('../models/SellerWithdrawal');
+    // Ошибка построения индекса (например, дубликаты в данных под unique)
+    // НЕ должна валить старт бота - логируем и продолжаем.
+    try {
+      await Promise.all([
+        TopupRequest.syncIndexes(),
+        Product.syncIndexes(),
+        Key.syncIndexes(),
+        Order.syncIndexes(),
+        User.syncIndexes(),
+        Transaction.syncIndexes(),
+        Waitlist.syncIndexes(),
+        Category.syncIndexes(),
+        Seller.syncIndexes(),
+        SellerWithdrawal.syncIndexes(),
+      ]);
+      logger.info('Индексы моделей синхронизированы');
+    } catch (idxErr) {
+      logger.error(`Ошибка синхронизации индексов (бот продолжит работу): ${idxErr.message}`);
+    }
     const staleTakeovers = await User.updateMany(
       { takeoverBy: { $ne: null } },
       { $set: { takeoverBy: null, takeoverAt: null } }

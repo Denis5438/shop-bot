@@ -33,13 +33,16 @@ const localizedOrderStatus = (ctx, status) => {
 const showProfile = async (ctx) => {
   const user = ctx.user;
 
-  const ordersCount = await Order.countDocuments({ userId: user._id });
+  // Оба запроса параллельно
+  const [ordersCount, activeOrder] = await Promise.all([
+    Order.countDocuments({ userId: user._id }),
+    // Незавершённый заказ (awaiting_token)
+    Order.findOne({ userId: user._id, status: 'awaiting_token' })
+      .populate('productId', 'name icon')
+      .lean(),
+  ]);
   const createdAt = new Date(user.createdAt).toLocaleDateString('ru-RU');
   const level = getLevel(user.totalSpent);
-
-  // Проверяем незавершённый заказ (awaiting_token)
-  const activeOrder = await Order.findOne({ userId: user._id, status: 'awaiting_token' })
-    .populate('productId');
 
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
@@ -115,11 +118,13 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   page = Math.min(Math.max(1, page), totalPages);
 
+  // Display-only список: узкий populate + lean
   const orders = await Order.find(query)
     .sort({ createdAt: -1 })
     .skip((page - 1) * PER_PAGE)
     .limit(PER_PAGE)
-    .populate('productId');
+    .populate('productId', 'name nameEn icon')
+    .lean();
 
   const t = ctx.t || ((k) => k);
   const filterLabel = filter === 'active' ? t('orders_filter_active') : t('orders_filter_all');
@@ -283,20 +288,29 @@ const showOrderDetail = async (ctx, orderId) => {
 };
 
 const cancelPreorder = async (ctx, orderId) => {
-  const order = await Order.findById(orderId).populate('productId');
-  if (!order || order.userId.toString() !== ctx.user._id.toString()) {
-    return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
+  // Атомарный захват заказа: статус меняется ТОЛЬКО из preorder_pending.
+  // Раньше два быстрых нажатия возвращали деньги дважды.
+  const order = await Order.findOneAndUpdate(
+    { _id: orderId, userId: ctx.user._id, status: 'preorder_pending' },
+    { $set: { status: 'cancelled' } },
+    { new: true }
+  ).populate('productId');
+  if (!order) {
+    return ctx.answerCbQuery('❌ Заказ не найден или предзаказ уже не в очереди', { show_alert: true });
   }
 
-  if (order.status !== 'preorder_pending') {
-    return ctx.answerCbQuery('❌ Этот предзаказ уже не в очереди', { show_alert: true });
-  }
-
+  const User = require('../../models/User');
+  await User.updateOne({ _id: ctx.user._id }, { $inc: { balance: order.price } });
   ctx.user.balance = parseFloat((ctx.user.balance + order.price).toFixed(8));
-  await ctx.user.save();
 
-  order.status = 'cancelled';
-  await order.save();
+  const Transaction = require('../../models/Transaction');
+  await new Transaction({
+    userId: ctx.user._id,
+    type: 'refund',
+    amount: order.price,
+    orderId: order._id,
+    description: 'Отмена предзаказа',
+  }).save().catch(() => {});
 
   const isRu = (ctx.user.language || 'ru') === 'ru';
   const alertMsg = isRu

@@ -22,7 +22,7 @@ const TYPE_LABELS = {
 const ACTIVE_ORDER_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'retry'];
 
 const showProductsList = async (ctx) => {
-  const products = await Product.find().sort({ sortOrder: 1, createdAt: -1 });
+  const products = await Product.find().sort({ sortOrder: 1, createdAt: -1 }).lean();
 
   if (products.length === 0) {
     return ctx.editMessageText('📦 Товаров пока нет.', {
@@ -33,13 +33,28 @@ const showProductsList = async (ctx) => {
     });
   }
 
+  // Остатки всех товаров одной агрегацией вместо countDocuments в цикле
+  const keyAgg = await Key.aggregate([
+    { $match: { productId: { $in: products.map((p) => p._id) }, isUsed: false } },
+    { $group: { _id: { productId: '$productId', provider: '$provider' }, cnt: { $sum: 1 } } },
+  ]);
+  const freeCounts = new Map();
+  for (const r of keyAgg) {
+    const pid = String(r._id.productId);
+    const prov = r._id.provider || '__null__';
+    if (!freeCounts.has(pid)) freeCounts.set(pid, {});
+    freeCounts.get(pid)[prov] = r.cnt;
+  }
+
   let text = `📦 <b>Управление товарами</b> (${products.length} шт.)\n\n`;
   const buttons = [];
 
   for (const product of products) {
+    const c = freeCounts.get(String(product._id)) || {};
+    const prov = resolveProductProvider(product);
     const stock = product.type === 'manual'
       ? '∞'
-      : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+      : (c[prov] || 0) + (c['__null__'] || 0);
     const status = product.isActive ? '✅' : '🔴';
     const sellerTag = product.sellerId ? ' 👤' : '';
 

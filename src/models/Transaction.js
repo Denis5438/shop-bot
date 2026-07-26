@@ -13,4 +13,9 @@ const transactionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+// История операций пользователя (админка) и статистика по типам за период -
+// раньше у коллекции не было ни одного индекса
+transactionSchema.index({ userId: 1, createdAt: -1 });
+transactionSchema.index({ type: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Transaction', transactionSchema);

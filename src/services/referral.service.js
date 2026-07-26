@@ -39,8 +39,12 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
         sessionOptions
       );
 
-      if (completedOrdersCount !== 1) {
-        result = { granted: false, reason: 'not_first_completed_order' };
+      // Было `!== 1`: если два заказа завершались почти одновременно, счётчик
+      // сразу становился 2 и бонус не выдавался НИКОГДА (а реконсиляция в кроне
+      // вечно перебирала такого пользователя). Достаточно >= 1: от повторной
+      // выдачи защищает атомарный захват referralBonusGrantedAt ниже.
+      if (completedOrdersCount < 1) {
+        result = { granted: false, reason: 'no_completed_orders' };
         return;
       }
 
@@ -64,7 +68,13 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
         return;
       }
 
-      const referrer = await User.findById(claimedUser.referredBy, null, sessionOptions);
+      // Атомарный $inc: read-modify-write через save() терял параллельные
+      // начисления двум рефералам одного реферера (last-write-wins).
+      const referrer = await User.findOneAndUpdate(
+        { _id: claimedUser.referredBy },
+        { $inc: { balance: bonusAmount } },
+        { new: true, ...(sessionOptions || {}) }
+      );
       if (!referrer) {
         await User.updateOne(
           { _id: user._id },
@@ -74,9 +84,6 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
         result = { granted: false, reason: 'referrer_not_found' };
         return;
       }
-
-      referrer.balance = parseFloat((referrer.balance + bonusAmount).toFixed(8));
-      await referrer.save(sessionOptions);
 
       await new Transaction({
         userId: referrer._id,
@@ -95,6 +102,10 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
     });
 
     if (result.granted && result.referrerTelegramId) {
+      // Сброс кэша middleware - бонус должен быть виден рефереру сразу
+      try {
+        require('../bot/middlewares/user').invalidateUserCache(result.referrerTelegramId);
+      } catch (_) {}
       await notif.sendToUser(
         result.referrerTelegramId,
         `🎁 <b>Реферальный бонус начислен!</b>\n\n` +

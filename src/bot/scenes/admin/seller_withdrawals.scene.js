@@ -169,21 +169,23 @@ const confirmWithdrawal = async (ctx, withdrawalId) => {
 
 // ─── Отклонить заявку ────────────────────────────────────────────────────────
 const rejectWithdrawal = async (ctx, withdrawalId) => {
-  const withdrawal = await SellerWithdrawal.findById(withdrawalId).populate('sellerId');
-  if (!withdrawal || withdrawal.status !== 'pending') {
+  // Атомарный захват заявки (как в confirmWithdrawal): двойной клик "Отклонить"
+  // раньше возвращал сумму продавцу дважды.
+  const withdrawal = await SellerWithdrawal.findOneAndUpdate(
+    { _id: withdrawalId, status: 'pending' },
+    { $set: { status: 'rejected', processedAt: new Date() } },
+    { new: true }
+  ).populate('sellerId');
+  if (!withdrawal) {
     return ctx.answerCbQuery('⚠️ Уже обработано', { show_alert: true });
   }
 
-  // Возвращаем средства продавцу
+  // Возвращаем средства продавцу ($inc - параллельные изменения не теряются)
   const seller = withdrawal.sellerId;
   if (seller) {
+    await Seller.updateOne({ _id: seller._id }, { $inc: { balance: withdrawal.amount } });
     seller.balance = parseFloat((seller.balance + withdrawal.amount).toFixed(8));
-    await seller.save();
   }
-
-  withdrawal.status = 'rejected';
-  withdrawal.processedAt = new Date();
-  await withdrawal.save();
 
   // Уведомляем продавца
   await notif.notifySellerWithdrawalResult(seller, withdrawal, 'rejected');
@@ -319,6 +321,10 @@ const handleAddSellerInput = async (ctx) => {
   }
 
   ctx.session.adminAction = null;
+  // Флаг isSeller закэширован в middleware - сбрасываем для нового продавца
+  if (seller.telegramId) {
+    require('../../middlewares/user').invalidateUserCache(seller.telegramId);
+  }
   await ctx.reply(`✅ Продавец <b>${escapeHtml(seller.displayName)}</b> успешно добавлен!`, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([[Markup.button.callback('👤 Профиль', `admin:sellers:view:${seller._id}`)]]),
@@ -389,6 +395,11 @@ const toggleSeller = async (ctx, sellerId) => {
 
   seller.isActive = !seller.isActive;
   await seller.save();
+
+  // Флаг isSeller закэширован в middleware - сбрасываем
+  if (seller.telegramId) {
+    require('../../middlewares/user').invalidateUserCache(seller.telegramId);
+  }
 
   await ctx.answerCbQuery(seller.isActive ? '✅ Разблокирован' : '🔴 Заблокирован');
   await showSellerProfile(ctx, sellerId);
@@ -464,6 +475,10 @@ const deleteSeller = async (ctx, sellerId) => {
   if (!seller) return ctx.answerCbQuery('❌ Продавец не найден', { show_alert: true });
 
   await Seller.deleteOne({ _id: sellerId });
+  // Флаг isSeller закэширован в middleware - сбрасываем
+  if (seller.telegramId) {
+    require('../../middlewares/user').invalidateUserCache(seller.telegramId);
+  }
   await ctx.answerCbQuery('✅ Продавец удалён', { show_alert: true });
   await showSellersList(ctx, 1);
 };

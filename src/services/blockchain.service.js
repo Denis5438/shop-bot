@@ -141,14 +141,40 @@ const verifyUidUsdt = async (senderUid) => {
 };
 
 /**
+ * Нормализация TXID перед дедупликацией и записью в БД.
+ * Без неё один и тот же хэш в вариантах `abc…` / `0xabc…` / `0xABC…`
+ * проходит unique-индекс как три разные строки → многократное зачисление.
+ * @param {string} raw - Введённый пользователем текст
+ * @param {string} network - 'trc20' | 'bep20'
+ * @returns {{ ok: boolean, txid: string }} ok=false, если формат не похож на хэш
+ */
+const normalizeTxid = (raw, network) => {
+  let s = String(raw || '').trim().toLowerCase();
+  if (network === 'bep20') {
+    if (/^[0-9a-f]{64}$/.test(s)) s = '0x' + s;
+    return { ok: /^0x[0-9a-f]{64}$/.test(s), txid: s };
+  }
+  if (network === 'trc20') {
+    if (s.startsWith('0x')) s = s.slice(2);
+    return { ok: /^[0-9a-f]{64}$/.test(s), txid: s };
+  }
+  return { ok: Boolean(s), txid: s };
+};
+
+// Сколько подтверждений сети требуем до зачисления (защита от реоргов:
+// без этого баланс выдаётся до финальности транзакции).
+const TRON_MIN_CONFIRMATIONS = 19;
+const BSC_MIN_CONFIRMATIONS = 12;
+
+/**
  * Проверка перевода USDT (TRC-20) через TronScan API.
  * @param {string} txid - Хэш транзакции
  * @param {string} expectedWallet - Кошелек назначения
- * @returns {{ success: boolean, amount?: number, reason?: string }}
+ * @returns {{ success: boolean, amount?: number, fromAddress?: string, timestamp?: number, reason?: string }}
  */
 const verifyTrc20Usdt = async (txid, expectedWallet) => {
   try {
-    const res = await axios.get(`https://apilist.tronscanapi.com/api/transaction-info?hash=${txid}`, { timeout: 10000 });
+    const res = await axios.get(`https://apilist.tronscanapi.com/api/transaction-info?hash=${encodeURIComponent(txid)}`, { timeout: 10000 });
     const data = res.data;
 
     // Если транзакция не найдена или не успешна
@@ -156,34 +182,50 @@ const verifyTrc20Usdt = async (txid, expectedWallet) => {
       return { success: false, reason: 'Транзакция не найдена или имеет статус FAILED' };
     }
 
+    // Финальность: не зачисляем неподтверждённую транзакцию.
+    const confirmations = Number(data.confirmations ?? 0);
+    if (data.confirmed === false || (data.confirmed === undefined && confirmations < TRON_MIN_CONFIRMATIONS)) {
+      return { success: false, reason: 'Транзакция ещё не подтверждена сетью. Подождите 1-2 минуты и отправьте TXID снова' };
+    }
+
     let amountParsed = 0;
-    
+    let fromAddress = null;
+
     // Проверка 1: Одиночный перевод (tokenTransferInfo)
     if (data.tokenTransferInfo) {
       const t = data.tokenTransferInfo;
       if (t.symbol === 'USDT' && t.to_address === expectedWallet) {
         amountParsed = parseInt(t.amount_str) / (10 ** t.decimals);
+        fromAddress = t.from_address || null;
       }
     }
-    
+
     // Проверка 2: Множественные переводы (trc20TransferInfo)
     if (amountParsed === 0 && Array.isArray(data.trc20TransferInfo)) {
       for (const t of data.trc20TransferInfo) {
         if (t.symbol === 'USDT' && t.to_address === expectedWallet) {
           amountParsed = parseInt(t.amount_str) / (10 ** t.decimals);
+          fromAddress = t.from_address || null;
           break;
         }
       }
     }
 
     if (amountParsed > 0) {
-      return { success: true, amount: amountParsed };
+      return {
+        success: true,
+        amount: amountParsed,
+        fromAddress,
+        timestamp: Number(data.timestamp) || null, // ms
+      };
     }
 
     return { success: false, reason: 'Перевод USDT на ваш кошелек в этой транзакции не найден' };
   } catch (err) {
     logger.error(`[TronScan] Ошибка проверки ${txid}: ${err.message}`);
-    return { success: false, reason: 'Ошибка соединения с API TronScan' };
+    // blocked: true → заявка уйдёт на ручную проверку оператору, а не в
+    // retry-петлю «проверьте TXID» (при сбое API сам TXID ни при чём).
+    return { success: false, blocked: true, reason: 'Ошибка соединения с API TronScan. Заявка отправлена на ручную проверку.' };
   }
 };
 
@@ -195,20 +237,22 @@ const verifyTrc20Usdt = async (txid, expectedWallet) => {
  * @returns {{ success: boolean, amount?: number, reason?: string }}
  */
 const verifyBep20Usdt = async (txid, expectedWallet) => {
-  const USDT_ADDRESS = '0x55d398326f99059ff775485246999027b3197955';
-  const BUSD_ADDRESS = '0xe9e7cea3dedca5984780bafc599bd69add087d56';
-  
+  // Адреса контрактов - из конфига (переопределяются через env)
+  const { BSC_USDT_CONTRACT, BSC_BUSD_CONTRACT } = require('../config');
+  const USDT_ADDRESS = BSC_USDT_CONTRACT;
+  const BUSD_ADDRESS = BSC_BUSD_CONTRACT;
+  const RPC_URL = 'https://bsc-dataseed.binance.org/';
+
+  txid = String(txid || '').trim().toLowerCase();
   if (!txid.startsWith('0x')) txid = '0x' + txid;
 
   try {
-    const payload = {
+    const res = await axios.post(RPC_URL, {
       jsonrpc: "2.0",
       method: "eth_getTransactionReceipt",
       params: [txid],
       id: 1
-    };
-
-    const res = await axios.post('https://bsc-dataseed.binance.org/', payload, { timeout: 10000 });
+    }, { timeout: 10000 });
     const receipt = res.data?.result;
 
     if (!receipt) {
@@ -219,7 +263,22 @@ const verifyBep20Usdt = async (txid, expectedWallet) => {
        return { success: false, reason: 'Транзакция имеет статус FAILED' };
     }
 
+    // Финальность: требуем N блоков поверх блока транзакции (защита от реоргов),
+    // и заодно берём timestamp блока для проверки возраста транзакции.
+    const [heightRes, blockRes] = await Promise.all([
+      axios.post(RPC_URL, { jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 2 }, { timeout: 10000 }),
+      axios.post(RPC_URL, { jsonrpc: '2.0', method: 'eth_getBlockByNumber', params: [receipt.blockNumber, false], id: 3 }, { timeout: 10000 }),
+    ]);
+    const currentBlock = parseInt(heightRes.data?.result, 16);
+    const txBlock = parseInt(receipt.blockNumber, 16);
+    if (!Number.isFinite(currentBlock) || !Number.isFinite(txBlock) || currentBlock - txBlock < BSC_MIN_CONFIRMATIONS) {
+      return { success: false, reason: `Транзакция ещё не подтверждена сетью (нужно ${BSC_MIN_CONFIRMATIONS} блоков). Подождите ~1 минуту и отправьте TXID снова` };
+    }
+    const blockTsHex = blockRes.data?.result?.timestamp;
+    const timestamp = blockTsHex ? parseInt(blockTsHex, 16) * 1000 : null; // ms
+
     let minAmount = 0;
+    let fromAddress = null;
     const transferEventSig = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
     const targetTopic = '0x' + expectedWallet.toLowerCase().replace('0x', '').padStart(64, '0');
 
@@ -227,7 +286,7 @@ const verifyBep20Usdt = async (txid, expectedWallet) => {
       if (log.topics && log.topics[0] === transferEventSig) {
         const tokenAddr = log.address.toLowerCase();
         if (tokenAddr === USDT_ADDRESS || tokenAddr === BUSD_ADDRESS) {
-           // topics[2] - получатель. 
+           // topics[2] - получатель.
            if (log.topics[2] && log.topics[2].toLowerCase() === targetTopic) {
              // Безопасная конвертация BigInt → число с плавающей точкой
              // Избегаем потери точности для больших сумм через строковое деление
@@ -237,24 +296,29 @@ const verifyBep20Usdt = async (txid, expectedWallet) => {
              const fracPart = bigVal % divisor;
              const amountParsed = Number(intPart) + Number(fracPart) / 1e18;
              minAmount += amountParsed;
+             if (!fromAddress && log.topics[1]) {
+               fromAddress = '0x' + String(log.topics[1]).slice(-40);
+             }
            }
         }
       }
     }
 
     if (minAmount > 0) {
-      return { success: true, amount: minAmount };
+      return { success: true, amount: minAmount, fromAddress, timestamp };
     }
 
     return { success: false, reason: 'Перевод USDT на ваш кошелек в этой транзакции не найден' };
   } catch (err) {
     logger.error(`[BSC RPC] Ошибка проверки ${txid}: ${err.message}`);
-    return { success: false, reason: 'Ошибка соединения с сетью BSC' };
+    // blocked: true → ручная проверка оператором вместо retry-петли (см. TronScan)
+    return { success: false, blocked: true, reason: 'Ошибка соединения с сетью BSC. Заявка отправлена на ручную проверку.' };
   }
 };
 
 module.exports = {
   verifyTrc20Usdt,
   verifyBep20Usdt,
-  verifyUidUsdt
+  verifyUidUsdt,
+  normalizeTxid,
 };

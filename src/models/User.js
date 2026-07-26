@@ -53,6 +53,13 @@ userSchema.index(
   }
 );
 
+// Реферальный крон каждую минуту ищет {referredBy≠null, referralBonusGrantedAt:null},
+// плюс подсчёты рефералов в профиле/ачивках - без индекса это COLLSCAN users
+userSchema.index({ referredBy: 1, referralBonusGrantedAt: 1 });
+// Сегменты рассылок и статистика: новые за сутки, "киты" по totalSpent, баны
+userSchema.index({ createdAt: -1 });
+userSchema.index({ isBanned: 1, totalSpent: -1 });
+
 userSchema.pre('save', function (next) {
   if (!this.referralCode) {
     this.referralCode = Math.random().toString(36).substr(2, 8).toUpperCase();

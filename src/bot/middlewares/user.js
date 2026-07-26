@@ -3,12 +3,76 @@ const Seller = require('../../models/Seller');
 const { ADMIN_IDS } = require('../../config');
 const logger = require('../../config/logger');
 
+// ─── Кэш пользователей ────────────────────────────────────────────────────────
+// Раньше КАЖДЫЙ апдейт любого пользователя делал 2 запроса к БД (User.findOne
+// + Seller.exists) - это множитель на весь трафик бота. Кэшируем пару
+// {user, isSeller} на короткий TTL. Обновлённый в обработчике ctx.user
+// записывается обратно в кэш после next(), поэтому изменения (баланс после
+// покупки, смена языка) видны сразу же.
+const USER_CACHE_TTL_MS = 30 * 1000;
+const USER_CACHE_MAX = 5000;
+const userCache = new Map(); // telegramId → { user, isSeller, ts }
+
+const cacheCleanup = () => {
+  if (userCache.size <= USER_CACHE_MAX) return;
+  const now = Date.now();
+  for (const [key, entry] of userCache) {
+    if (now - entry.ts > USER_CACHE_TTL_MS) userCache.delete(key);
+  }
+  // Если и после чистки переполнен - сбрасываем целиком (крайний случай)
+  if (userCache.size > USER_CACHE_MAX) userCache.clear();
+};
+
+// Точечная инвалидация (например, из админки после бана/смены роли/зачисления)
+const invalidateUserCache = (telegramId) => {
+  userCache.delete(telegramId);
+};
+
+// Полный сброс кэша (массовые операции: сброс ToS всем пользователям и т.п.)
+const clearUserCache = () => {
+  userCache.clear();
+};
+
 // Middleware: загружает пользователя из БД, создаёт если нет
 const userMiddleware = async (ctx, next) => {
   try {
     if (!ctx.from) return next();
 
     const telegramId = ctx.from.id;
+
+    // ── Быстрый путь: свежая запись в кэше ──
+    const cached = userCache.get(telegramId);
+    if (cached && Date.now() - cached.ts < USER_CACHE_TTL_MS && cached.user) {
+      ctx.user = cached.user;
+      ctx.isSeller = cached.isSeller;
+
+      if (global.MAINTENANCE_MODE && ctx.user.role !== 'admin') {
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery('🛠 Тех. обслуживание', { show_alert: true }).catch(() => {});
+        }
+        await ctx.reply(
+          '🛠 <b>Магазин на техническом обслуживании.</b>\n' +
+          'Мы проводим профилактические работы, пожалуйста, подождите!\n\n' +
+          'Возвращайтесь немного позже.',
+          { parse_mode: 'HTML' }
+        );
+        return;
+      }
+
+      try {
+        return await next();
+      } finally {
+        // Обработчик мог заменить ctx.user свежим документом (покупка, топап) -
+        // мутируем СУЩЕСТВУЮЩУЮ запись, не пересоздавая её: если за время
+        // обработки запись инвалидировали (бан/зачисление из админки),
+        // set() воскресил бы её - мутация удалённого объекта безвредна.
+        if (ctx.user) {
+          cached.user = ctx.user;
+        }
+      }
+    }
+
+    // ── Медленный путь: чтение из БД ──
     let user = await User.findOne({ telegramId });
 
     if (!user) {
@@ -64,6 +128,10 @@ const userMiddleware = async (ctx, next) => {
     ctx.user = user;
     ctx.isSeller = await Seller.exists({ telegramId, isActive: true }) != null;
 
+    cacheCleanup();
+    const entry = { user, isSeller: ctx.isSeller, ts: Date.now() };
+    userCache.set(telegramId, entry);
+
     if (global.MAINTENANCE_MODE && user.role !== 'admin') {
       if (ctx.callbackQuery) {
         await ctx.answerCbQuery('🛠 Тех. обслуживание', { show_alert: true }).catch(() => {});
@@ -77,7 +145,13 @@ const userMiddleware = async (ctx, next) => {
       return;
     }
 
-    return next();
+    try {
+      return await next();
+    } finally {
+      if (ctx.user) {
+        entry.user = ctx.user;
+      }
+    }
   } catch (err) {
     logger.error(`userMiddleware error: ${err.message}`, { stack: err.stack });
 
@@ -92,3 +166,5 @@ const userMiddleware = async (ctx, next) => {
 };
 
 module.exports = userMiddleware;
+module.exports.invalidateUserCache = invalidateUserCache;
+module.exports.clearUserCache = clearUserCache;

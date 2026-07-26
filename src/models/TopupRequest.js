@@ -17,6 +17,8 @@ const topupRequestSchema = new mongoose.Schema({
       return trimmed || undefined;
     },
   },
+  // Адрес отправителя из блокчейна (для аудита и ручной проверки спорных заявок)
+  fromAddress: { type: String, default: null },
   adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   notes: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
@@ -33,5 +35,10 @@ topupRequestSchema.index(
     name: 'txid_string_unique',
   }
 );
+
+// Список pending-заявок в админке и счётчик в /admin
+topupRequestSchema.index({ status: 1, createdAt: 1 });
+// Статистика по обработанным заявкам за период
+topupRequestSchema.index({ status: 1, processedAt: -1 });
 
 module.exports = mongoose.model('TopupRequest', topupRequestSchema);

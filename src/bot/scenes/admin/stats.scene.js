@@ -55,35 +55,54 @@ const formatAmount = (usdt, currency) => {
 
 // Статистика (общая)
 const showStats = async (ctx) => {
-  const totalUsers = await User.countDocuments();
-  const totalOrders = await Order.countDocuments({ status: 'completed' });
-  const pendingOrders = await Order.countDocuments({
-    status: { $in: ['pending', 'awaiting_token', 'awaiting_confirmation'] },
-  });
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
-  const todayOrders = await Order.countDocuments({ status: 'completed', confirmedAt: { $gte: today } });
-
-  const revenueAgg = await Order.aggregate([
-    { $match: { status: 'completed' } },
-    { $group: { _id: null, total: { $sum: '$price' } } },
-  ]);
-  const totalRevenue = revenueAgg[0]?.total || 0;
-
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthRevAgg = await Order.aggregate([
-    { $match: { status: 'completed', confirmedAt: { $gte: monthStart } } },
-    { $group: { _id: null, total: { $sum: '$price' } } },
+
+  // Все счётчики параллельно (раньше - 11 последовательных запросов);
+  // выручка всего/за месяц/за сегодня - одной агрегацией через $facet
+  const [
+    totalUsers,
+    pendingOrders,
+    orderStats,
+    keyStats,
+    approvedReplacements,
+    rejectedReplacements,
+  ] = await Promise.all([
+    User.countDocuments(),
+    Order.countDocuments({ status: { $in: ['pending', 'awaiting_token', 'awaiting_confirmation'] } }),
+    Order.aggregate([
+      { $match: { status: 'completed' } },
+      {
+        $facet: {
+          total: [{ $group: { _id: null, total: { $sum: '$price' }, count: { $sum: 1 } } }],
+          month: [
+            { $match: { confirmedAt: { $gte: monthStart } } },
+            { $group: { _id: null, total: { $sum: '$price' } } },
+          ],
+          today: [
+            { $match: { confirmedAt: { $gte: today } } },
+            { $count: 'count' },
+          ],
+        },
+      },
+    ]),
+    Key.aggregate([
+      { $group: { _id: '$isUsed', cnt: { $sum: 1 } } },
+    ]),
+    Order.countDocuments({ replacementStatus: 'approved' }),
+    Order.countDocuments({ replacementStatus: 'rejected' }),
   ]);
-  const monthRevenue = monthRevAgg[0]?.total || 0;
 
-  const keysTotal = await Key.countDocuments();
-  const keysFree = await Key.countDocuments({ isUsed: false });
+  const totalOrders = orderStats[0]?.total[0]?.count || 0;
+  const totalRevenue = orderStats[0]?.total[0]?.total || 0;
+  const monthRevenue = orderStats[0]?.month[0]?.total || 0;
+  const todayOrders = orderStats[0]?.today[0]?.count || 0;
 
-  const approvedReplacements = await Order.countDocuments({ replacementStatus: 'approved' });
-  const rejectedReplacements = await Order.countDocuments({ replacementStatus: 'rejected' });
+  const keysFree = keyStats.find((k) => k._id === false)?.cnt || 0;
+  const keysUsed = keyStats.find((k) => k._id === true)?.cnt || 0;
+  const keysTotal = keysFree + keysUsed;
+
   const replacementRate = totalOrders > 0 ? ((approvedReplacements / totalOrders) * 100).toFixed(1) : '0';
 
   const text =
@@ -122,22 +141,55 @@ const showStats = async (ctx) => {
 const showLogistics = async (ctx, period = 'month', currency = 'USDT') => {
   const { from, to } = getPeriodRange(period);
 
-  // Выручка и закупка за период
-  const revenueAgg = await Order.aggregate([
-    {
-      $match: {
-        status: 'completed',
-        confirmedAt: { $gte: from, $lte: to },
+  // Все запросы периода параллельно (раньше - 5 последовательных)
+  const [revenueAgg, refundAgg, newUsers, topupAgg, topProducts] = await Promise.all([
+    // Выручка и закупка за период
+    Order.aggregate([
+      { $match: { status: 'completed', confirmedAt: { $gte: from, $lte: to } } },
+      {
+        $group: {
+          _id: null,
+          revenue: { $sum: '$price' },
+          cost: { $sum: '$costPrice' },
+          count: { $sum: 1 },
+        },
       },
-    },
-    {
-      $group: {
-        _id: null,
-        revenue: { $sum: '$price' },
-        cost: { $sum: '$costPrice' },
-        count: { $sum: 1 },
+    ]),
+    // Возвраты за период
+    Transaction.aggregate([
+      { $match: { type: 'refund', createdAt: { $gte: from, $lte: to } } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]),
+    // Новые пользователи за период
+    User.countDocuments({ createdAt: { $gte: from, $lte: to } }),
+    // Пополнения за период
+    TopupRequest.aggregate([
+      { $match: { status: 'confirmed', processedAt: { $gte: from, $lte: to } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    // Топ товаров за период
+    Order.aggregate([
+      { $match: { status: 'completed', confirmedAt: { $gte: from, $lte: to } } },
+      {
+        $group: {
+          _id: '$productId',
+          count: { $sum: 1 },
+          revenue: { $sum: '$price' },
+          cost: { $sum: '$costPrice' },
+        },
       },
-    },
+      { $sort: { revenue: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'product',
+        },
+      },
+      { $unwind: '$product' },
+    ]),
   ]);
 
   const revenue = revenueAgg[0]?.revenue || 0;
@@ -146,55 +198,12 @@ const showLogistics = async (ctx, period = 'month', currency = 'USDT') => {
   const margin = revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : '0.0';
   const count = revenueAgg[0]?.count || 0;
 
-  // Возвраты за период
-  const refundAgg = await Transaction.aggregate([
-    {
-      $match: {
-        type: 'refund',
-        createdAt: { $gte: from, $lte: to },
-      },
-    },
-    { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
-  ]);
   const refunds = refundAgg[0]?.total || 0;
   const refundCount = refundAgg[0]?.count || 0;
-
-  // Новые пользователи за период
-  const newUsers = await User.countDocuments({ createdAt: { $gte: from, $lte: to } });
-
-  // Пополнения за период
-  const topupAgg = await TopupRequest.aggregate([
-    { $match: { status: 'confirmed', processedAt: { $gte: from, $lte: to } } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
   const topups = topupAgg[0]?.total || 0;
 
   // Средний чек
   const avgCheck = count > 0 ? (revenue / count).toFixed(2) : '0.00';
-
-  // Топ-3 товара за период
-  const topProducts = await Order.aggregate([
-    { $match: { status: 'completed', confirmedAt: { $gte: from, $lte: to } } },
-    {
-      $group: {
-        _id: '$productId',
-        count: { $sum: 1 },
-        revenue: { $sum: '$price' },
-        cost: { $sum: '$costPrice' },
-      },
-    },
-    { $sort: { revenue: -1 } },
-    { $limit: 5 },
-    {
-      $lookup: {
-        from: 'products',
-        localField: '_id',
-        foreignField: '_id',
-        as: 'product',
-      },
-    },
-    { $unwind: '$product' },
-  ]);
 
   const periodLabel = PERIOD_LABELS[period] || period;
   const currSymbol = currency === 'RUB' ? '₽' : currency === 'USD' ? '$' : 'USDT';
@@ -279,21 +288,32 @@ const showSalesChart = async (ctx) => {
     startOfDays.push(d);
   }
 
-  // 2. Агрегация транзакций
+  // 2. Одна агрегация с группировкой по дню (раньше - 7 запросов в цикле).
+  // Группируем по локальной дате сервера, чтобы границы дней совпадали
+  // с setHours(0,0,0,0) из формирования labels.
+  const tzOffsetMin = -new Date().getTimezoneOffset();
+  const weekAgg = await Transaction.aggregate([
+    { $match: { type: 'purchase', createdAt: { $gte: startOfDays[0] } } },
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: { $add: ['$createdAt', tzOffsetMin * 60 * 1000] },
+          },
+        },
+        total: { $sum: '$amount' },
+      },
+    },
+  ]);
+  const volumeByDay = new Map(weekAgg.map((r) => [r._id, Math.abs(r.total || 0)]));
+
   const data = [];
   let totalWeek = 0;
   for (let i = 0; i < 7; i++) {
-    const start = startOfDays[i];
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-
-    const result = await Transaction.aggregate([
-      { $match: { type: 'purchase', createdAt: { $gte: start, $lt: end } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-    
-    // Purchases amount is negative, so we take absolute value
-    const volume = Math.abs(result[0]?.total || 0);
+    const d = startOfDays[i];
+    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const volume = volumeByDay.get(dayKey) || 0;
     data.push(volume.toFixed(2));
     totalWeek += volume;
   }

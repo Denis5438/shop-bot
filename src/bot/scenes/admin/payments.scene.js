@@ -29,7 +29,8 @@ const showPaymentsList = async (ctx) => {
   const requests = await TopupRequest.find({ status: 'pending' })
     .sort({ createdAt: 1 })
     .limit(20)
-    .populate('userId');
+    .populate('userId', 'username telegramId firstName')
+    .lean();
 
   if (!requests.length) {
     const emptyOpts = {
@@ -207,7 +208,13 @@ const approveTopupRequest = async (ctx, requestId, amount) => {
 
       if (!approvedRequest) return;
 
-      approvedUser = await User.findById(approvedRequest.userId, null, sessionOptions);
+      // Атомарный $inc: read-modify-write через save() терял параллельные
+      // изменения баланса (например, одновременную покупку пользователя)
+      approvedUser = await User.findOneAndUpdate(
+        { _id: approvedRequest.userId },
+        { $inc: { balance: amount } },
+        { new: true, ...(sessionOptions || {}) }
+      );
       if (!approvedUser) {
         await TopupRequest.updateOne(
           { _id: approvedRequest._id },
@@ -216,9 +223,6 @@ const approveTopupRequest = async (ctx, requestId, amount) => {
         );
         throw new Error('TOPUP_USER_NOT_FOUND');
       }
-
-      approvedUser.balance = parseFloat((approvedUser.balance + amount).toFixed(8));
-      await approvedUser.save(sessionOptions);
 
       await new Transaction({
         userId: approvedUser._id,
@@ -252,6 +256,10 @@ const approveTopupRequest = async (ctx, requestId, amount) => {
     }
     return false;
   }
+
+  // Сброс кэша middleware: пользователь после «Баланс пополнен» сразу жмёт
+  // «Купить» - pre-check не должен видеть старый баланс
+  require('../../middlewares/user').invalidateUserCache(approvedUser.telegramId);
 
   await notif.notifyUserTopupConfirmed(approvedUser, amount);
 

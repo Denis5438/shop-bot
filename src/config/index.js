@@ -12,4 +12,7 @@ module.exports = {
   TOPUP_NETWORK: process.env.TOPUP_NETWORK || 'TRC-20 (TRON)',
   BYBIT_API_KEY: process.env.BYBIT_API_KEY || '',
   BYBIT_API_SECRET: process.env.BYBIT_API_SECRET || '',
+  // Контракты токенов для проверки BEP-20 платежей (переопределяются через env)
+  BSC_USDT_CONTRACT: (process.env.BSC_USDT_CONTRACT || '0x55d398326f99059ff775485246999027b3197955').toLowerCase(),
+  BSC_BUSD_CONTRACT: (process.env.BSC_BUSD_CONTRACT || '0xe9e7cea3dedca5984780bafc599bd69add087d56').toLowerCase(),
 };

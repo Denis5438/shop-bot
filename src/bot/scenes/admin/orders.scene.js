@@ -70,12 +70,14 @@ const showOrdersList = async (ctx, filter = 'active', page = 1) => {
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const safePage = Math.min(Math.max(1, parseInt(page, 10) || 1), totalPages);
 
+  // Display-only список: узкий populate + lean вместо полной гидрации
   const orders = await Order.find(query)
     .sort({ createdAt: -1 })
     .skip((safePage - 1) * perPage)
     .limit(perPage)
-    .populate('userId')
-    .populate('productId');
+    .populate('userId', 'username telegramId firstName')
+    .populate('productId', 'name icon')
+    .lean();
 
   if (!orders.length) {
     const pendingPreordersCount = await Order.countDocuments({ status: 'preorder_pending' });
@@ -279,10 +281,14 @@ const confirmAndActivate = async (ctx, orderId) => {
       key.usedByOrder = null;
       await key.save();
 
-      const user = await User.findById(order.userId);
+      // Атомарный $inc + сброс кэша middleware
+      const user = await User.findOneAndUpdate(
+        { _id: order.userId },
+        { $inc: { balance: order.price } },
+        { new: true }
+      );
       if (user) {
-        user.balance = parseFloat((user.balance + order.price).toFixed(8));
-        await user.save();
+        require('../../middlewares/user').invalidateUserCache(user.telegramId);
 
         await new Transaction({
           userId: user._id,
@@ -340,10 +346,14 @@ const confirmAndActivate = async (ctx, orderId) => {
     key.usedByOrder = null;
     await key.save();
 
-    const user = await User.findById(order.userId);
+    // Атомарный $inc + сброс кэша middleware
+    const user = await User.findOneAndUpdate(
+      { _id: order.userId },
+      { $inc: { balance: order.price } },
+      { new: true }
+    );
     if (user) {
-      user.balance = parseFloat((user.balance + order.price).toFixed(8));
-      await user.save();
+      require('../../middlewares/user').invalidateUserCache(user.telegramId);
 
       await new Transaction({
         userId: user._id,
@@ -376,10 +386,14 @@ const confirmAndActivate = async (ctx, orderId) => {
       freshOrder.activationResult = `Критическая ошибка: ${err.message}`;
       await freshOrder.save();
 
-      const user = await User.findById(freshOrder.userId);
+      // Атомарный $inc + сброс кэша middleware
+      const user = await User.findOneAndUpdate(
+        { _id: freshOrder.userId },
+        { $inc: { balance: freshOrder.price } },
+        { new: true }
+      );
       if (user) {
-        user.balance = parseFloat((user.balance + freshOrder.price).toFixed(8));
-        await user.save();
+        require('../../middlewares/user').invalidateUserCache(user.telegramId);
 
         await new Transaction({
           userId: user._id,
@@ -458,13 +472,15 @@ const cancelOrder = async (ctx, orderId) => {
 
       if (!cancelledOrder) return;
 
-      const user = await User.findById(cancelledOrder.userId, null, sessionOptions);
+      // Атомарный $inc: не теряет параллельные изменения баланса
+      const user = await User.findOneAndUpdate(
+        { _id: cancelledOrder.userId },
+        { $inc: { balance: cancelledOrder.price } },
+        { new: true, ...(sessionOptions || {}) }
+      );
       if (!user) {
         throw new Error('CANCEL_USER_NOT_FOUND');
       }
-
-      user.balance = parseFloat((user.balance + cancelledOrder.price).toFixed(8));
-      await user.save(sessionOptions);
       refundedUser = user;
 
       await new Transaction({
@@ -495,6 +511,8 @@ const cancelOrder = async (ctx, orderId) => {
   }
 
   if (refundedUser) {
+    // Сброс кэша middleware - возврат должен быть виден пользователю сразу
+    require('../../middlewares/user').invalidateUserCache(refundedUser.telegramId);
     await notif.notifyUserOrderCancelled(refundedUser, cancelledOrder, cachedProduct, 'Отменено администратором');
   }
 

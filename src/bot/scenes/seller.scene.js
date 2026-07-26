@@ -28,25 +28,69 @@ const getMinWithdraw = async () => {
 };
 
 // ─── Найти продавца ───────────────────────────────────────────
-const findSeller = async (ctx) => {
+// ВАЖНО: автопривязки по username больше нет - это позволяло захватить чужой
+// аккаунт продавца (ник в Telegram освобождается и его может занять кто угодно).
+// Вместо этого создаётся заявка на привязку, которую подтверждает админ
+// (кнопки в уведомлении → обработчики seller:bind:* в bot/index.js).
+// allowInactive: true - только для кабинета (он сам показывает "заблокирован").
+// Остальные точки входа (заказы, выдача товара, вывод средств) получают null,
+// т.к. заблокированный продавец раньше продолжал работать по старым кнопкам.
+const findSeller = async (ctx, { allowInactive = false } = {}) => {
   const telegramId = ctx.from?.id || ctx.user?.telegramId;
-  let seller = await Seller.findOne({ telegramId });
+  const seller = await Seller.findOne({ telegramId });
+  if (seller) {
+    if (!seller.isActive && !allowInactive) return null;
+    return seller;
+  }
 
-  if (!seller && ctx.from?.username) {
-    // Ищем продавца, добавленного админом по юзернейму (у которого ещё нет telegramId)
-    seller = await Seller.findOne({ username: { $regex: new RegExp(`^${ctx.from.username}$`, 'i') }, telegramId: null });
-    if (seller) {
-      seller.telegramId = telegramId;
-      await seller.save();
+  if (ctx.from?.username) {
+    // Продавец, добавленный админом по юзернейму (ещё без telegramId)
+    const escapedUsername = String(ctx.from.username).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const unbound = await Seller.findOne({
+      username: { $regex: new RegExp(`^${escapedUsername}$`, 'i') },
+      telegramId: null,
+    });
+    if (unbound) {
+      // Атомарно фиксируем заявку (одну на аккаунт), чтобы не спамить админам
+      const claimed = await Seller.findOneAndUpdate(
+        { _id: unbound._id, telegramId: null, claimTelegramId: null },
+        { $set: { claimTelegramId: telegramId, claimUsername: ctx.from.username, claimRequestedAt: new Date() } },
+        { new: true }
+      );
+      if (claimed) {
+        const { Markup } = require('telegraf');
+        await notif.sendToAdmins(
+          `🔐 <b>Заявка на привязку аккаунта продавца</b>\n\n` +
+          `🏪 Продавец: <b>${escapeHtml(unbound.username)}</b> (баланс: ${unbound.balance.toFixed(2)} USDT)\n` +
+          `👤 Пользователь: @${escapeHtml(ctx.from.username)} (ID: <code>${telegramId}</code>)\n\n` +
+          `Подтвердите, что это действительно ваш продавец:`,
+          Markup.inlineKeyboard([[
+            Markup.button.callback('✅ Подтвердить', `seller:bind:approve:${unbound._id}`),
+            Markup.button.callback('❌ Отклонить', `seller:bind:reject:${unbound._id}`),
+          ]])
+        ).catch(() => {});
+        // Сообщаем пользователю ОДИН раз - при создании заявки
+        await ctx.reply('🔐 Заявка на привязку аккаунта продавца отправлена администратору. Вы получите доступ после подтверждения.').catch(() => {});
+      } else if (unbound.claimTelegramId === telegramId) {
+        // Его собственная заявка ещё на рассмотрении. answerCbQuery валиден
+        // только для callback-апдейтов (на тексте бросает синхронно).
+        try {
+          if (ctx.callbackQuery) {
+            await ctx.answerCbQuery('⏳ Заявка ещё на рассмотрении у администратора').catch(() => {});
+          } else {
+            await ctx.reply('⏳ Заявка на привязку аккаунта продавца ещё на рассмотрении у администратора.').catch(() => {});
+          }
+        } catch (_) {}
+      }
     }
   }
 
-  return seller;
+  return null;
 };
 
 // ─── Главная страница кабинета продавца ──────────────────────────────────────
 const showSellerCabinet = async (ctx) => {
-  const seller = await findSeller(ctx);
+  const seller = await findSeller(ctx, { allowInactive: true });
 
   if (!seller) {
     const text = ctx.t('seller_access_denied_title') + ctx.t('seller_access_denied_text');
@@ -129,11 +173,13 @@ const showSellerOrders = async (ctx, filter = 'active') => {
     query.status = { $in: ['completed', 'cancelled'] };
   }
 
+  // Display-only список: узкий populate + lean
   const orders = await Order.find(query)
     .sort({ createdAt: -1 })
     .limit(20)
-    .populate('productId')
-    .populate('userId');
+    .populate('productId', 'name nameEn icon')
+    .populate('userId', 'username telegramId')
+    .lean();
 
   if (!orders.length) {
     const emptyText = filter === 'active' ? ctx.t('seller_orders_empty_active') : ctx.t('seller_orders_empty_history');
@@ -549,13 +595,16 @@ const processWithdrawAmount = async (ctx, seller, amount) => {
 };
 
 const confirmWithdraw = async (ctx, amountStr) => {
-  const amount = parseFloat(amountStr);
+  // Сумма приходит из callback_data - валидируем строго (2 знака, разумный
+  // диапазон), содержимому callback доверять нельзя.
+  const amount = Math.round(parseFloat(amountStr) * 100) / 100;
   const seller = await findSeller(ctx);
   if (!seller) return ctx.answerCbQuery(ctx.t('seller_no_access'), { show_alert: true });
+  if (!seller.isActive) return ctx.answerCbQuery(ctx.t('seller_no_access'), { show_alert: true });
 
   const minWithdraw = await getMinWithdraw();
 
-  if (Number.isNaN(amount) || amount < minWithdraw) {
+  if (!Number.isFinite(amount) || amount < minWithdraw || amount > 1_000_000) {
     return ctx.answerCbQuery(ctx.t('seller_withdraw_min_error', { min: minWithdraw }), { show_alert: true });
   }
 
@@ -568,18 +617,34 @@ const confirmWithdraw = async (ctx, amountStr) => {
     return ctx.answerCbQuery(ctx.t('seller_withdraw_pending_error'), { show_alert: true });
   }
 
-  // Резервируем средства (списываем с баланса)
-  seller.balance = parseFloat((seller.balance - amount).toFixed(8));
-  await seller.save();
+  // Атомарное резервирование: условие balance >= amount и isActive прямо в
+  // фильтре. Раньше два клика "Подтвердить" создавали ДВЕ заявки при одном
+  // списании - админ выплачивал обе.
+  const debited = await Seller.findOneAndUpdate(
+    { _id: seller._id, isActive: true, balance: { $gte: amount } },
+    { $inc: { balance: -amount } },
+    { new: true }
+  );
+  if (!debited) {
+    return ctx.answerCbQuery(ctx.t('seller_withdraw_insufficient', { balance: seller.balance.toFixed(2) }), { show_alert: true });
+  }
+  seller.balance = debited.balance;
 
-  const withdrawal = new SellerWithdrawal({
-    sellerId: seller._id,
-    amount,
-    walletAddress: seller.walletAddress,
-    network: seller.walletNetwork || 'TRC-20',
-    status: 'pending',
-  });
-  await withdrawal.save();
+  let withdrawal;
+  try {
+    withdrawal = new SellerWithdrawal({
+      sellerId: seller._id,
+      amount,
+      walletAddress: seller.walletAddress,
+      network: seller.walletNetwork || 'TRC-20',
+      status: 'pending',
+    });
+    await withdrawal.save();
+  } catch (err) {
+    // Заявка не создалась - возвращаем зарезервированное
+    await Seller.updateOne({ _id: seller._id }, { $inc: { balance: amount } }).catch(() => {});
+    throw err;
+  }
 
   await notif.notifyAdminSellerWithdrawal(seller, withdrawal);
 
