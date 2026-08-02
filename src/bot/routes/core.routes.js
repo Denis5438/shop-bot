@@ -136,7 +136,7 @@ module.exports = (bot) => {
     if (ctx.user?.acceptedToSAt) {
       lines.push('');
       lines.push(t('documents_accepted_at', {
-        date: new Date(ctx.user.acceptedToSAt).toLocaleString('ru-RU'),
+        date: formatDateTimeMSK(ctx.user.acceptedToSAt),
       }));
     }
     const keyboard = Markup.inlineKeyboard([
