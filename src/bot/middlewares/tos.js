@@ -1,7 +1,7 @@
 const { Markup } = require('telegraf');
 
-const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-04-01-26';
-const AGREEMENT_URL = 'https://telegra.ph/DOGOVOR-PUBLICHNOJ-OFERTY-07-24-2';
+const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-06-21-31';
+const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19';
 
 /**
  * Клавиатура ToS-гейта (показывается до принятия условий).
