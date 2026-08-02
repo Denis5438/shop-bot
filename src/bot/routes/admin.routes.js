@@ -138,9 +138,10 @@ module.exports = (bot) => {
     const product = await Product.findById(productId);
     if (!product) return ctx.reply('❌ Товар не найден');
 
-    const stock = product.type === 'manual'
-      ? '∞'
-      : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+    const autoKeys = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
+    const stock = autoKeys > 0
+      ? autoKeys
+      : (product.type === 'manual' ? (product.manualStock === -1 ? '∞' : product.manualStock) : 0);
 
     const { label } = await notif.buildSegmentQuery(segment);
     const totalInSegment = await notif.countSegment(segment);
