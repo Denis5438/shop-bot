@@ -148,15 +148,15 @@ const showShopPage = async (ctx) => {
     }
   }
 
-  const isColoredTheme = ctx.user?.btnStyle !== 'classic';
+  const isClassicTheme = ctx.user?.btnStyle === 'classic';
   const buttons = [];
 
   // 1. Категории в наличии (сетка по 3 в ряд)
   let row = [];
   for (const cat of inStockCats) {
-    const colorBadge = isColoredTheme ? '🟢 ' : '';
-    const label = `${colorBadge}${cat.icon || '📁'} ${cat.name}`;
+    const label = `${cat.icon || '📁'} ${cat.name}`;
     const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
+    if (!isClassicTheme) btn.style = 'success';
     row.push(btn);
 
     if (row.length === 3) {
@@ -175,9 +175,9 @@ const showShopPage = async (ctx) => {
     if (!isCollapsed) {
       let outRow = [];
       for (const cat of outOfStockCats) {
-        const colorBadge = isColoredTheme ? '🔴 ' : '';
-        const label = `${colorBadge}${cat.icon || '📁'} ${cat.name}`;
+        const label = `${cat.icon || '📁'} ${cat.name}`;
         const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
+        if (!isClassicTheme) btn.style = 'danger';
         outRow.push(btn);
 
         if (outRow.length === 3) {
@@ -226,18 +226,17 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const buttons = [];
   const lang = ctx.user?.language || 'ru';
 
-  const isColoredTheme = ctx.user?.btnStyle !== 'classic';
-
   for (const product of paginated) {
     const stock = stockMap.get(String(product._id));
     const effectivePrice = await getEffectivePrice(product, stock);
     const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
     const stockBadge = stock === '∞' ? '∞' : stock;
-    const isAvailable = stock === '∞' || stock > 0;
-    const colorBadge = isColoredTheme ? (isAvailable ? '🟢 ' : '🔴 ') : '';
 
-    const label = `${colorBadge}${product.icon || '📦'} ${displayName} | $${effectivePrice} | 📦 ${stockBadge}`;
+    const label = `${product.icon || '📦'} ${displayName} | $${effectivePrice} | 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
+    if (ctx.user?.btnStyle !== 'classic') {
+      btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
+    }
 
     buttons.push([btn]);
   }
