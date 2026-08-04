@@ -13,6 +13,7 @@ const productsScene = require('../scenes/admin/products.scene');
 const sellerScene = require('../scenes/seller.scene');
 const sellerWithdrawalsScene = require('../scenes/admin/seller_withdrawals.scene');
 const settingsScene = require('../scenes/admin/settings.scene');
+const reqChannelsScene = require('../scenes/admin/req_channels.scene');
 const topupScene = require('../scenes/topup.scene');
 const usersScene = require('../scenes/admin/users.scene');
 const { Markup } = require('telegraf');
@@ -136,6 +137,9 @@ module.exports = (bot) => {
 
     // Добавление товара (admin) - включает назначение продавца
     if (isAdminUser && await productsScene.handleProductInput(ctx)) return;
+
+    // Настройки Обязательной подписки на каналы (admin)
+    if (isAdminUser && await reqChannelsScene.handleReqChannelInput(ctx)) return;
 
     // Добавление ключей (admin)
     if (isAdminUser && await keysScene.handleKeysInput(ctx)) return;

@@ -18,6 +18,37 @@ const { escapeHtml, formatDateTimeMSK } = require('../utils/ui');
 const { mainKeyboard, languageKeyboard } = require('../keyboards/main.keyboard');
 const { toRub } = require('../../services/currency.service');
 const { tosGateKeyboard, tosGateText, PRIVACY_URL, AGREEMENT_URL } = require('../middlewares/tos');
+const { checkUserSubscriptions } = require('../services/channelCheck.service');
+
+const showChannelSubScreen = async (ctx, subCheckResult, isEdit = false) => {
+  const { results } = subCheckResult;
+  let text = `📢 <b>Для использования бота необходимо подписаться на наши каналы:</b>\n\n`;
+
+  const buttons = [];
+
+  results.forEach((item, idx) => {
+    const icon = item.isSubscribed ? '✅' : '❌';
+    const statusText = item.isSubscribed ? '<i>Подписан</i>' : '<b>НЕ подписан</b>';
+    text += `${idx + 1}. <b>${escapeHtml(item.channel.title)}</b> — ${icon} ${statusText}\n`;
+
+    buttons.push([
+      Markup.button.url(`${item.isSubscribed ? '✅' : '📢'} ${idx + 1}. ${item.channel.title}`, item.channel.inviteLink),
+    ]);
+  });
+
+  text += `\n<i>После подписки на все каналы нажмите кнопку ниже для проверки!</i>`;
+  buttons.push([Markup.button.callback('🔄 Проверить подписку', 'channel:check_sub')]);
+
+  if (isEdit) {
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
+    } catch (_) {
+      await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
+    }
+  } else {
+    await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
+  }
+};
 
 module.exports = (bot) => {
   bot.start(async (ctx) => {
@@ -41,6 +72,12 @@ module.exports = (bot) => {
       return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
     }
 
+    // Проверка обязательной подписки на каналы
+    const subCheck = await checkUserSubscriptions(ctx.telegram, user.telegramId);
+    if (subCheck.isEnabled && !subCheck.allSubscribed) {
+      return showChannelSubScreen(ctx, subCheck, false);
+    }
+
     await ctx.reply(
       t('welcome_back', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
       { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
@@ -61,6 +98,13 @@ module.exports = (bot) => {
       ).catch((err) => logger.error(`tos:accept save: ${err.message}`));
     }
     await ctx.answerCbQuery(t('tos_accepted_alert')).catch(() => {});
+
+    // Проверка обязательной подписки на каналы после оферты
+    const subCheck = await checkUserSubscriptions(ctx.telegram, ctx.user.telegramId);
+    if (subCheck.isEnabled && !subCheck.allSubscribed) {
+      return showChannelSubScreen(ctx, subCheck, true);
+    }
+
     try {
       await ctx.editMessageText(
         t('welcome_back', {
@@ -80,6 +124,24 @@ module.exports = (bot) => {
         { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
       ).catch(() => {});
     }
+  });
+
+  // ─────────────────── Проверка подписки на каналы ───────────────────
+  bot.action('channel:check_sub', async (ctx) => {
+    const subCheck = await checkUserSubscriptions(ctx.telegram, ctx.from.id);
+    if (!subCheck.isEnabled || subCheck.allSubscribed) {
+      await ctx.answerCbQuery('✅ Отлично! Вы подписаны на все каналы. Добро пожаловать!');
+      const user = ctx.user;
+      const t = ctx.t;
+      await ctx.reply(
+        t('welcome', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
+        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+      );
+      return;
+    }
+
+    await ctx.answerCbQuery('❌ Вы ещё не подписались на все каналы! Проверьте список.', { show_alert: true });
+    await showChannelSubScreen(ctx, subCheck, true);
   });
 
   bot.action(/^profile:cancel_preorder:(.+)$/, async (ctx) => {

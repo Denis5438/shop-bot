@@ -26,6 +26,8 @@ const settingsSchema = new mongoose.Schema({
   // Продавцы
   minSellerWithdraw: { type: Number, default: 5 },
   autoConfirmHours: { type: Number, default: 24 },
+  // Обязательная подписка на каналы
+  requiredChannelsEnabled: { type: Boolean, default: false },
 }, {
   timestamps: true
 });

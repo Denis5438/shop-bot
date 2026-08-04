@@ -33,6 +33,7 @@ const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pend
     [
       Markup.button.callback(`⚠️ Споры${counts.pendingDisputes > 0 ? ` (🔴 ${counts.pendingDisputes})` : ''}`, 'admin:disputes:list')
     ],
+    [Markup.button.callback('📢 Обязательная подписка (Каналы)', 'admin:req_channels')],
     [Markup.button.callback('⚙️ Настройки', 'admin:settings')],
     [Markup.button.callback('🔍 Глобальный Поиск', 'admin:search')],
   ]);

@@ -14,6 +14,7 @@ const paymentsScene = require('../scenes/admin/payments.scene');
 const productsScene = require('../scenes/admin/products.scene');
 const sellerWithdrawalsScene = require('../scenes/admin/seller_withdrawals.scene');
 const settingsScene = require('../scenes/admin/settings.scene');
+const reqChannelsScene = require('../scenes/admin/req_channels.scene');
 const statsScene = require('../scenes/admin/stats.scene');
 const usersScene = require('../scenes/admin/users.scene');
 const { Markup } = require('telegraf');
@@ -123,6 +124,25 @@ module.exports = (bot) => {
     } catch (_) {
       await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
     }
+  });
+
+  // ─── ADMIN: Обязательная подписка (Каналы) ───
+  bot.action('admin:req_channels', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery();
+    await reqChannelsScene.showReqChannelsMain(ctx);
+  });
+
+  bot.action('admin:req_channels:toggle', adminMiddleware, async (ctx) => {
+    await reqChannelsScene.toggleReqChannels(ctx);
+  });
+
+  bot.action('admin:req_channels:add', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery();
+    await reqChannelsScene.startAddChannel(ctx);
+  });
+
+  bot.action(/^admin:req_channels:delete:(.+)$/, adminMiddleware, async (ctx) => {
+    await reqChannelsScene.deleteReqChannel(ctx, ctx.match[1]);
   });
 
   // Запуск рассылки на конкретный сегмент (после выбора в предыдущем хэндлере).
