@@ -330,10 +330,12 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const outOfStock = stock !== '∞' && stock === 0;
 
   let alertLine = '';
-  if (effectivePrice > product.price) {
-    alertLine = '\n' + t('shop_alert_high_demand');
-  } else if (effectivePrice < product.price) {
-    alertLine = '\n' + t('shop_alert_markdown');
+  if (!activePromo) {
+    if (effectivePrice > product.price) {
+      alertLine = '\n' + t('shop_alert_high_demand');
+    } else if (effectivePrice < product.price) {
+      alertLine = '\n' + t('shop_alert_markdown');
+    }
   }
 
   const priceLabel = lang === 'en' ? '💰 Price' : '💰 Цена';
