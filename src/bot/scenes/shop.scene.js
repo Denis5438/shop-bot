@@ -148,14 +148,15 @@ const showShopPage = async (ctx) => {
     }
   }
 
+  const isClassicTheme = ctx.user?.btnStyle === 'classic';
   const buttons = [];
 
-  // 1. Зелёные категории в наличии (сетка по 3 в ряд)
+  // 1. Категории в наличии (сетка по 3 в ряд)
   let row = [];
   for (const cat of inStockCats) {
     const label = `${cat.icon || '📁'} ${cat.name}`;
     const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
-    btn.style = 'success';
+    if (!isClassicTheme) btn.style = 'success';
     row.push(btn);
 
     if (row.length === 3) {
@@ -176,7 +177,7 @@ const showShopPage = async (ctx) => {
       for (const cat of outOfStockCats) {
         const label = `${cat.icon || '📁'} ${cat.name}`;
         const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
-        btn.style = 'danger';
+        if (!isClassicTheme) btn.style = 'danger';
         outRow.push(btn);
 
         if (outRow.length === 3) {
@@ -233,7 +234,9 @@ const showCategory = async (ctx, categoryId, page = 1) => {
 
     const label = `${product.icon || '📦'} ${displayName} | $${effectivePrice} | 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
-    btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
+    if (ctx.user?.btnStyle !== 'classic') {
+      btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
+    }
 
     buttons.push([btn]);
   }

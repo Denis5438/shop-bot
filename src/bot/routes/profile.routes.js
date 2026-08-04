@@ -64,4 +64,8 @@ module.exports = (bot) => {
     await ctx.answerCbQuery();
     await profileScene.showLanguageSelect(ctx);
   });
+
+  bot.action('profile:toggle_btn_style', async (ctx) => {
+    await profileScene.toggleBtnStyle(ctx);
+  });
 };

@@ -66,6 +66,10 @@ const showProfile = async (ctx) => {
     `🔗 ${t('profile_ref_code')}: <code>${escapeHtml(user.referralCode)}</code>\n` +
     `📅 ${t('profile_joined')}: ${createdAt}</blockquote>`;
 
+  const btnStyleLabel = user.btnStyle === 'classic'
+    ? (lang === 'en' ? '🎨 Button Theme: 🔘 Classic' : '🎨 Стиль кнопок: 🔘 Прозрачные')
+    : (lang === 'en' ? '🎨 Button Theme: 🟢 Colored' : '🎨 Стиль кнопок: 🟢 Цветные');
+
   const buttons = [];
   if (activeOrder) {
     buttons.push([Markup.button.callback(
@@ -75,6 +79,7 @@ const showProfile = async (ctx) => {
   }
   buttons.push([Markup.button.callback(t('btn_orders'), 'profile:orders')]);
   buttons.push([Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements')]);
+  buttons.push([Markup.button.callback(btnStyleLabel, 'profile:toggle_btn_style')]);
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
 
   const keyboard = Markup.inlineKeyboard(buttons);
@@ -320,4 +325,26 @@ const cancelPreorder = async (ctx, orderId) => {
   await showOrderDetail(ctx, orderId);
 };
 
-module.exports = { showProfile, showLanguageSelect, showOrders, showOrderDetail, showAchievements, cancelPreorder };
+const toggleBtnStyle = async (ctx) => {
+  if (ctx.user) {
+    const nextStyle = ctx.user.btnStyle === 'classic' ? 'colored' : 'classic';
+    ctx.user.btnStyle = nextStyle;
+    await User.updateOne({ _id: ctx.user._id }, { $set: { btnStyle: nextStyle } });
+    const lang = ctx.user.language || 'ru';
+    const alertText = nextStyle === 'classic'
+      ? (lang === 'en' ? '🔘 Theme updated: Classic transparent buttons!' : '🔘 Тема обновлена: Прозрачные классические кнопки!')
+      : (lang === 'en' ? '🟢 Theme updated: Colored buttons!' : '🟢 Тема обновлена: Яркие цветные кнопки!');
+    await ctx.answerCbQuery(alertText).catch(() => {});
+  }
+  await showProfile(ctx);
+};
+
+module.exports = {
+  showProfile,
+  showLanguageSelect,
+  showOrders,
+  showOrderDetail,
+  showAchievements,
+  cancelPreorder,
+  toggleBtnStyle,
+};
