@@ -58,27 +58,52 @@ module.exports = (bot) => {
     // ─── АКТИВАЦИЯ ПРОМОКОДА ПОЛЬЗОВАТЕЛЕМ ───
     if (session.userAction === 'enter_promo') {
       const promoService = require('../../services/promo.service');
-      ctx.session.userAction = null;
+      const userText = ctx.message?.text || '';
+      const targetMsgId = session.promoMsgId;
 
-      const res = await promoService.activatePromoCode(ctx.user, ctx.message.text);
-      if (!res.success) {
-        return ctx.reply(res.reason, {
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback('🔄 Попробовать снова', 'user:activate_promo')],
-            [Markup.button.callback('⬅️ В профиль', 'menu:profile')],
-          ]),
-        });
+      // Удаляем текстовое сообщение пользователя, чтобы не замусоривать чат
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
       }
+
+      const res = await promoService.activatePromoCode(ctx.user, userText);
+
+      if (!res.success) {
+        const text = `${res.reason}\n\n` +
+          `🎟 <b>Активация промокода</b>\n` +
+          `Введите корректный промокод в ответном сообщении:`;
+
+        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('⬅️ В профиль', 'menu:profile')]]);
+
+        if (targetMsgId) {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+            return;
+          } catch (_) {}
+        }
+
+        const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+        if (sent?.message_id) ctx.session.promoMsgId = sent.message_id;
+        return;
+      }
+
+      ctx.session.userAction = null;
 
       if (res.type === 'balance') {
         const text = `🎁 <b>Промокод <code>${res.code}</code> успешно активирован!</b>\n\n` +
           `💰 Вам зачислено: <b>+${res.bonusAmount.toFixed(2)} USDT</b> на баланс!\n` +
           `💳 Ваш текущий баланс: <b>${res.newBalance.toFixed(2)} USDT</b>`;
 
-        return ctx.reply(text, {
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([[Markup.button.callback('👤 В профиль', 'menu:profile')]]),
-        });
+        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('👤 В профиль', 'menu:profile')]]);
+
+        if (targetMsgId) {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+            return;
+          } catch (_) {}
+        }
+
+        return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
       }
     }
 
