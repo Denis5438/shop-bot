@@ -73,6 +73,7 @@ const activatePromoCode = async (user, codeStr) => {
     value: promo.value,
     minOrderAmount: promo.minOrderAmount,
     productId: promo.productId ? promo.productId.toString() : null,
+    isActive: true,
   };
 };
 
@@ -80,7 +81,8 @@ const activatePromoCode = async (user, codeStr) => {
  * Валидация и расчёт скидки для корзины/заказа
  */
 const calculateDiscount = (promo, orderAmount, productId = null) => {
-  if (!promo || !promo.isActive) return { valid: false, reason: '❌ Промокод неактивен' };
+  if (!promo) return { valid: false, reason: '❌ Промокод не найден' };
+  if (promo.isActive === false) return { valid: false, reason: '❌ Промокод неактивен' };
 
   if (promo.minOrderAmount && orderAmount < promo.minOrderAmount) {
     return { valid: false, reason: `❌ Промокод действует только от ${promo.minOrderAmount} USDT` };
