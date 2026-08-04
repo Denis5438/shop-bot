@@ -18,7 +18,7 @@ const Seller = require('../../models/Seller');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
 const { balanceHeader, errorScreen, escapeHtml, formatDigitalItem } = require('../utils/ui');
 
-const getEffectivePrice = async (product, stockCount) => {
+const getEffectivePrice = async (product, stockCount, activePromo = null) => {
   const settings = await getSettings();
   let price = product.price;
 
@@ -40,6 +40,14 @@ const getEffectivePrice = async (product, stockCount) => {
       const discountedPrice = price * discountMult;
       const costLimit = product.costPrice || 0;
       price = parseFloat(Math.max(discountedPrice, costLimit).toFixed(2));
+    }
+  }
+
+  if (activePromo) {
+    const promoService = require('../../services/promo.service');
+    const discountRes = promoService.calculateDiscount(activePromo, price, product._id);
+    if (discountRes.valid) {
+      price = discountRes.finalPrice;
     }
   }
 
@@ -226,13 +234,20 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const buttons = [];
   const lang = ctx.user?.language || 'ru';
 
+  const activePromo = ctx.session?.activePromo;
+
   for (const product of paginated) {
     const stock = stockMap.get(String(product._id));
-    const effectivePrice = await getEffectivePrice(product, stock);
+    const effectivePrice = await getEffectivePrice(product, stock, activePromo);
     const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
     const stockBadge = stock === '∞' ? '∞' : stock;
 
-    const label = `${product.icon || '📦'} ${displayName} | $${effectivePrice} | 📦 ${stockBadge}`;
+    let priceLabelStr = `$${effectivePrice}`;
+    if (product.price > effectivePrice) {
+      priceLabelStr = `̶$̶${product.price} ➔ $${effectivePrice}`;
+    }
+
+    const label = `${product.icon || '📦'} ${displayName} | ${priceLabelStr} | 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
     if (ctx.user?.btnStyle !== 'classic') {
       btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
@@ -277,7 +292,8 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const lang = ctx.user?.language || 'ru';
   const name = lang === 'en' && product.nameEn ? product.nameEn : product.name;
   const description = lang === 'en' && product.descriptionEn ? product.descriptionEn : product.description;
-  const effectivePrice = await getEffectivePrice(product, stock);
+  const activePromo = ctx.session?.activePromo;
+  const effectivePrice = await getEffectivePrice(product, stock, activePromo);
   const outOfStock = stock !== '∞' && stock === 0;
 
   let alertLine = '';
@@ -292,7 +308,8 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
 
   let priceDisplay = `<b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)`;
   if (effectivePrice < product.price) {
-    priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b> 🔥 (~${toRub(effectivePrice)} ₽)`;
+    const promoNote = activePromo ? ` (Промокод ${activePromo.code})` : '';
+    priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b> 🔥${promoNote} (~${toRub(effectivePrice)} ₽)`;
   }
 
   const text =
