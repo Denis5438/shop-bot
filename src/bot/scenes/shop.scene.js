@@ -222,65 +222,20 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const paginated = products.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   const stockMap = await getStockMap(paginated);
+  const buttons = [];
   const lang = ctx.user?.language || 'ru';
-  const isCollapsed = ctx.session?.outOfStockCollapsed ?? true;
-
-  const inStockList = [];
-  const outOfStockList = [];
 
   for (const product of paginated) {
     const stock = stockMap.get(String(product._id));
-    const isAvailable = stock === '∞' || stock > 0;
-    if (isAvailable) {
-      inStockList.push({ product, stock });
-    } else {
-      outOfStockList.push({ product, stock });
-    }
-  }
+    const effectivePrice = await getEffectivePrice(product, stock);
+    const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+    const stockBadge = stock === '∞' ? '∞' : stock;
 
-  const buttons = [];
+    const label = `${product.icon || '📦'} ${displayName} | $${effectivePrice} | 📦 ${stockBadge}`;
+    const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
+    btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
 
-  // 1. Отрисовка товаров В НАЛИЧИИ (Сетка по 3 кнопки в ряд)
-  let row = [];
-  for (const item of inStockList) {
-    const p = item.product;
-    const displayName = lang === 'en' && p.nameEn ? p.nameEn : p.name;
-    const label = `${p.icon || '📦'} ${displayName}`;
-    const btn = Markup.button.callback(label, `shop:product:${p._id}:${safePage}`);
-    btn.style = 'success';
-    row.push(btn);
-
-    if (row.length === 3) {
-      buttons.push(row);
-      row = [];
-    }
-  }
-  if (row.length > 0) buttons.push(row);
-
-  // 2. Отрисовка сворачиваемого блока НЕТ В НАЛИЧИИ (Accordion Block)
-  if (outOfStockList.length > 0) {
-    const toggleIcon = isCollapsed ? '▼' : '▲';
-    const toggleLabel = `Нет в наличии · ${outOfStockList.length} ${toggleIcon}`;
-    buttons.push([Markup.button.callback(toggleLabel, `shop:toggle_out:${categoryId}:${safePage}`)]);
-
-    // Если развёрнуто — показываем отсутствующие товары (в сетке по 3 в ряд)
-    if (!isCollapsed) {
-      let outRow = [];
-      for (const item of outOfStockList) {
-        const p = item.product;
-        const displayName = lang === 'en' && p.nameEn ? p.nameEn : p.name;
-        const label = `${p.icon || '📦'} ${displayName}`;
-        const btn = Markup.button.callback(label, `shop:product:${p._id}:${safePage}`);
-        btn.style = 'danger';
-        outRow.push(btn);
-
-        if (outRow.length === 3) {
-          buttons.push(outRow);
-          outRow = [];
-        }
-      }
-      if (outRow.length > 0) buttons.push(outRow);
-    }
+    buttons.push([btn]);
   }
 
   const navButtons = [];
