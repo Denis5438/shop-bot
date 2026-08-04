@@ -68,4 +68,16 @@ module.exports = (bot) => {
   bot.action('profile:toggle_btn_style', async (ctx) => {
     await profileScene.toggleBtnStyle(ctx);
   });
+
+  bot.action('user:activate_promo', async (ctx) => {
+    await ctx.answerCbQuery();
+    ctx.session = ctx.session || {};
+    ctx.session.userAction = 'enter_promo';
+
+    const text = `🎟 <b>Активация промокода</b>\n\n` +
+      `Введите ваш промокод в ответном сообщении:`;
+
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'menu:profile')]]);
+    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  });
 };

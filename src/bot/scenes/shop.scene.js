@@ -290,10 +290,15 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const priceLabel = lang === 'en' ? '💰 Price' : '💰 Цена';
   const stockLabel = lang === 'en' ? '📦 Stock' : '📦 Наличие';
 
+  let priceDisplay = `<b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)`;
+  if (effectivePrice < product.price) {
+    priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b> 🔥 (~${toRub(effectivePrice)} ₽)`;
+  }
+
   const text =
     balanceHeader(ctx.user) +
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
-    `<blockquote>${priceLabel}: <b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)${alertLine}\n` +
+    `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
     `${stockLabel}: ${stockIndicator(stock, t)}</blockquote>\n\n` +
     `${description ? `<blockquote expandable>📝 ${escapeHtml(description)}</blockquote>\n` : ''}`;
 

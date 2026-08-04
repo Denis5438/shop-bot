@@ -55,6 +55,102 @@ module.exports = (bot) => {
       return;
     }
 
+    // ─── АКТИВАЦИЯ ПРОМОКОДА ПОЛЬЗОВАТЕЛЕМ ───
+    if (session.userAction === 'enter_promo') {
+      const promoService = require('../../services/promo.service');
+      ctx.session.userAction = null;
+
+      const res = await promoService.activatePromoCode(ctx.user, ctx.message.text);
+      if (!res.success) {
+        return ctx.reply(res.reason, {
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 Попробовать снова', 'user:activate_promo')],
+            [Markup.button.callback('⬅️ В профиль', 'menu:profile')],
+          ]),
+        });
+      }
+
+      if (res.type === 'balance') {
+        const text = `🎁 <b>Промокод <code>${res.code}</code> успешно активирован!</b>\n\n` +
+          `💰 Вам зачислено: <b>+${res.bonusAmount.toFixed(2)} USDT</b> на баланс!\n` +
+          `💳 Ваш текущий баланс: <b>${res.newBalance.toFixed(2)} USDT</b>`;
+
+        return ctx.reply(text, {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('👤 В профиль', 'menu:profile')]]),
+        });
+      }
+    }
+
+    // ─── СОЗДАНИЕ ПРОМОКОДА АДМИНОМ ───
+    if (session.userAction === 'promo_create_code' && ctx.user.role === 'admin') {
+      const PromoCode = require('../../models/PromoCode');
+      const code = ctx.message.text.trim().toUpperCase();
+
+      const exists = await PromoCode.findOne({ code });
+      if (exists) {
+        return ctx.reply('❌ Промокод с таким кодом уже существует. Напишите другой:');
+      }
+
+      session.newPromo.code = code;
+      session.userAction = null;
+
+      const text = `🎟 <b>Создание промокода:</b> <code>${code}</code>\n\n` +
+        `Шаг 2 из 4: Выберите тип промокода:`;
+
+      const keyboard = Markup.inlineKeyboard([
+        [
+          Markup.button.callback('💳 На баланс', 'admin:promo:type:balance'),
+          Markup.button.callback('📉 Скидка в %', 'admin:promo:type:percent'),
+        ],
+        [
+          Markup.button.callback('💰 Скидка в USDT', 'admin:promo:type:fixed'),
+        ],
+        [Markup.button.callback('❌ Отмена', 'admin:promos')],
+      ]);
+
+      return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+    }
+
+    if (session.userAction === 'promo_create_value' && ctx.user.role === 'admin') {
+      const val = parseFloat(ctx.message.text.replace(',', '.'));
+      if (isNaN(val) || val <= 0) {
+        return ctx.reply('❌ Введите корректное число больше 0:');
+      }
+
+      session.newPromo.value = val;
+      session.userAction = 'promo_create_max';
+
+      const text = `🎟 <b>Создание промокода</b>\n\n` +
+        `Шаг 4 из 4: Напишите макс. число активаций всего (например <code>100</code> или <code>-1</code> для безлимита):`;
+
+      return ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]) });
+    }
+
+    if (session.userAction === 'promo_create_max' && ctx.user.role === 'admin') {
+      const max = parseInt(ctx.message.text.trim(), 10);
+      if (isNaN(max)) {
+        return ctx.reply('❌ Введите число (например 100 или -1):');
+      }
+
+      const PromoCode = require('../../models/PromoCode');
+      const promosScene = require('../scenes/admin/promos.scene');
+
+      await PromoCode.create({
+        ...session.newPromo,
+        maxActivations: max,
+        currentActivations: 0,
+        maxPerUser: 1,
+        isActive: true,
+      });
+
+      session.userAction = null;
+      session.newPromo = null;
+
+      await ctx.reply('✅ Промокод успешно создан!');
+      return promosScene.showPromosMain(ctx);
+    }
+
     // Обработка отправки сообщения пользователю (от админа)
     if (session.adminAction === 'send_message' && ctx.user.role === 'admin') {
       const targetId = session.targetTelegramId;

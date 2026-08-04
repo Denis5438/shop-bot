@@ -15,6 +15,7 @@ const productsScene = require('../scenes/admin/products.scene');
 const sellerWithdrawalsScene = require('../scenes/admin/seller_withdrawals.scene');
 const settingsScene = require('../scenes/admin/settings.scene');
 const reqChannelsScene = require('../scenes/admin/req_channels.scene');
+const promosScene = require('../scenes/admin/promos.scene');
 const statsScene = require('../scenes/admin/stats.scene');
 const usersScene = require('../scenes/admin/users.scene');
 const { Markup } = require('telegraf');
@@ -27,6 +28,37 @@ module.exports = (bot) => {
   bot.action('admin:main', adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     await adminScene.showAdminMain(ctx);
+  });
+
+  // ─── ADMIN: Промокоды ───
+  bot.action('admin:promos', adminMiddleware, async (ctx) => {
+    await promosScene.showPromosMain(ctx);
+  });
+
+  bot.action('admin:promo:create', adminMiddleware, async (ctx) => {
+    await promosScene.startCreatePromo(ctx);
+  });
+
+  bot.action(/^admin:promo:type:(balance|percent|fixed)$/, adminMiddleware, async (ctx) => {
+    ctx.session = ctx.session || {};
+    ctx.session.newPromo = ctx.session.newPromo || {};
+    ctx.session.newPromo.type = ctx.match[1];
+    ctx.session.userAction = 'promo_create_value';
+
+    const typeLabel = ctx.match[1] === 'balance' ? 'USDT на баланс' : ctx.match[1] === 'percent' ? '% скидки' : 'USDT скидки';
+    const text = `🎟 <b>Создание промокода</b>\n\n` +
+      `Тип: <b>${typeLabel}</b>\n\n` +
+      `Шаг 3 из 4: Введите значение (например: <code>5</code> для ${typeLabel}):`;
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]) }).catch(() => {});
+  });
+
+  bot.action('admin:promo:delete_select', adminMiddleware, async (ctx) => {
+    await promosScene.showDeleteSelect(ctx);
+  });
+
+  bot.action(/^admin:promo:delete:(.+)$/, adminMiddleware, async (ctx) => {
+    await promosScene.deletePromo(ctx, ctx.match[1]);
   });
 
   // ─── ADMIN: Товары ───

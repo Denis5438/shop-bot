@@ -78,6 +78,7 @@ const showProfile = async (ctx) => {
     )]);
   }
   buttons.push([Markup.button.callback(t('btn_orders'), 'profile:orders')]);
+  buttons.push([Markup.button.callback('🎟 Активировать промокод', 'user:activate_promo')]);
   buttons.push([Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements')]);
   buttons.push([Markup.button.callback(btnStyleLabel, 'profile:toggle_btn_style')]);
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
