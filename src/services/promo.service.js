@@ -64,7 +64,9 @@ const activatePromoCode = async (user, codeStr) => {
     };
   }
 
-  // 2. Если это промокод на СКИДКУ (% или фиксированная)
+  // 2. Если это промокод на СКИДКУ (% или фиксированная) - сохраняем в модель юзера для 100% персистентности
+  await User.updateOne({ _id: user._id }, { $set: { activePromoCode: promo._id } });
+
   return {
     success: true,
     type: promo.type,

@@ -54,6 +54,39 @@ const getEffectivePrice = async (product, stockCount, activePromo = null) => {
   return price;
 };
 
+const clearActivePromo = async (ctx) => {
+  // Очищаем применённый промокод из сессии и профиля пользователя после успешной покупки
+  if (ctx.session?.activePromo || ctx.user?.activePromoCode) {
+    ctx.session.activePromo = null;
+    const User = require('../../models/User');
+    await User.updateOne({ _id: ctx.user._id }, { $set: { activePromoCode: null } }).catch(() => {});
+  }
+};
+
+const getActivePromoFromCtx = async (ctx) => {
+  if (ctx.session?.activePromo) return ctx.session.activePromo;
+  if (ctx.user?.activePromoCode) {
+    const PromoCode = require('../../models/PromoCode');
+    const promo = await PromoCode.findById(ctx.user.activePromoCode).lean();
+    if (promo && promo.isActive) {
+      const activeObj = {
+        success: true,
+        type: promo.type,
+        code: promo.code,
+        promoId: promo._id,
+        value: promo.value,
+        minOrderAmount: promo.minOrderAmount,
+        productId: promo.productId ? promo.productId.toString() : null,
+        isActive: true,
+      };
+      ctx.session = ctx.session || {};
+      ctx.session.activePromo = activeObj;
+      return activeObj;
+    }
+  }
+  return null;
+};
+
 const stockIndicator = (stock, t) => {
   if (stock === '∞') return t ? t('shop_stock_infinite') : '♾️ Unlimited';
   if (stock > 10) return t ? t('shop_stock_high', { count: stock }) : `🟢 ${stock} pcs`;
@@ -234,7 +267,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const buttons = [];
   const lang = ctx.user?.language || 'ru';
 
-  const activePromo = ctx.session?.activePromo;
+  const activePromo = await getActivePromoFromCtx(ctx);
 
   for (const product of paginated) {
     const stock = stockMap.get(String(product._id));
@@ -292,7 +325,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const lang = ctx.user?.language || 'ru';
   const name = lang === 'en' && product.nameEn ? product.nameEn : product.name;
   const description = lang === 'en' && product.descriptionEn ? product.descriptionEn : product.description;
-  const activePromo = ctx.session?.activePromo;
+  const activePromo = await getActivePromoFromCtx(ctx);
   const effectivePrice = await getEffectivePrice(product, stock, activePromo);
   const outOfStock = stock !== '∞' && stock === 0;
 
@@ -518,7 +551,8 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
   }
 
-  const effectivePrice = await getEffectivePrice(product, stock, ctx.session?.activePromo);
+  const activePromo = await getActivePromoFromCtx(ctx);
+  const effectivePrice = await getEffectivePrice(product, stock, activePromo);
   const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
 
   if (user.balance < totalCost) {

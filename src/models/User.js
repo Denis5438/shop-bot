@@ -21,6 +21,7 @@ const userSchema = new mongoose.Schema({
   acceptedToS: { type: Boolean, default: false },
   acceptedToSAt: { type: Date, default: null },
   btnStyle: { type: String, enum: ['colored', 'classic'], default: 'colored' },
+  activePromoCode: { type: mongoose.Schema.Types.ObjectId, ref: 'PromoCode', default: null },
   createdAt: { type: Date, default: Date.now },
 
   // №20 Достижения: массив ID разблокированных ачивок и дата получения.
