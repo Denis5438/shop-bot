@@ -103,7 +103,31 @@ module.exports = (bot) => {
           } catch (_) {}
         }
 
-        return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+        const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+        if (sent?.message_id) ctx.session.promoMsgId = sent.message_id;
+        return;
+      } else {
+        ctx.session.activePromo = res;
+        const valStr = res.type === 'percent' ? `-${res.value}%` : `-${res.value} USDT`;
+        const text = `🎉 <b>Промокод <code>${res.code}</code> успешно активирован!</b>\n\n` +
+          `🏷 Ваша скидка: <b>${valStr}</b> при покупке товара!\n` +
+          `Скидка автоматически применится при следующем заказе.`;
+
+        const keyboard = Markup.inlineKeyboard([
+          [Markup.button.callback('🛒 В магазин', 'shop:main')],
+          [Markup.button.callback('👤 В профиль', 'menu:profile')],
+        ]);
+
+        if (targetMsgId) {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+            return;
+          } catch (_) {}
+        }
+
+        const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+        if (sent?.message_id) ctx.session.promoMsgId = sent.message_id;
+        return;
       }
     }
 
