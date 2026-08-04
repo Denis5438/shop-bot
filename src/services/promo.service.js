@@ -33,28 +33,27 @@ const activatePromoCode = async (user, codeStr) => {
     return { success: false, reason: '❌ Вы уже активировали этот промокод' };
   }
 
+  // Увеличиваем счётчик активаций и сохраняем лог использования в БД для ЛЮБОГО типа промокода
+  promo.currentActivations += 1;
+  await promo.save();
+
+  await PromoUsage.create({
+    promoId: promo._id,
+    userId: user._id,
+    code: promo.code,
+    type: promo.type,
+    discountAmount: promo.type === 'balance' ? promo.value : 0,
+  });
+
   // 1. Если это промокод на ПОПОЛНЕНИЕ БАЛАНСА
   if (promo.type === 'balance') {
     const bonusAmount = promo.value;
-
-    // Атомарно увеличиваем активации и баланс
-    promo.currentActivations += 1;
-    await promo.save();
 
     const updatedUser = await User.findByIdAndUpdate(
       user._id,
       { $inc: { balance: bonusAmount } },
       { new: true }
     );
-
-    // Записываем лог использования
-    await PromoUsage.create({
-      promoId: promo._id,
-      userId: user._id,
-      code: promo.code,
-      type: promo.type,
-      discountAmount: bonusAmount,
-    });
 
     return {
       success: true,

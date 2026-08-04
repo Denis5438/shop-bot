@@ -518,7 +518,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
   }
 
-  const effectivePrice = await getEffectivePrice(product, stock);
+  const effectivePrice = await getEffectivePrice(product, stock, ctx.session?.activePromo);
   const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
 
   if (user.balance < totalCost) {
