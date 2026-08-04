@@ -134,22 +134,59 @@ const showShopPage = async (ctx) => {
     statusByCat.set(catKey, (stock === '∞' || stock > 0) ? 'success' : 'danger');
   }
 
-  const buttons = [];
-  let currentRow = [];
+  const isCollapsed = ctx.session?.shopMainOutOfStockCollapsed ?? true;
+
+  const inStockCats = [];
+  const outOfStockCats = [];
 
   for (const cat of categories) {
     const statusColor = statusByCat.get(String(cat._id)) || 'danger';
-    const label = `${cat.icon || '📁'} ${cat.name}`;
-    const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
-    btn.style = statusColor;
-    currentRow.push(btn);
-
-    if (currentRow.length === 3) {
-      buttons.push(currentRow);
-      currentRow = [];
+    if (statusColor === 'success') {
+      inStockCats.push(cat);
+    } else {
+      outOfStockCats.push(cat);
     }
   }
-  if (currentRow.length > 0) buttons.push(currentRow);
+
+  const buttons = [];
+
+  // 1. Зелёные категории в наличии (сетка по 3 в ряд)
+  let row = [];
+  for (const cat of inStockCats) {
+    const label = `${cat.icon || '📁'} ${cat.name}`;
+    const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
+    btn.style = 'success';
+    row.push(btn);
+
+    if (row.length === 3) {
+      buttons.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 0) buttons.push(row);
+
+  // 2. Сворачиваемый блок "Нет в наличии" для категорий
+  if (outOfStockCats.length > 0) {
+    const toggleIcon = isCollapsed ? '▼' : '▲';
+    const toggleLabel = `Нет в наличии · ${outOfStockCats.length} ${toggleIcon}`;
+    buttons.push([Markup.button.callback(toggleLabel, 'shop:toggle_out_main')]);
+
+    if (!isCollapsed) {
+      let outRow = [];
+      for (const cat of outOfStockCats) {
+        const label = `${cat.icon || '📁'} ${cat.name}`;
+        const btn = Markup.button.callback(label, `shop:category:${cat._id}:1`);
+        btn.style = 'danger';
+        outRow.push(btn);
+
+        if (outRow.length === 3) {
+          buttons.push(outRow);
+          outRow = [];
+        }
+      }
+      if (outRow.length > 0) buttons.push(outRow);
+    }
+  }
 
   buttons.push([Markup.button.callback(t('btn_back') || '⬅️ Назад', 'menu:main')]);
 
@@ -1090,4 +1127,11 @@ const processPreorder = async (ctx, productId, qty = 1) => {
   ).catch(() => {});
 };
 
-module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder, showPreorderQuantitySelect, toggleOutOfStock };
+const toggleShopMainOutOfStock = async (ctx) => {
+  ctx.session = ctx.session || {};
+  ctx.session.shopMainOutOfStockCollapsed = !ctx.session.shopMainOutOfStockCollapsed;
+  await ctx.answerCbQuery().catch(() => {});
+  await showShopPage(ctx);
+};
+
+module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder, showPreorderQuantitySelect, toggleOutOfStock, toggleShopMainOutOfStock };

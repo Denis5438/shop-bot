@@ -25,6 +25,10 @@ module.exports = (bot) => {
     await shopScene.toggleOutOfStock(ctx, categoryId, page);
   });
 
+  bot.action('shop:toggle_out_main', async (ctx) => {
+    await shopScene.toggleShopMainOutOfStock(ctx);
+  });
+
   // shop:page is deprecated for categories, but left for backward compatibility if any
   bot.action(/^shop:page:(\d+)$/, async (ctx) => {
     await shopScene.showShopPage(ctx);
