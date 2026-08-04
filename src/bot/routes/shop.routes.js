@@ -19,6 +19,12 @@ module.exports = (bot) => {
     await shopScene.showCategory(ctx, categoryId, page);
   });
 
+  bot.action(/^shop:toggle_out:([^:]+)(?::(\d+))?$/, async (ctx) => {
+    const categoryId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await shopScene.toggleOutOfStock(ctx, categoryId, page);
+  });
+
   // shop:page is deprecated for categories, but left for backward compatibility if any
   bot.action(/^shop:page:(\d+)$/, async (ctx) => {
     await shopScene.showShopPage(ctx);

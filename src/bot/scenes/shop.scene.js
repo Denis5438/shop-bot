@@ -144,7 +144,7 @@ const showShopPage = async (ctx) => {
     btn.style = statusColor;
     currentRow.push(btn);
 
-    if (currentRow.length === 2) {
+    if (currentRow.length === 3) {
       buttons.push(currentRow);
       currentRow = [];
     }
@@ -171,7 +171,6 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     return ctx.answerCbQuery('❌ Категория не найдена', { show_alert: true });
   }
 
-  // .lean() + .select(): для отрисовки кнопок не нужны полные Mongoose-документы
   const products = await Product.find({ categoryId, isActive: true })
     .sort({ sortOrder: 1, createdAt: -1 })
     .select('name nameEn icon price costPrice type manualStock provider lastSoldAt createdAt')
@@ -185,23 +184,66 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
   const paginated = products.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
-  // Остатки страницы одной агрегацией вместо countDocuments на каждый товар
   const stockMap = await getStockMap(paginated);
-
-  const buttons = [];
   const lang = ctx.user?.language || 'ru';
+  const isCollapsed = ctx.session?.outOfStockCollapsed ?? true;
+
+  const inStockList = [];
+  const outOfStockList = [];
 
   for (const product of paginated) {
     const stock = stockMap.get(String(product._id));
-    const effectivePrice = await getEffectivePrice(product, stock);
-    const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
-    const stockBadge = stock === '∞' ? '∞' : stock;
-    
-    const label = `${product.icon || '📦'} ${displayName} | $${effectivePrice} | 📦 ${stockBadge}`;
-    const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
-    btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
-    
-    buttons.push([btn]);
+    const isAvailable = stock === '∞' || stock > 0;
+    if (isAvailable) {
+      inStockList.push({ product, stock });
+    } else {
+      outOfStockList.push({ product, stock });
+    }
+  }
+
+  const buttons = [];
+
+  // 1. Отрисовка товаров В НАЛИЧИИ (Сетка по 3 кнопки в ряд)
+  let row = [];
+  for (const item of inStockList) {
+    const p = item.product;
+    const displayName = lang === 'en' && p.nameEn ? p.nameEn : p.name;
+    const label = `${p.icon || '📦'} ${displayName}`;
+    const btn = Markup.button.callback(label, `shop:product:${p._id}:${safePage}`);
+    btn.style = 'success';
+    row.push(btn);
+
+    if (row.length === 3) {
+      buttons.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 0) buttons.push(row);
+
+  // 2. Отрисовка сворачиваемого блока НЕТ В НАЛИЧИИ (Accordion Block)
+  if (outOfStockList.length > 0) {
+    const toggleIcon = isCollapsed ? '▼' : '▲';
+    const toggleLabel = `Нет в наличии · ${outOfStockList.length} ${toggleIcon}`;
+    buttons.push([Markup.button.callback(toggleLabel, `shop:toggle_out:${categoryId}:${safePage}`)]);
+
+    // Если развёрнуто — показываем отсутствующие товары (в сетке по 3 в ряд)
+    if (!isCollapsed) {
+      let outRow = [];
+      for (const item of outOfStockList) {
+        const p = item.product;
+        const displayName = lang === 'en' && p.nameEn ? p.nameEn : p.name;
+        const label = `${p.icon || '📦'} ${displayName}`;
+        const btn = Markup.button.callback(label, `shop:product:${p._id}:${safePage}`);
+        btn.style = 'danger';
+        outRow.push(btn);
+
+        if (outRow.length === 3) {
+          buttons.push(outRow);
+          outRow = [];
+        }
+      }
+      if (outRow.length > 0) buttons.push(outRow);
+    }
   }
 
   const navButtons = [];
@@ -220,6 +262,13 @@ const showCategory = async (ctx, categoryId, page = 1) => {
 
   await ctx.editMessageText(text, opts).catch(() => {});
   await ctx.answerCbQuery().catch(() => {});
+};
+
+const toggleOutOfStock = async (ctx, categoryId, page = 1) => {
+  ctx.session = ctx.session || {};
+  ctx.session.outOfStockCollapsed = !ctx.session.outOfStockCollapsed;
+  await ctx.answerCbQuery().catch(() => {});
+  await showCategory(ctx, categoryId, page);
 };
 
 const showProduct = async (ctx, productId, fromPage = 1) => {
@@ -1041,4 +1090,4 @@ const processPreorder = async (ctx, productId, qty = 1) => {
   ).catch(() => {});
 };
 
-module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder, showPreorderQuantitySelect };
+module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder, showPreorderQuantitySelect, toggleOutOfStock };
