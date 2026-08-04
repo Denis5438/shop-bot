@@ -6,6 +6,8 @@ const requiredChannelSchema = new mongoose.Schema({
   inviteLink: { type: String, required: true },
   isActive: { type: Boolean, default: true },
   sortOrder: { type: Number, default: 0 },
+  subscribersCount: { type: Number, default: 0 },
+  verifiedUserIds: [{ type: String }],
   createdAt: { type: Date, default: Date.now },
 });
 

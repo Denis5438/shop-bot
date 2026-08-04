@@ -1,6 +1,7 @@
 const { Markup } = require('telegraf');
 const Settings = require('../../../models/Settings');
 const RequiredChannel = require('../../../models/RequiredChannel');
+const User = require('../../../models/User');
 const { getSettings: getCachedSettings, invalidateCache } = require('../../../services/settingsCache.service');
 const { escapeHtml } = require('../../utils/ui');
 
@@ -31,7 +32,8 @@ const showReqChannelsMain = async (ctx) => {
     channels.forEach((ch, idx) => {
       text += `<b>${idx + 1}. ${escapeHtml(ch.title)}</b>\n`;
       text += `   • ID/Username: <code>${escapeHtml(ch.chatId)}</code>\n`;
-      text += `   • Ссылка: ${escapeHtml(ch.inviteLink)}\n\n`;
+      text += `   • Ссылка: ${escapeHtml(ch.inviteLink)}\n`;
+      text += `   • 📊 Подписались через бота: <b>${ch.subscribersCount || 0} чел.</b>\n\n`;
     });
   }
 
@@ -49,7 +51,10 @@ const showReqChannelsMain = async (ctx) => {
     ]);
   });
 
-  buttons.push([Markup.button.callback('➕ Добавить новый канал', 'admin:req_channels:add')]);
+  buttons.push([
+    Markup.button.callback('➕ Добавить новый канал', 'admin:req_channels:add'),
+    Markup.button.callback('📊 Статистика', 'admin:req_channels:stats'),
+  ]);
   buttons.push([Markup.button.callback('⬅️ В панель', 'admin:main')]);
 
   try {
@@ -162,10 +167,39 @@ const handleReqChannelInput = async (ctx) => {
   return false;
 };
 
+const showReqChannelsStats = async (ctx) => {
+  const channels = await RequiredChannel.find().sort({ sortOrder: 1, createdAt: 1 });
+  const totalUsers = await User.countDocuments();
+
+  let text = `📊 <b>Подробная статистика конверсии ОП</b>\n\n`;
+  text += `👥 Всего пользователей в боте: <b>${totalUsers} чел.</b>\n\n`;
+
+  if (!channels.length) {
+    text += `<i>Каналы ещё не добавлены.</i>`;
+  } else {
+    channels.forEach((ch, idx) => {
+      const count = ch.subscribersCount || 0;
+      const percent = totalUsers > 0 ? ((count / totalUsers) * 100).toFixed(1) : '0.0';
+      text += `<b>${idx + 1}. ${escapeHtml(ch.title)}</b> (<code>${escapeHtml(ch.chatId)}</code>)\n`;
+      text += `   • 👥 Подтвердили подписку: <b>${count} чел.</b>\n`;
+      text += `   • 📈 Конверсия от базы бота: <b>${percent}%</b>\n\n`;
+    });
+  }
+
+  const buttons = [[Markup.button.callback('⬅️ К каналам ОП', 'admin:req_channels')]];
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
+  } catch (_) {
+    await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
+  }
+};
+
 module.exports = {
   showReqChannelsMain,
   toggleReqChannels,
   deleteReqChannel,
   startAddChannel,
   handleReqChannelInput,
+  showReqChannelsStats,
 };

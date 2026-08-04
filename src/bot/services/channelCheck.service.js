@@ -35,7 +35,9 @@ const checkUserSubscriptions = async (telegram, userId) => {
       isSubscribed = true;
     }
 
-    if (!isSubscribed) {
+    if (isSubscribed) {
+      recordChannelSubscription(ch._id, userId);
+    } else {
       allSubscribed = false;
     }
 
@@ -43,6 +45,17 @@ const checkUserSubscriptions = async (telegram, userId) => {
   }
 
   return { isEnabled: true, allSubscribed, results };
+};
+
+const recordChannelSubscription = async (channelId, userId) => {
+  const strUserId = String(userId);
+  await RequiredChannel.findOneAndUpdate(
+    { _id: channelId, verifiedUserIds: { $ne: strUserId } },
+    {
+      $addToSet: { verifiedUserIds: strUserId },
+      $inc: { subscribersCount: 1 },
+    }
+  ).catch((err) => console.warn(`[ChannelCheck] Failed to record subscription: ${err.message}`));
 };
 
 module.exports = { checkUserSubscriptions };

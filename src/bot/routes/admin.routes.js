@@ -145,6 +145,11 @@ module.exports = (bot) => {
     await reqChannelsScene.deleteReqChannel(ctx, ctx.match[1]);
   });
 
+  bot.action('admin:req_channels:stats', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery();
+    await reqChannelsScene.showReqChannelsStats(ctx);
+  });
+
   // Запуск рассылки на конкретный сегмент (после выбора в предыдущем хэндлере).
   bot.action(/^admin:p_broadcast:([a-f0-9]{24}):(\w+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery('📢 Запускаю рассылку...');
