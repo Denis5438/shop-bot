@@ -42,11 +42,14 @@ const showChannelSubScreen = async (ctx, subCheckResult, isEdit = false) => {
   if (isEdit) {
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
-    } catch (_) {
-      await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
+    } catch (err) {
+      if (err?.description?.includes('message is not modified')) {
+        return;
+      }
+      await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) }).catch(() => {});
     }
   } else {
-    await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) });
+    await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) }).catch(() => {});
   }
 };
 
@@ -133,14 +136,21 @@ module.exports = (bot) => {
       await ctx.answerCbQuery('✅ Отлично! Вы подписаны на все каналы. Добро пожаловать!');
       const user = ctx.user;
       const t = ctx.t;
-      await ctx.reply(
-        t('welcome', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
-        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-      );
+      try {
+        await ctx.editMessageText(
+          t('welcome', { name: escapeHtml(user.firstName), balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
+          { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+        );
+      } catch (_) {
+        await ctx.reply(
+          t('welcome', { name: escapeHtml(user.firstName), balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
+          { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
+        ).catch(() => {});
+      }
       return;
     }
 
-    await ctx.answerCbQuery('❌ Вы ещё не подписались на все каналы! Проверьте список.', { show_alert: true });
+    await ctx.answerCbQuery('❌ Вы ещё не подписались на все каналы! Проверьте список со значком ❌', { show_alert: true });
     await showChannelSubScreen(ctx, subCheck, true);
   });
 
