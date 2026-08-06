@@ -51,6 +51,7 @@ const showProductsList = async (ctx) => {
 
   for (const product of products) {
     const c = freeCounts.get(String(product._id)) || {};
+    const prov = resolveProductProvider(product);
     const autoKeys = (c[prov] || 0) + (c['__null__'] || 0);
     const stock = autoKeys > 0
       ? autoKeys
