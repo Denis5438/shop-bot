@@ -38,7 +38,7 @@ const getProducts = async (apiKey) => {
     let hasMore = true;
     let pageCount = 0;
 
-    while (hasMore && pageCount < 5) {
+    while (hasMore && pageCount < 50) {
       pageCount++;
       const url = cursor
         ? `${BASE_URL}/products?limit=100&cursor=${encodeURIComponent(cursor)}`
@@ -53,11 +53,16 @@ const getProducts = async (apiKey) => {
       });
 
       const data = res.data;
-      const items = Array.isArray(data) ? data : (data.items || data.products || []);
+      const items = Array.isArray(data) ? data : (data.items || data.products || data.data || []);
+      if (items.length === 0) {
+        hasMore = false;
+        break;
+      }
       allProducts = allProducts.concat(items);
 
-      if (data.next_cursor) {
-        cursor = data.next_cursor;
+      const nextCur = data.next_cursor || data.cursor || data.next;
+      if (nextCur && nextCur !== cursor) {
+        cursor = nextCur;
       } else {
         hasMore = false;
       }
