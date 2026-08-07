@@ -92,15 +92,61 @@ const getProducts = async (apiKey) => {
           stockVal = 1;
         }
 
+        // Интеллектуальное определение категории по названию товара, если категория не указана
+        const prodName = p.name || p.title || p.product_name || '';
+        let detectedCategory = p.category_name || p.category || p.category_title || p.group || p.section || '';
+
+        if (!detectedCategory || detectedCategory === 'AI & Digital Tools' || detectedCategory === 'Внешние товары') {
+          const lower = prodName.toLowerCase();
+          if (lower.includes('chatgpt') || lower.includes('gpt') || lower.includes('openai')) detectedCategory = 'ChatGPT';
+          else if (lower.includes('claude')) detectedCategory = 'Claude';
+          else if (lower.includes('canva')) detectedCategory = 'Canva';
+          else if (lower.includes('veo')) detectedCategory = 'Veo';
+          else if (lower.includes('cdk')) detectedCategory = 'CDK';
+          else if (lower.includes('youtube')) detectedCategory = 'Youtube';
+          else if (lower.includes('netflix')) detectedCategory = 'Netflix';
+          else if (lower.includes('spotify')) detectedCategory = 'Spotify';
+          else if (lower.includes('capcut')) detectedCategory = 'CapCut';
+          else if (lower.includes('cursor')) detectedCategory = 'Cursor';
+          else if (lower.includes('zoom')) detectedCategory = 'Zoom';
+          else if (lower.includes('windows') || lower.includes('key win')) detectedCategory = 'Key Windows';
+          else if (lower.includes('office')) detectedCategory = 'Office 365';
+          else if (lower.includes('gemini')) detectedCategory = 'Gemini';
+          else if (lower.includes('api')) detectedCategory = 'API';
+          else if (lower.includes('open art') || lower.includes('openart')) detectedCategory = 'Open Art';
+          else if (lower.includes('coursera')) detectedCategory = 'Coursera';
+          else if (lower.includes('steam')) detectedCategory = 'Steam';
+          else if (lower.includes('vpn')) detectedCategory = 'VPN';
+          else if (lower.includes('figma')) detectedCategory = 'Figma';
+          else if (lower.includes('discord')) detectedCategory = 'Discord';
+          else if (lower.includes('kling')) detectedCategory = 'Kling AI';
+          else if (lower.includes('elevenlabs') || lower.includes('eleven')) detectedCategory = 'ElevenLabs';
+          else if (lower.includes('gamma')) detectedCategory = 'Gamma';
+          else if (lower.includes('manus')) detectedCategory = 'Manus';
+          else if (lower.includes('lovable')) detectedCategory = 'Lovable';
+          else if (lower.includes('leonardo')) detectedCategory = 'Leonardo AI';
+          else if (lower.includes('heygen')) detectedCategory = 'HeyGen';
+          else if (lower.includes('grok')) detectedCategory = 'Grok';
+          else if (lower.includes('adobe')) detectedCategory = 'Adobe';
+          else if (lower.includes('suno')) detectedCategory = 'Suno';
+          else if (lower.includes('perplexity')) detectedCategory = 'Perplexity';
+          else if (lower.includes('higgsfield')) detectedCategory = 'Higgsfield';
+          else if (lower.includes('kiro')) detectedCategory = 'Kiro';
+          else if (lower.includes('kimi')) detectedCategory = 'Kimi';
+          else if (lower.includes('github') || lower.includes('copilot')) detectedCategory = 'GitHub';
+          else if (lower.includes('twitter') || lower.includes(' x ')) detectedCategory = 'X / Twitter';
+          else detectedCategory = detectedCategory || 'AI & Digital Tools';
+        }
+
         return {
           productCode: p.product_code || p.id || p.code,
-          name: p.name || p.title || p.product_name,
+          name: prodName,
           nameEn: p.name_en || p.title_en || '',
           description: p.description || '',
           descriptionEn: p.description_en || '',
           priceUsdt: parseFloat(p.price_usdt || p.price || 0),
           stock: isNaN(stockVal) ? 0 : Math.max(0, stockVal),
-          category: p.category_name || p.category || 'AI & Digital Tools',
+          category: detectedCategory,
           icon: p.icon || '🤖',
           deliveryType: p.delivery_type || 'instant',
         };
