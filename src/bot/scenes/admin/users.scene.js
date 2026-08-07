@@ -587,17 +587,26 @@ const executeCustomBroadcast = async (ctx) => {
   );
 };
 
-const showUserWarranties = async (ctx, userId) => {
+const ORDERS_PER_PAGE = 4;
+
+const showUserWarranties = async (ctx, userId, page = 1) => {
   const user = await User.findById(userId);
   if (!user) return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
+
+  const totalOrders = await Order.countDocuments({ userId: user._id });
+  const totalPages = Math.max(1, Math.ceil(totalOrders / ORDERS_PER_PAGE));
+  const safePage = Math.min(Math.max(1, parseInt(page, 10) || 1), totalPages);
 
   const orders = await Order.find({ userId: user._id })
     .populate('productId', 'name icon')
     .sort({ createdAt: -1 })
+    .skip((safePage - 1) * ORDERS_PER_PAGE)
+    .limit(ORDERS_PER_PAGE)
     .lean();
 
   let text = `🛡 <b>Управление гарантией пользователя</b>\n` +
-    `👤 <b>Пользователь:</b> @${escapeHtml(user.username || user.telegramId)}\n\n`;
+    `👤 <b>Пользователь:</b> @${escapeHtml(user.username || user.telegramId)}\n` +
+    `📦 Всего заказов: <b>${totalOrders}</b> (Стр. ${safePage}/${totalPages})\n\n`;
 
   const buttons = [];
 
@@ -614,15 +623,28 @@ const showUserWarranties = async (ctx, userId) => {
         `🛡 Гарантия: <b>${wDays} дн.</b>\n\n`;
 
       buttons.push([
-        Markup.button.callback('➖ -1 дн', `admin:user:warr_add:${ord._id}:-1`),
-        Markup.button.callback('➕ +1 дн', `admin:user:warr_add:${ord._id}:1`),
-        Markup.button.callback('➕ +7 дн', `admin:user:warr_add:${ord._id}:7`),
-        Markup.button.callback('➕ +30 дн', `admin:user:warr_add:${ord._id}:30`),
-      ]);
-      buttons.push([
-        Markup.button.callback('❌ Снять гарантию (0 дн)', `admin:user:warr_reset:${ord._id}`),
+        Markup.button.callback('➖ -1', `admin:user:warr_add:${ord._id}:-1:${safePage}`),
+        Markup.button.callback('➕ +1', `admin:user:warr_add:${ord._id}:1:${safePage}`),
+        Markup.button.callback('➕ +7', `admin:user:warr_add:${ord._id}:7:${safePage}`),
+        Markup.button.callback('➕ +30', `admin:user:warr_add:${ord._id}:30:${safePage}`),
+        Markup.button.callback('❌ Снять', `admin:user:warr_reset:${ord._id}:${safePage}`),
       ]);
     }
+  }
+
+  // Навигация по страницам заказов
+  const navRow = [];
+  if (safePage > 1) {
+    navRow.push(Markup.button.callback('⬅️ Назад', `admin:user:warranty:${userId}:${safePage - 1}`));
+  }
+  if (totalPages > 1) {
+    navRow.push(Markup.button.callback(`${safePage}/${totalPages}`, 'admin:noop'));
+  }
+  if (safePage < totalPages) {
+    navRow.push(Markup.button.callback('Вперёд ➡️', `admin:user:warranty:${userId}:${safePage + 1}`));
+  }
+  if (navRow.length > 0) {
+    buttons.push(navRow);
   }
 
   buttons.push([Markup.button.callback('⬅️ В профиль пользователя', `admin:user:view:${userId}`)]);
@@ -636,7 +658,7 @@ const showUserWarranties = async (ctx, userId) => {
   }
 };
 
-const execUserWarrantyAdd = async (ctx, orderId, days) => {
+const execUserWarrantyAdd = async (ctx, orderId, days, page = 1) => {
   const delta = parseInt(days, 10);
   const order = await Order.findById(orderId);
   if (!order) return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
@@ -646,13 +668,13 @@ const execUserWarrantyAdd = async (ctx, orderId, days) => {
   await order.save();
 
   const sign = delta > 0 ? `+${delta}` : `${delta}`;
-  await ctx.answerCbQuery(`✅ Гарантия изменена на ${sign} дн. (Итого: ${newDays} дн.)!`, { show_alert: true }).catch(() => {});
+  await ctx.answerCbQuery(`✅ Гарантия: ${sign} дн. (Итого: ${newDays} дн.)!`, { show_alert: true }).catch(() => {});
   if (order.userId) {
-    await showUserWarranties(ctx, order.userId.toString());
+    await showUserWarranties(ctx, order.userId.toString(), page);
   }
 };
 
-const execUserWarrantyReset = async (ctx, orderId) => {
+const execUserWarrantyReset = async (ctx, orderId, page = 1) => {
   const order = await Order.findByIdAndUpdate(
     orderId,
     { $set: { warrantyDays: 0 } },
@@ -660,7 +682,7 @@ const execUserWarrantyReset = async (ctx, orderId) => {
   );
   await ctx.answerCbQuery('✅ Гарантия аннулирована (0 дн.)!', { show_alert: true }).catch(() => {});
   if (order?.userId) {
-    await showUserWarranties(ctx, order.userId.toString());
+    await showUserWarranties(ctx, order.userId.toString(), page);
   }
 };
 

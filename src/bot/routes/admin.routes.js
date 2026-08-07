@@ -92,19 +92,23 @@ module.exports = (bot) => {
   });
 
   // ─── ADMIN: Управление гарантией конкретного пользователя ───
-  bot.action(/^admin:user:warranty:(.+)$/, adminMiddleware, async (ctx) => {
-    await usersScene.showUserWarranties(ctx, ctx.match[1]);
+  bot.action(/^admin:user:warranty:([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const userId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await usersScene.showUserWarranties(ctx, userId, page);
   });
 
-  bot.action(/^admin:user:warr_add:([^:]+):(-?\d+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:user:warr_add:([^:]+):(-?\d+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const orderId = ctx.match[1];
     const days = parseInt(ctx.match[2], 10);
-    await usersScene.execUserWarrantyAdd(ctx, orderId, days);
+    const page = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await usersScene.execUserWarrantyAdd(ctx, orderId, days, page);
   });
 
-  bot.action(/^admin:user:warr_reset:([^:]+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:user:warr_reset:([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const orderId = ctx.match[1];
-    await usersScene.execUserWarrantyReset(ctx, orderId);
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await usersScene.execUserWarrantyReset(ctx, orderId, page);
   });
 
   // ─── ADMIN: Товары ───
