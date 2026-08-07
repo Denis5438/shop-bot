@@ -66,13 +66,18 @@ const getProducts = async (apiKey) => {
     return {
       success: true,
       products: allProducts.map((p) => {
-        let stockVal = 0;
-        if (p.stock_count !== undefined && p.stock_count !== null) stockVal = Number(p.stock_count);
-        else if (p.stock !== undefined && p.stock !== null) stockVal = Number(p.stock);
-        else if (p.available_count !== undefined && p.available_count !== null) stockVal = Number(p.available_count);
-        else if (p.quantity !== undefined && p.quantity !== null) stockVal = Number(p.quantity);
-        else if (p.in_stock === true) stockVal = 1;
-        else if (p.in_stock === false) stockVal = 0;
+        let stockVal = 99; // По умолчанию все товары из каталога поставщика доступны
+        if (p.is_available === false || p.in_stock === false || p.status === 'out_of_stock' || p.status === 'disabled' || p.is_active === false) {
+          stockVal = 0;
+        } else if (p.stock_count !== undefined && p.stock_count !== null) {
+          stockVal = Number(p.stock_count);
+        } else if (p.stock !== undefined && p.stock !== null) {
+          stockVal = Number(p.stock);
+        } else if (p.available_count !== undefined && p.available_count !== null) {
+          stockVal = Number(p.available_count);
+        } else if (p.quantity !== undefined && p.quantity !== null) {
+          stockVal = Number(p.quantity);
+        }
 
         return {
           productCode: p.product_code || p.id || p.code,
