@@ -200,6 +200,24 @@ module.exports = (bot) => {
       return promosScene.showPromosMain(ctx);
     }
 
+    // ─── МАССОВОЕ НАЧИСЛЕНИЕ БАЛАНСА ───
+    if (session.adminAction === 'bulk_give_balance' && ctx.user.role === 'admin') {
+      const amount = parseFloat(ctx.message.text.trim().replace(',', '.'));
+      if (isNaN(amount) || amount <= 0) {
+        return ctx.reply('❌ Введите корректную сумму больше 0 (например: 1.5):');
+      }
+
+      session.adminAction = null;
+      const bulkService = require('../../services/bulkOperations.service');
+      const count = await bulkService.grantBalanceToAll(amount);
+
+      await ctx.reply(`✅ Баланс <b>+${amount.toFixed(2)} USDT</b> успешно начислен <b>${count}</b> пользователям!`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('⚡ В меню массовых операций', 'admin:bulk')]]),
+      });
+      return;
+    }
+
     // Обработка отправки сообщения пользователю (от админа)
     if (session.adminAction === 'send_message' && ctx.user.role === 'admin') {
       const targetId = session.targetTelegramId;

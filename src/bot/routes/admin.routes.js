@@ -16,6 +16,7 @@ const sellerWithdrawalsScene = require('../scenes/admin/seller_withdrawals.scene
 const settingsScene = require('../scenes/admin/settings.scene');
 const reqChannelsScene = require('../scenes/admin/req_channels.scene');
 const promosScene = require('../scenes/admin/promos.scene');
+const bulkScene = require('../scenes/admin/bulk.scene');
 const statsScene = require('../scenes/admin/stats.scene');
 const usersScene = require('../scenes/admin/users.scene');
 const { Markup } = require('telegraf');
@@ -59,6 +60,53 @@ module.exports = (bot) => {
 
   bot.action(/^admin:promo:delete:(.+)$/, adminMiddleware, async (ctx) => {
     await promosScene.deletePromo(ctx, ctx.match[1]);
+  });
+
+  // ─── ADMIN: Массовые операции ───
+  bot.action(['admin:bulk', 'admin:bulk:main'], adminMiddleware, async (ctx) => {
+    await bulkScene.showBulkMain(ctx);
+  });
+
+  bot.action('admin:bulk:reset_bal_confirm', adminMiddleware, async (ctx) => {
+    await bulkScene.showResetBalanceConfirm(ctx);
+  });
+
+  bot.action('admin:bulk:reset_bal_exec', adminMiddleware, async (ctx) => {
+    await bulkScene.execResetBalances(ctx);
+  });
+
+  bot.action('admin:bulk:give_bal_prompt', adminMiddleware, async (ctx) => {
+    await bulkScene.promptGiveBalance(ctx);
+  });
+
+  bot.action('admin:bulk:warranty_menu', adminMiddleware, async (ctx) => {
+    await bulkScene.showBulkWarrantyMenu(ctx);
+  });
+
+  bot.action(/^admin:bulk:warr_add:(\d+)$/, adminMiddleware, async (ctx) => {
+    await bulkScene.execAddWarranty(ctx, parseInt(ctx.match[1], 10));
+  });
+
+  bot.action('admin:bulk:warr_reset_exec', adminMiddleware, async (ctx) => {
+    await bulkScene.execResetWarranty(ctx);
+  });
+
+  // ─── ADMIN: Управление гарантией конкретного пользователя ───
+  bot.action(/^admin:user:warranty:(.+)$/, adminMiddleware, async (ctx) => {
+    await usersScene.showUserWarranties(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:user:warr_add:([^:]+):(\d+):(.+)$/, adminMiddleware, async (ctx) => {
+    const orderId = ctx.match[1];
+    const days = parseInt(ctx.match[2], 10);
+    const userId = ctx.match[3];
+    await usersScene.execUserWarrantyAdd(ctx, orderId, days, userId);
+  });
+
+  bot.action(/^admin:user:warr_reset:([^:]+):(.+)$/, adminMiddleware, async (ctx) => {
+    const orderId = ctx.match[1];
+    const userId = ctx.match[2];
+    await usersScene.execUserWarrantyReset(ctx, orderId, userId);
   });
 
   // ─── ADMIN: Товары ───

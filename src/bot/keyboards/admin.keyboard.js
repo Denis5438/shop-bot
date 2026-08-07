@@ -35,6 +35,7 @@ const adminMainKeyboard = (counts = { pendingOrders: 0, pendingPayments: 0, pend
     ],
     [Markup.button.callback('📢 Обязательная подписка (Каналы)', 'admin:req_channels')],
     [Markup.button.callback('🎟 Промокоды', 'admin:promos')],
+    [Markup.button.callback('⚡ Массовые операции', 'admin:bulk')],
     [Markup.button.callback('⚙️ Настройки', 'admin:settings')],
     [Markup.button.callback('🔍 Глобальный Поиск', 'admin:search')],
   ]);

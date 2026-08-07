@@ -200,6 +200,7 @@ const showUserProfile = async (ctx, userId) => {
         : Markup.button.callback('👔 Сделать селлером', `admin:user:seller_toggle:${user._id}`),
     ],
     [Markup.button.callback('🕹 Перехватить управление', `admin:takeover:start:${user._id}`)],
+    [Markup.button.callback('🛡 Управление гарантией', `admin:user:warranty:${user._id}`)],
     [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)],
     [Markup.button.callback('📨 Написать', `admin:msg:user:${user.telegramId}`)],
     [Markup.button.callback('⬅️ К пользователям', 'admin:users')],
@@ -586,6 +587,63 @@ const executeCustomBroadcast = async (ctx) => {
   );
 };
 
+const showUserWarranties = async (ctx, userId) => {
+  const user = await User.findById(userId);
+  if (!user) return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
+
+  const orders = await Order.find({ userId: user._id })
+    .populate('productId', 'name icon')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  let text = `🛡 <b>Управление гарантией пользователя</b>\n` +
+    `👤 <b>Пользователь:</b> @${escapeHtml(user.username || user.telegramId)}\n\n`;
+
+  const buttons = [];
+
+  if (orders.length === 0) {
+    text += `<i>У пользователя нет заказов.</i>`;
+  } else {
+    for (const ord of orders) {
+      const pName = ord.productId?.name || 'Товар';
+      const pIcon = ord.productId?.icon || '📦';
+      const wDays = ord.warrantyDays ?? 0;
+      const dateStr = formatDateMSK(ord.createdAt);
+
+      text += `${pIcon} <b>${escapeHtml(pName)}</b> (${dateStr})\n` +
+        `🛡 Гарантия: <b>${wDays} дн.</b>\n\n`;
+
+      buttons.push([
+        Markup.button.callback(`➕ +7 дн`, `admin:user:warr_add:${ord._id}:7:${userId}`),
+        Markup.button.callback(`➕ +30 дн`, `admin:user:warr_add:${ord._id}:30:${userId}`),
+        Markup.button.callback(`❌ Снять (0 дн)`, `admin:user:warr_reset:${ord._id}:${userId}`),
+      ]);
+    }
+  }
+
+  buttons.push([Markup.button.callback('⬅️ В профиль пользователя', `admin:user:view:${userId}`)]);
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, opts).catch(() => {});
+    await ctx.answerCbQuery().catch(() => {});
+  } else {
+    await ctx.reply(text, opts);
+  }
+};
+
+const execUserWarrantyAdd = async (ctx, orderId, days, userId) => {
+  await Order.findByIdAndUpdate(orderId, { $inc: { warrantyDays: parseInt(days, 10) } });
+  await ctx.answerCbQuery(`✅ Добавлено +${days} дн. гарантии!`, { show_alert: true }).catch(() => {});
+  await showUserWarranties(ctx, userId);
+};
+
+const execUserWarrantyReset = async (ctx, orderId, userId) => {
+  await Order.findByIdAndUpdate(orderId, { $set: { warrantyDays: 0 } });
+  await ctx.answerCbQuery('✅ Гарантия аннулирована (0 дн.)!', { show_alert: true }).catch(() => {});
+  await showUserWarranties(ctx, userId);
+};
+
 module.exports = {
   showAllUsers,
   showGlobalSearch,
@@ -603,4 +661,7 @@ module.exports = {
   handleCustomBroadcastInput,
   showCustomBroadcastPreview,
   executeCustomBroadcast,
+  showUserWarranties,
+  execUserWarrantyAdd,
+  execUserWarrantyReset,
 };
