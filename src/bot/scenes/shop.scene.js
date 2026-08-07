@@ -101,8 +101,9 @@ const getStock = async (product, autoKeysPrecomputed = null) => {
     : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   if (autoKeys > 0) return autoKeys;
   if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)) {
-    const mStock = product.manualStock ?? -1;
-    return (mStock === -1 || mStock === 0) ? '∞' : mStock;
+    const mStock = product.manualStock;
+    if (mStock === -1) return '∞';
+    return (typeof mStock === 'number') ? mStock : 0;
   }
   if (product.type === 'manual') {
     return product.manualStock === -1 ? '∞' : (product.manualStock || 0);
@@ -142,8 +143,8 @@ const getStockMap = async (products) => {
     let stock = autoKeys;
     if (autoKeys === 0) {
       if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(p.provider)) {
-        const manualStock = p.manualStock ?? -1;
-        stock = (manualStock === -1 || manualStock === 0) ? '∞' : manualStock;
+        const manualStock = p.manualStock;
+        stock = manualStock === -1 ? '∞' : ((typeof manualStock === 'number') ? manualStock : 0);
       } else if (p.type === 'manual') {
         const manualStock = p.manualStock ?? -1;
         stock = manualStock === -1 ? '∞' : (manualStock || 0);

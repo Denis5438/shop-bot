@@ -65,18 +65,28 @@ const getProducts = async (apiKey) => {
 
     return {
       success: true,
-      products: allProducts.map((p) => ({
-        productCode: p.product_code || p.id || p.code,
-        name: p.name || p.title || p.product_name,
-        nameEn: p.name_en || p.title_en || '',
-        description: p.description || '',
-        descriptionEn: p.description_en || '',
-        priceUsdt: parseFloat(p.price_usdt || p.price || 0),
-        stock: p.stock_count !== undefined ? p.stock_count : (p.in_stock ? 99 : 0),
-        category: p.category_name || p.category || 'AI & Digital Tools',
-        icon: p.icon || '🤖',
-        deliveryType: p.delivery_type || 'instant',
-      })),
+      products: allProducts.map((p) => {
+        let stockVal = 0;
+        if (p.stock_count !== undefined && p.stock_count !== null) stockVal = Number(p.stock_count);
+        else if (p.stock !== undefined && p.stock !== null) stockVal = Number(p.stock);
+        else if (p.available_count !== undefined && p.available_count !== null) stockVal = Number(p.available_count);
+        else if (p.quantity !== undefined && p.quantity !== null) stockVal = Number(p.quantity);
+        else if (p.in_stock === true) stockVal = 1;
+        else if (p.in_stock === false) stockVal = 0;
+
+        return {
+          productCode: p.product_code || p.id || p.code,
+          name: p.name || p.title || p.product_name,
+          nameEn: p.name_en || p.title_en || '',
+          description: p.description || '',
+          descriptionEn: p.description_en || '',
+          priceUsdt: parseFloat(p.price_usdt || p.price || 0),
+          stock: isNaN(stockVal) ? 0 : Math.max(0, stockVal),
+          category: p.category_name || p.category || 'AI & Digital Tools',
+          icon: p.icon || '🤖',
+          deliveryType: p.delivery_type || 'instant',
+        };
+      }),
     };
   } catch (err) {
     return {
