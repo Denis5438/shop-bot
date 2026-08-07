@@ -641,10 +641,9 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       balanceDebited = true;
       ctx.user = debitedUser;
 
-      if (!isAutoKeyProduct && product.type === 'manual') {
+      if (!isAutoKeyProduct && (product.type === 'manual' || ['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider))) {
         if (product.manualStock !== -1) {
-          // Атомарное уменьшение остатка с условием (без затирания параллельных
-          // правок админа полным product.save()).
+          // Атомарное уменьшение остатка с условием manualStock >= qty (защита от оверселла)
           const stockRes = await Product.updateOne(
             { _id: product._id, manualStock: { $gte: qty } },
             { $inc: { manualStock: -qty } },

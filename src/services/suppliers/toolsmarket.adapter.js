@@ -44,17 +44,34 @@ const getProducts = async (apiKey) => {
     const items = Array.isArray(res.data) ? res.data : (res.data?.products || []);
     return {
       success: true,
-      products: items.map((p) => ({
-        productCode: String(p.id || p.product_id || p.code),
-        name: p.name || p.title,
-        nameEn: p.name_en || '',
-        description: p.description || '',
-        descriptionEn: p.description_en || '',
-        priceUsdt: parseFloat(p.price || p.price_usdt || p.cost || 0),
-        stock: p.stock || (p.available ? 99 : 0),
-        category: p.category || 'Tools & Activations',
-        icon: '⚡',
-      })),
+      products: items.map((p) => {
+        let stockVal = 0;
+        if (p.is_available === false || p.in_stock === false || p.status === 'disabled') {
+          stockVal = 0;
+        } else if (p.stock !== undefined && p.stock !== null && !isNaN(Number(p.stock))) {
+          stockVal = Number(p.stock);
+        } else if (p.count !== undefined && p.count !== null && !isNaN(Number(p.count))) {
+          stockVal = Number(p.count);
+        } else if (p.available_count !== undefined && p.available_count !== null && !isNaN(Number(p.available_count))) {
+          stockVal = Number(p.available_count);
+        } else if (p.quantity !== undefined && p.quantity !== null && !isNaN(Number(p.quantity))) {
+          stockVal = Number(p.quantity);
+        } else if (p.available === true || p.in_stock === true) {
+          stockVal = 1;
+        }
+
+        return {
+          productCode: String(p.id || p.product_id || p.code),
+          name: p.name || p.title,
+          nameEn: p.name_en || '',
+          description: p.description || '',
+          descriptionEn: p.description_en || '',
+          priceUsdt: parseFloat(p.price || p.price_usdt || p.cost || 0),
+          stock: isNaN(stockVal) ? 0 : Math.max(0, stockVal),
+          category: p.category || 'Tools & Activations',
+          icon: '⚡',
+        };
+      }),
     };
   } catch (err) {
     return {

@@ -44,17 +44,32 @@ const getProducts = async (apiKey) => {
     const items = Array.isArray(res.data) ? res.data : (res.data?.products || []);
     return {
       success: true,
-      products: items.map((p) => ({
-        productCode: String(p.id || p.product_id),
-        name: p.name || p.title,
-        nameEn: p.name_en || '',
-        description: p.description || '',
-        descriptionEn: p.description_en || '',
-        priceUsdt: parseFloat(p.price || p.price_usdt || 0),
-        stock: p.stock !== undefined ? p.stock : (p.in_stock ? 99 : 0),
-        category: p.category_name || p.category || 'Akunding Accounts',
-        icon: '🛒',
-      })),
+      products: items.map((p) => {
+        let stockVal = 0;
+        if (p.is_available === false || p.in_stock === false || p.status === 'out_of_stock' || p.status === 'disabled') {
+          stockVal = 0;
+        } else if (p.stock !== undefined && p.stock !== null && !isNaN(Number(p.stock))) {
+          stockVal = Number(p.stock);
+        } else if (p.quantity !== undefined && p.quantity !== null && !isNaN(Number(p.quantity))) {
+          stockVal = Number(p.quantity);
+        } else if (p.count !== undefined && p.count !== null && !isNaN(Number(p.count))) {
+          stockVal = Number(p.count);
+        } else if (p.in_stock === true) {
+          stockVal = 1;
+        }
+
+        return {
+          productCode: String(p.id || p.product_id),
+          name: p.name || p.title,
+          nameEn: p.name_en || '',
+          description: p.description || '',
+          descriptionEn: p.description_en || '',
+          priceUsdt: parseFloat(p.price || p.price_usdt || 0),
+          stock: isNaN(stockVal) ? 0 : Math.max(0, stockVal),
+          category: p.category_name || p.category || 'Akunding Accounts',
+          icon: '🛒',
+        };
+      }),
     };
   } catch (err) {
     return {
