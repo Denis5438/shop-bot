@@ -12,11 +12,12 @@ const productSchema = new mongoose.Schema({
   manualStock: { type: Number, default: -1 },
   provider: {
     type: String,
-    enum: ['local', 'u1traby'],
+    enum: ['local', 'u1traby', 'jaha', 'toolsmarket', 'akunding', 'canboso'],
     default() {
       return this.type === 'gpt_activation' ? 'u1traby' : 'local';
     },
   },
+  supplierProductCode: { type: String, default: null },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null },
   /**
    * Тип выдачи товара:

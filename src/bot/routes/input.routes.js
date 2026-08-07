@@ -218,6 +218,46 @@ module.exports = (bot) => {
       return;
     }
 
+    // ─── ВВОД API-КЛЮЧА ПОСТАВЩИКА ───
+    if (session.adminAction === 'supplier_set_key' && ctx.user.role === 'admin') {
+      const supplierId = session.targetSupplierId;
+      const keyStr = ctx.message.text.trim();
+      session.adminAction = null;
+      session.targetSupplierId = null;
+
+      const supplierManager = require('../../services/supplierManager.service');
+      const updated = await supplierManager.saveSupplierKey(supplierId, keyStr);
+
+      await ctx.reply(`✅ API-ключ для <b>${escapeHtml(updated.title)}</b> успешно сохранен!\nТекущий баланс: <b>${updated.cachedBalance.toFixed(2)} USDT</b>`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('🔌 К поставщику', `admin:supplier:view:${supplierId}`)]]),
+      });
+      return;
+    }
+
+    // ─── ВВОД НАЦЕНКИ % ПОСТАВЩИКА ───
+    if (session.adminAction === 'supplier_set_margin' && ctx.user.role === 'admin') {
+      const supplierId = session.targetSupplierId;
+      const marginVal = parseFloat(ctx.message.text.trim().replace(',', '.'));
+      if (isNaN(marginVal) || marginVal < 0) {
+        return ctx.reply('❌ Введите корректный процент (например: 30):');
+      }
+
+      session.adminAction = null;
+      session.targetSupplierId = null;
+
+      const supplierManager = require('../../services/supplierManager.service');
+      const SupplierConfig = require('../../models/SupplierConfig');
+      const cfg = await SupplierConfig.findOne({ supplierId });
+      await supplierManager.saveSupplierKey(supplierId, cfg?.apiKey || '', marginVal, cfg?.marginFixed || 0);
+
+      await ctx.reply(`✅ Наценка <b>+${marginVal}%</b> успешно установлена!`, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('🔌 К поставщику', `admin:supplier:view:${supplierId}`)]]),
+      });
+      return;
+    }
+
     // Обработка отправки сообщения пользователю (от админа)
     if (session.adminAction === 'send_message' && ctx.user.role === 'admin') {
       const targetId = session.targetTelegramId;

@@ -873,6 +873,75 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       await ctx.reply(text, opts).catch(() => {});
     }
     await ctx.answerCbQuery().catch(() => {});
+  } else if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)) {
+    // ─── Автоматический выкуп у внешнего поставщика через API (On-Demand) ───
+    const supplierManager = require('../../services/supplierManager.service');
+    const suppRes = await supplierManager.fulfillSupplierOrder(product, qty, ctx.user);
+
+    const productLbl = lang === 'en' ? 'Product' : 'Товар';
+    const qtyLbl = lang === 'en' ? 'Quantity' : 'Количество';
+    const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
+
+    if (suppRes.success && suppRes.deliveryData) {
+      await Order.updateOne(
+        { _id: orders[0]._id },
+        {
+          $set: {
+            status: 'completed',
+            confirmedAt: new Date(),
+            deliveryData: String(suppRes.deliveryData),
+            activationResult: 'Автовыдача через API поставщика ⚡',
+          },
+        }
+      );
+
+      const text =
+        `✅ <b>${lang === 'en' ? 'Order delivered automatically ⚡' : 'Товар выдан моментально через API ⚡'}</b>\n\n` +
+        `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
+        `📊 ${qtyLbl}: <b>${qty}</b>\n` +
+        `💰 ${chargedLbl}: <b>${totalCost} USDT</b>\n\n` +
+        `🔑 <b>Ваши данные для доступа:</b>\n` +
+        `<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
+        `🛡 <i>Гарантия на заказ: ${product.warrantyDays ?? 5} дн.</i>`;
+
+      const opts = {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🛒 Купить ещё', `shop:product:${product._id}`)],
+          [Markup.button.callback(t('back_to_menu'), 'menu:main')],
+        ]),
+      };
+      try {
+        await ctx.editMessageText(text, opts);
+      } catch (_) {
+        await ctx.reply(text, opts).catch(() => {});
+      }
+      await ctx.answerCbQuery().catch(() => {});
+    } else {
+      // Если у поставщика сбой или 0 остатков - заказ ставится в очередь ручной выдачи
+      await Order.updateOne(
+        { _id: orders[0]._id },
+        { $set: { status: 'pending', notes: `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}` } }
+      );
+
+      const text =
+        `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ принят в обработку'}</b>\n\n` +
+        `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
+        `📊 ${qtyLbl}: <b>${qty}</b>\n` +
+        `💰 ${chargedLbl}: ${totalCost} USDT\n\n` +
+        `⏳ Товар будет выдан оператором в течение нескольких минут!`;
+
+      const opts = {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback(t('back_to_menu'), 'menu:main')]]),
+      };
+      try {
+        await ctx.editMessageText(text, opts);
+      } catch (_) {
+        await ctx.reply(text, opts).catch(() => {});
+      }
+      await ctx.answerCbQuery().catch(() => {});
+    }
   } else {
     const productLbl = lang === 'en' ? 'Product' : 'Товар';
     const qtyLbl = lang === 'en' ? 'Quantity' : 'Количество';

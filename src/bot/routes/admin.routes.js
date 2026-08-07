@@ -17,6 +17,7 @@ const settingsScene = require('../scenes/admin/settings.scene');
 const reqChannelsScene = require('../scenes/admin/req_channels.scene');
 const promosScene = require('../scenes/admin/promos.scene');
 const bulkScene = require('../scenes/admin/bulk.scene');
+const suppliersScene = require('../scenes/admin/suppliers.scene');
 const statsScene = require('../scenes/admin/stats.scene');
 const usersScene = require('../scenes/admin/users.scene');
 const { Markup } = require('telegraf');
@@ -34,6 +35,31 @@ module.exports = (bot) => {
   // ─── ADMIN: Промокоды ───
   bot.action('admin:promos', adminMiddleware, async (ctx) => {
     await promosScene.showPromosMain(ctx);
+  });
+
+  // ─── ADMIN: Внешние Поставщики (API) ───
+  bot.action('admin:suppliers', adminMiddleware, async (ctx) => {
+    await suppliersScene.showSuppliersMain(ctx);
+  });
+
+  bot.action(/^admin:supplier:view:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.showSupplierDetail(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:key:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.startSetApiKey(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:margin:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.startSetMargin(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:import:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.execImportCatalog(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:refresh:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.execRefreshBalance(ctx, ctx.match[1]);
   });
 
   bot.action('admin:promo:create', adminMiddleware, async (ctx) => {
