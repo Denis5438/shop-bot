@@ -21,19 +21,41 @@ const TYPE_LABELS = {
 
 const ACTIVE_ORDER_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'retry'];
 
-const showProductsList = async (ctx) => {
-  const products = await Product.find().sort({ sortOrder: 1, createdAt: -1 }).lean();
+const PRODUCTS_PER_PAGE = 7;
 
-  if (products.length === 0) {
-    return ctx.editMessageText('📦 Товаров пока нет.', {
+const showProductsList = async (ctx, page = 1, searchQuery = null) => {
+  const query = {};
+  if (searchQuery && typeof searchQuery === 'string' && searchQuery.trim()) {
+    query.name = new RegExp(searchQuery.trim(), 'i');
+  }
+
+  const totalCount = await Product.countDocuments(query);
+
+  if (totalCount === 0) {
+    const emptyText = searchQuery
+      ? `🔍 По запросу "<b>${escapeHtml(searchQuery)}</b>" ничего не найдено.`
+      : '📦 Товаров пока нет.';
+    return ctx.editMessageText(emptyText, {
+      parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔍 Другой поиск', 'admin:product:search')],
         [Markup.button.callback('➕ Добавить товар', 'admin:product:add')],
-        [Markup.button.callback('⬅️ Назад', 'admin:main')],
+        [Markup.button.callback('⬅️ В панель', 'admin:main')],
       ]),
     });
   }
 
-  // Остатки всех товаров одной агрегацией вместо countDocuments в цикле
+  const totalPages = Math.ceil(totalCount / PRODUCTS_PER_PAGE);
+  const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  const skip = (safePage - 1) * PRODUCTS_PER_PAGE;
+
+  const products = await Product.find(query)
+    .sort({ sortOrder: 1, createdAt: -1 })
+    .skip(skip)
+    .limit(PRODUCTS_PER_PAGE)
+    .lean();
+
+  // Остатки товаров на текущей странице
   const keyAgg = await Key.aggregate([
     { $match: { productId: { $in: products.map((p) => p._id) }, isUsed: false } },
     { $group: { _id: { productId: '$productId', provider: '$provider' }, cnt: { $sum: 1 } } },
@@ -46,7 +68,10 @@ const showProductsList = async (ctx) => {
     freeCounts.get(pid)[prov] = r.cnt;
   }
 
-  let text = `📦 <b>Управление товарами</b> (${products.length} шт.)\n\n`;
+  let text = `📦 <b>Управление товарами</b> (${totalCount} шт.)\n`;
+  if (searchQuery) text += `🔍 <i>Поиск: "${escapeHtml(searchQuery)}"</i>\n`;
+  text += `Страница: <b>${safePage}/${totalPages}</b>\n\n`;
+
   const buttons = [];
 
   for (const product of products) {
@@ -55,29 +80,53 @@ const showProductsList = async (ctx) => {
     const autoKeys = (c[prov] || 0) + (c['__null__'] || 0);
     const stock = autoKeys > 0
       ? autoKeys
-      : (product.type === 'manual' ? (product.manualStock === -1 ? '∞' : product.manualStock) : 0);
+      : (product.type === 'manual' || ['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)
+          ? (product.manualStock === -1 ? '∞' : product.manualStock)
+          : 0);
     const status = product.isActive ? '✅' : '🔴';
     const sellerTag = product.sellerId ? ' 👤' : '';
 
-    text += `${status} ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name)} - ${product.price} USDT | Остаток: ${stock}${sellerTag}\n`;
-    buttons.push([Markup.button.callback(`✏️ ${product.name.substring(0, 25)}`, `admin:product:edit:${product._id}`)]);
+    text += `${status} ${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b> | <b>${product.price} USDT</b> (Остаток: ${stock})${sellerTag}\n`;
+    buttons.push([
+      Markup.button.callback(`✏️ ${product.name.substring(0, 22)} ($${product.price})`, `admin:product:edit:${product._id}:${safePage}`),
+    ]);
   }
 
-  buttons.push([Markup.button.callback('➕ Добавить товар', 'admin:product:add')]);
-  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:main')]);
+  // Навигация по страницам
+  const navRow = [];
+  if (safePage > 1) {
+    navRow.push(Markup.button.callback('⬅️ Назад', `admin:products:${safePage - 1}`));
+  }
+  navRow.push(Markup.button.callback(`${safePage}/${totalPages}`, 'admin:noop'));
+  if (safePage < totalPages) {
+    navRow.push(Markup.button.callback('Вперёд ➡️', `admin:products:${safePage + 1}`));
+  }
+  if (navRow.length > 0) buttons.push(navRow);
 
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  buttons.push([
+    Markup.button.callback('🔍 Найти товар', 'admin:product:search'),
+    Markup.button.callback('➕ Добавить товар', 'admin:product:add'),
+  ]);
+  buttons.push([Markup.button.callback('⬅️ В панель управления', 'admin:main')]);
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, opts).catch(() => {});
+    await ctx.answerCbQuery().catch(() => {});
+  } else {
+    await ctx.reply(text, opts);
+  }
 };
 
-const showProductEdit = async (ctx, productId) => {
+const showProductEdit = async (ctx, productId, page = 1) => {
   const product = await Product.findById(productId).populate('sellerId').populate('categoryId');
   if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
 
   const autoKeysCount = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   const stock = autoKeysCount > 0
     ? `${autoKeysCount} шт. (автовыдача ⚡)`
-    : (product.type === 'manual'
-        ? (product.manualStock === -1 ? '∞ (ручной остаток)' : `${product.manualStock} шт. (ручной остаток)`)
+    : (product.type === 'manual' || ['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)
+        ? (product.manualStock === -1 ? '∞ (ручной остаток)' : `${product.manualStock} шт.`)
         : '0 шт. (нет в наличии)');
 
   const deliveryLabel = product.deliveryMethod === 'ready_account'
@@ -90,44 +139,36 @@ const showProductEdit = async (ctx, productId) => {
 
   const text =
     `✏️ <b>Редактирование товара</b>\n\n` +
-    `📦 Название: ${escapeHtml(product.name)}\n` +
-    `💰 Цена продажи: ${product.price} USDT\n` +
-    `💸 Закупочная цена: ${product.costPrice || 0} USDT\n` +
-    `🔑 Тип: ${escapeHtml(TYPE_LABELS[product.type] || product.type)}\n` +
+    `📦 Название: <b>${escapeHtml(product.name)}</b>\n` +
+    `💰 <b>Цена продажи: ${product.price} USDT</b>\n` +
+    `💸 Закупочная цена: <b>${product.costPrice || 0} USDT</b>\n` +
+    `🔑 Источник: ${escapeHtml(product.provider || 'local')}\n` +
     `🗂 Категория: ${product.categoryId ? escapeHtml(product.categoryId.name) : 'Нет'}\n` +
     `🚚 Выдача: ${deliveryLabel}\n` +
-    `📦 Остаток ключей: ${stock}\n` +
+    `📦 Остаток: <b>${stock}</b>\n` +
     `🛡 Гарантия: ${product.warrantyDays ?? 5} дн.\n` +
     `${sellerLine}\n` +
-    `🔘 Статус: ${product.isActive ? '✅ Активен' : '🔴 Скрыт'}`;
+    `🔘 Статус: ${product.isActive ? '✅ Активен (виден в магазине)' : '🔴 Скрыт'}`;
 
   const buttons = [
-    [Markup.button.callback('✏️ Изменить название', `admin:product:field:name:${productId}`)],
-    [Markup.button.callback('✏️ Название (EN)', `admin:product:field:nameEn:${productId}`)],
-    [Markup.button.callback('💰 Изменить цену', `admin:product:field:price:${productId}`)],
-    [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}`)],
-    [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}`)],
-    [Markup.button.callback('📝 Описание (EN)', `admin:product:field:descriptionEn:${productId}`)],
-    [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}`)],
-    [Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}`)],
-    [Markup.button.callback('🔑 Загрузить товары (TXT / Текст)', `admin:keys:add:${productId}`)],
-    [Markup.button.callback('📣 Разослать', `admin:product:broadcast:${productId}`)],
+    [Markup.button.callback('💰 Изменить цену продажи', `admin:product:field:price:${productId}:${page}`)],
+    [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}:${page}`)],
+    [Markup.button.callback('✏️ Изменить название', `admin:product:field:name:${productId}:${page}`)],
+    [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}:${page}`)],
+    [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}:${page}`)],
+    [Markup.button.callback('📦 Задать остаток вручную', `admin:product:set_stock:${productId}:${page}`)],
+    [Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}:${page}`)],
+    [Markup.button.callback('🔑 Загрузить ключи (TXT)', `admin:keys:add:${productId}`)],
     [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
   ];
 
-  // Кнопка управления продавцом и остатком (только для ручных товаров)
-  if (product.type === 'manual') {
-    buttons.push([Markup.button.callback('📦 Задать остаток', `admin:product:set_stock:${productId}`)]);
-    buttons.push([Markup.button.callback('👤 Назначить продавца', `admin:product:seller:${productId}`)]);
-  }
-
   buttons.push([
     product.isActive
-      ? Markup.button.callback('🔴 Скрыть', `admin:product:toggle:${productId}`)
-      : Markup.button.callback('✅ Показать', `admin:product:toggle:${productId}`),
-    Markup.button.callback('🗑 Удалить', `admin:product:delete_confirm:${productId}`),
+      ? Markup.button.callback('🔴 Скрыть товар', `admin:product:toggle:${productId}:${page}`)
+      : Markup.button.callback('✅ Показать в магазине', `admin:product:toggle:${productId}:${page}`),
+    Markup.button.callback('🗑 Удалить', `admin:product:delete_confirm:${productId}:${page}`),
   ]);
-  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:products')]);
+  buttons.push([Markup.button.callback('⬅️ К списку товаров', `admin:products:${page}`)]);
 
   await ctx.editMessageText(text, {
     parse_mode: 'HTML',
@@ -477,22 +518,31 @@ const handleProductInput = async (ctx) => {
     }
   }
 
+  // ─── ПОИСК ТОВАРА ПО НАЗВАНИЮ ───
+  if (session.adminAction === 'product_search') {
+    const queryStr = ctx.message.text.trim();
+    session.adminAction = null;
+    await showProductsList(ctx, 1, queryStr);
+    return true;
+  }
+
   if (session.adminAction === 'edit_product_field') {
-    const { productId, field } = session;
+    const { productId, field, productPage } = session;
     const value = extractTextWithEmojis(ctx.message).trim();
+    const page = productPage || 1;
 
     const update = {};
     if (field === 'price' || field === 'costPrice') {
       const num = parseFloat(value.replace(',', '.'));
-      if (Number.isNaN(num)) {
-        await ctx.reply('❌ Неверное число. Попробуйте ещё раз.');
+      if (Number.isNaN(num) || num < 0) {
+        await ctx.reply('❌ Неверное число. Введите корректную цену (например: 4.50):');
         return true;
       }
       update[field] = num;
     } else if (field === 'warrantyDays') {
       const num = parseInt(value, 10);
       if (Number.isNaN(num) || num < 0) {
-        await ctx.reply('❌ Введите корректное число дней гарантии (например: 5):');
+        await ctx.reply('❌ Введите корректное число дней гарантии (например: 30):');
         return true;
       }
       update[field] = num;
@@ -506,14 +556,14 @@ const handleProductInput = async (ctx) => {
     ctx.session.productId = null;
     ctx.session.field = null;
 
-    await ctx.reply('✅ Изменено!', {
-      ...Markup.inlineKeyboard([[Markup.button.callback('📦 К товарам', 'admin:products')]]),
-    });
+    await ctx.reply(`✅ Поле <b>${field}</b> успешно обновлено!`, { parse_mode: 'HTML' });
+    await showProductEdit(ctx, productId, page);
     return true;
   }
 
   if (session.adminAction === 'set_manual_stock') {
-    const { productId } = session;
+    const { productId, productPage } = session;
+    const page = productPage || 1;
     const value = ctx.message.text.trim();
     const stock = parseInt(value, 10);
 
@@ -522,18 +572,12 @@ const handleProductInput = async (ctx) => {
       return true;
     }
 
-    const product = await Product.findByIdAndUpdate(productId, { manualStock: stock }, { new: true });
-
-    if (stock > 0 || stock === -1) {
-      await notif.notifyWaitlist(product);
-    }
-
+    await Product.findByIdAndUpdate(productId, { $set: { manualStock: stock } });
     ctx.session.adminAction = null;
     ctx.session.productId = null;
 
-    await ctx.reply(`✅ Остаток успешно установлен: ${stock === -1 ? '∞' : stock}`, {
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад к товару', `admin:product:edit:${productId}`)]]),
-    });
+    await ctx.reply(`✅ Остаток установлен: <b>${stock === -1 ? '∞' : stock}</b> шт.!`, { parse_mode: 'HTML' });
+    await showProductEdit(ctx, productId, page);
     return true;
   }
 

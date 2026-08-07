@@ -142,46 +142,76 @@ module.exports = (bot) => {
   });
 
   // ─── ADMIN: Товары ───
-  bot.action('admin:products', adminMiddleware, async (ctx) => {
-    await ctx.answerCbQuery();
-    await productsScene.showProductsList(ctx);
+  bot.action(/^admin:products(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    const page = ctx.match[1] ? parseInt(ctx.match[1], 10) : 1;
+    await productsScene.showProductsList(ctx, page);
+  });
+
+  bot.action('admin:product:search', adminMiddleware, async (ctx) => {
+    ctx.session = ctx.session || {};
+    ctx.session.adminAction = 'product_search';
+    await ctx.reply('🔍 Введите название или часть названия товара для поиска:\n\n<i>(Например: Netflix, Kling, ChatGPT)</i>', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:products')]]),
+    });
+    await ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action('admin:product:add', adminMiddleware, async (ctx) => {
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery().catch(() => {});
     await productsScene.startAddProduct(ctx);
   });
 
-  bot.action(/^admin:product:edit:(.+)$/, adminMiddleware, async (ctx) => {
-    await productsScene.showProductEdit(ctx, ctx.match[1]);
+  bot.action(/^admin:product:edit:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await productsScene.showProductEdit(ctx, productId, page);
   });
 
-  bot.action(/^admin:product:toggle:(.+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:product:toggle:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     await productsScene.toggleProduct(ctx, ctx.match[1]);
   });
 
-  bot.action(/^admin:product:field:(\w+):(.+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:product:field:(\w+):(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const field = ctx.match[1];
     const productId = ctx.match[2];
+    const page = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    ctx.session = ctx.session || {};
     ctx.session.adminAction = 'edit_product_field';
     ctx.session.field = field;
     ctx.session.productId = productId;
-    await ctx.reply(`Введите новое значение для поля <b>${field}</b>:`, {
+    ctx.session.productPage = page;
+
+    const fieldLabels = {
+      price: '💰 новую Цену Продажи в USDT (например: 5.50)',
+      costPrice: '💸 новую Закупочную Цену в USDT (например: 2.00)',
+      name: '📦 новое Название товара',
+      description: '📝 Описание товара на русском',
+      descriptionEn: '📝 Описание товара на английском',
+      warrantyDays: '🛡 Срок гарантии в днях (например: 30)',
+    };
+
+    const promptText = fieldLabels[field] || `новое значение для поля <b>${field}</b>`;
+    await ctx.reply(`Введите ${promptText}:`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}:${page}`)]]),
     });
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery().catch(() => {});
   });
 
-  bot.action(/^admin:product:set_stock:(.+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:product:set_stock:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    ctx.session = ctx.session || {};
     ctx.session.adminAction = 'set_manual_stock';
     ctx.session.productId = productId;
+    ctx.session.productPage = page;
     await ctx.reply(`Введите количество товара в наличии (цифрой).\n\nНапишите <b>-1</b>, если хотите сделать остаток бесконечным (∞):`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}:${page}`)]]),
     });
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action(/^admin:product:delete_confirm:(.+)$/, adminMiddleware, async (ctx) => {
