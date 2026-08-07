@@ -57,7 +57,8 @@ const showSupplierDetail = async (ctx, supplierId) => {
     [Markup.button.callback('🔑 Задать / сменить API-ключ', `admin:supplier:key:${supplierId}`)],
     [Markup.button.callback('📈 Изменить наценку %', `admin:supplier:margin:${supplierId}`)],
     [Markup.button.callback('📥 Импортировать ВСЕ товары в 1 клик', `admin:supplier:import:${supplierId}`)],
-    [Markup.button.callback('🔄 Обновить баланс', `admin:supplier:refresh:${supplierId}`)],
+    [Markup.button.callback('🔄 Синхронизировать остатки и склад', `admin:supplier:sync:${supplierId}`)],
+    [Markup.button.callback('💰 Проверить баланс', `admin:supplier:refresh:${supplierId}`)],
     [Markup.button.callback('⬅️ К поставщикам', 'admin:suppliers')],
   ];
 
@@ -141,6 +142,22 @@ const execRefreshBalance = async (ctx, supplierId) => {
   await showSupplierDetail(ctx, supplierId);
 };
 
+/**
+ * Синхронизация остатков поставщика
+ */
+const execSyncStock = async (ctx, supplierId) => {
+  await ctx.answerCbQuery('⏳ Синхронизируем остатки...', { show_alert: false }).catch(() => {});
+  const liveSync = require('../../../services/supplierLiveSync.service');
+  const res = await liveSync.syncSupplierStock(supplierId);
+
+  if (res.success) {
+    await ctx.answerCbQuery(`✅ Синхронизировано! Обновлено товаров: ${res.updatedCount}`, { show_alert: true }).catch(() => {});
+  } else {
+    await ctx.answerCbQuery(`❌ ${res.error}`, { show_alert: true }).catch(() => {});
+  }
+  await showSupplierDetail(ctx, supplierId);
+};
+
 module.exports = {
   showSuppliersMain,
   showSupplierDetail,
@@ -148,4 +165,5 @@ module.exports = {
   startSetMargin,
   execImportCatalog,
   execRefreshBalance,
+  execSyncStock,
 };

@@ -62,6 +62,10 @@ module.exports = (bot) => {
     await suppliersScene.execRefreshBalance(ctx, ctx.match[1]);
   });
 
+  bot.action(/^admin:supplier:sync:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.execSyncStock(ctx, ctx.match[1]);
+  });
+
   bot.action('admin:promo:create', adminMiddleware, async (ctx) => {
     await promosScene.startCreatePromo(ctx);
   });
