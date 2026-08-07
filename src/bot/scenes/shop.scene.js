@@ -100,6 +100,10 @@ const getStock = async (product, autoKeysPrecomputed = null) => {
     ? autoKeysPrecomputed
     : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   if (autoKeys > 0) return autoKeys;
+  if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)) {
+    const mStock = product.manualStock ?? -1;
+    return mStock === -1 ? '∞' : mStock;
+  }
   if (product.type === 'manual') {
     return product.manualStock === -1 ? '∞' : product.manualStock;
   }
@@ -136,11 +140,14 @@ const getStockMap = async (products) => {
     const provider = resolveProductProvider(p);
     const autoKeys = (c[provider] || 0) + (c['__null__'] || 0);
     let stock = autoKeys;
-    if (autoKeys === 0 && p.type === 'manual') {
-      // ?? -1: lean() не подставляет схемные дефолты - у legacy-документов
-      // без поля manualStock иначе получился бы undefined вместо '∞'
-      const manualStock = p.manualStock ?? -1;
-      stock = manualStock === -1 ? '∞' : manualStock;
+    if (autoKeys === 0) {
+      if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(p.provider)) {
+        const manualStock = p.manualStock ?? -1;
+        stock = manualStock === -1 ? '∞' : manualStock;
+      } else if (p.type === 'manual') {
+        const manualStock = p.manualStock ?? -1;
+        stock = manualStock === -1 ? '∞' : manualStock;
+      }
     }
     map.set(pid, stock);
   }
