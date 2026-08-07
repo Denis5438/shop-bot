@@ -137,15 +137,20 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     ? `👤 Продавец: @${escapeHtml(product.sellerId.username)} (${product.sellerPrice} USDT)`
     : '👤 Продавец: не назначен';
 
+  const nameEnStr = product.nameEn ? `<b>${escapeHtml(product.nameEn)}</b>` : '<i>не задано</i>';
+  const descStatus = `${product.description ? 'RU ✅' : 'RU ⚪'} | ${product.descriptionEn ? 'EN ✅' : 'EN ⚪'}`;
+
   const text =
     `✏️ <b>Редактирование товара</b>\n\n` +
-    `📦 Название: <b>${escapeHtml(product.name)}</b>\n` +
+    `📦 Название (RU): <b>${escapeHtml(product.name)}</b>\n` +
+    `🇬🇧 Название (EN): ${nameEnStr}\n` +
     `💰 <b>Цена продажи: ${product.price} USDT</b>\n` +
     `💸 Закупочная цена: <b>${product.costPrice || 0} USDT</b>\n` +
     `🔑 Источник: ${escapeHtml(product.provider || 'local')}\n` +
     `🗂 Категория: ${product.categoryId ? escapeHtml(product.categoryId.name) : 'Нет'}\n` +
     `🚚 Выдача: ${deliveryLabel}\n` +
     `📦 Остаток: <b>${stock}</b>\n` +
+    `📝 Описания: ${descStatus}\n` +
     `🛡 Гарантия: ${product.warrantyDays ?? 5} дн.\n` +
     `${sellerLine}\n` +
     `🔘 Статус: ${product.isActive ? '✅ Активен (виден в магазине)' : '🔴 Скрыт'}`;
@@ -153,8 +158,14 @@ const showProductEdit = async (ctx, productId, page = 1) => {
   const buttons = [
     [Markup.button.callback('💰 Изменить цену продажи', `admin:product:field:price:${productId}:${page}`)],
     [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}:${page}`)],
-    [Markup.button.callback('✏️ Изменить название', `admin:product:field:name:${productId}:${page}`)],
-    [Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}:${page}`)],
+    [
+      Markup.button.callback('✏️ Название (RU)', `admin:product:field:name:${productId}:${page}`),
+      Markup.button.callback('🇬🇧 Название (EN)', `admin:product:field:nameEn:${productId}:${page}`),
+    ],
+    [
+      Markup.button.callback('📝 Описание (RU)', `admin:product:field:description:${productId}:${page}`),
+      Markup.button.callback('🇬🇧 Описание (EN)', `admin:product:field:descriptionEn:${productId}:${page}`),
+    ],
     [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}:${page}`)],
     [Markup.button.callback('📦 Задать остаток вручную', `admin:product:set_stock:${productId}:${page}`)],
     [Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}:${page}`)],
