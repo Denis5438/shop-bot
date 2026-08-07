@@ -66,17 +66,25 @@ const getProducts = async (apiKey) => {
     return {
       success: true,
       products: allProducts.map((p) => {
-        let stockVal = 99; // По умолчанию все товары из каталога поставщика доступны
+        let stockVal = 0;
         if (p.is_available === false || p.in_stock === false || p.status === 'out_of_stock' || p.status === 'disabled' || p.is_active === false) {
           stockVal = 0;
-        } else if (p.stock_count !== undefined && p.stock_count !== null) {
-          stockVal = Number(p.stock_count);
-        } else if (p.stock !== undefined && p.stock !== null) {
+        } else if (p.stock !== undefined && p.stock !== null && !isNaN(Number(p.stock))) {
           stockVal = Number(p.stock);
-        } else if (p.available_count !== undefined && p.available_count !== null) {
+        } else if (p.count !== undefined && p.count !== null && !isNaN(Number(p.count))) {
+          stockVal = Number(p.count);
+        } else if (p.stock_count !== undefined && p.stock_count !== null && !isNaN(Number(p.stock_count))) {
+          stockVal = Number(p.stock_count);
+        } else if (p.available_count !== undefined && p.available_count !== null && !isNaN(Number(p.available_count))) {
           stockVal = Number(p.available_count);
-        } else if (p.quantity !== undefined && p.quantity !== null) {
+        } else if (p.available !== undefined && p.available !== null && !isNaN(Number(p.available))) {
+          stockVal = Number(p.available);
+        } else if (p.remains !== undefined && p.remains !== null && !isNaN(Number(p.remains))) {
+          stockVal = Number(p.remains);
+        } else if (p.quantity !== undefined && p.quantity !== null && !isNaN(Number(p.quantity))) {
           stockVal = Number(p.quantity);
+        } else if (p.in_stock === true || p.is_available === true) {
+          stockVal = 1;
         }
 
         return {
