@@ -96,17 +96,15 @@ module.exports = (bot) => {
     await usersScene.showUserWarranties(ctx, ctx.match[1]);
   });
 
-  bot.action(/^admin:user:warr_add:([^:]+):(\d+):(.+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:user:warr_add:([^:]+):(\d+)$/, adminMiddleware, async (ctx) => {
     const orderId = ctx.match[1];
     const days = parseInt(ctx.match[2], 10);
-    const userId = ctx.match[3];
-    await usersScene.execUserWarrantyAdd(ctx, orderId, days, userId);
+    await usersScene.execUserWarrantyAdd(ctx, orderId, days);
   });
 
-  bot.action(/^admin:user:warr_reset:([^:]+):(.+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:user:warr_reset:([^:]+)$/, adminMiddleware, async (ctx) => {
     const orderId = ctx.match[1];
-    const userId = ctx.match[2];
-    await usersScene.execUserWarrantyReset(ctx, orderId, userId);
+    await usersScene.execUserWarrantyReset(ctx, orderId);
   });
 
   // ─── ADMIN: Товары ───

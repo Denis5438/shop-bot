@@ -614,9 +614,9 @@ const showUserWarranties = async (ctx, userId) => {
         `🛡 Гарантия: <b>${wDays} дн.</b>\n\n`;
 
       buttons.push([
-        Markup.button.callback(`➕ +7 дн`, `admin:user:warr_add:${ord._id}:7:${userId}`),
-        Markup.button.callback(`➕ +30 дн`, `admin:user:warr_add:${ord._id}:30:${userId}`),
-        Markup.button.callback(`❌ Снять (0 дн)`, `admin:user:warr_reset:${ord._id}:${userId}`),
+        Markup.button.callback(`➕ +7 дн`, `admin:user:warr_add:${ord._id}:7`),
+        Markup.button.callback(`➕ +30 дн`, `admin:user:warr_add:${ord._id}:30`),
+        Markup.button.callback(`❌ Снять (0 дн)`, `admin:user:warr_reset:${ord._id}`),
       ]);
     }
   }
@@ -632,16 +632,28 @@ const showUserWarranties = async (ctx, userId) => {
   }
 };
 
-const execUserWarrantyAdd = async (ctx, orderId, days, userId) => {
-  await Order.findByIdAndUpdate(orderId, { $inc: { warrantyDays: parseInt(days, 10) } });
+const execUserWarrantyAdd = async (ctx, orderId, days) => {
+  const order = await Order.findByIdAndUpdate(
+    orderId,
+    { $inc: { warrantyDays: parseInt(days, 10) } },
+    { new: true }
+  );
   await ctx.answerCbQuery(`✅ Добавлено +${days} дн. гарантии!`, { show_alert: true }).catch(() => {});
-  await showUserWarranties(ctx, userId);
+  if (order?.userId) {
+    await showUserWarranties(ctx, order.userId.toString());
+  }
 };
 
-const execUserWarrantyReset = async (ctx, orderId, userId) => {
-  await Order.findByIdAndUpdate(orderId, { $set: { warrantyDays: 0 } });
+const execUserWarrantyReset = async (ctx, orderId) => {
+  const order = await Order.findByIdAndUpdate(
+    orderId,
+    { $set: { warrantyDays: 0 } },
+    { new: true }
+  );
   await ctx.answerCbQuery('✅ Гарантия аннулирована (0 дн.)!', { show_alert: true }).catch(() => {});
-  await showUserWarranties(ctx, userId);
+  if (order?.userId) {
+    await showUserWarranties(ctx, order.userId.toString());
+  }
 };
 
 module.exports = {
