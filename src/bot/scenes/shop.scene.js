@@ -102,10 +102,10 @@ const getStock = async (product, autoKeysPrecomputed = null) => {
   if (autoKeys > 0) return autoKeys;
   if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)) {
     const mStock = product.manualStock ?? -1;
-    return mStock === -1 ? '∞' : mStock;
+    return (mStock === -1 || mStock === 0) ? '∞' : mStock;
   }
   if (product.type === 'manual') {
-    return product.manualStock === -1 ? '∞' : product.manualStock;
+    return product.manualStock === -1 ? '∞' : (product.manualStock || 0);
   }
   return autoKeys;
 };
@@ -143,10 +143,10 @@ const getStockMap = async (products) => {
     if (autoKeys === 0) {
       if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(p.provider)) {
         const manualStock = p.manualStock ?? -1;
-        stock = manualStock === -1 ? '∞' : manualStock;
+        stock = (manualStock === -1 || manualStock === 0) ? '∞' : manualStock;
       } else if (p.type === 'manual') {
         const manualStock = p.manualStock ?? -1;
-        stock = manualStock === -1 ? '∞' : manualStock;
+        stock = manualStock === -1 ? '∞' : (manualStock || 0);
       }
     }
     map.set(pid, stock);
