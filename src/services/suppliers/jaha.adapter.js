@@ -184,12 +184,17 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
       }
     );
 
+    const orderData = res.data;
+    const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
+    const orderNum = orderData?.order_number || orderData?.order_id || orderData?.id;
+    const status = orderData?.status || (delivery ? 'completed' : 'processing');
+
     return {
       success: true,
-      orderNumber: res.data?.order_number || res.data?.order_id || res.data?.id,
-      deliveryData: res.data?.delivery || res.data?.keys || res.data?.data || JSON.stringify(res.data),
-      status: res.data?.status || 'completed',
-      raw: res.data,
+      orderNumber: orderNum,
+      deliveryData: delivery ? String(delivery) : (orderNum ? `Заказ поставщика: #${orderNum}` : null),
+      status,
+      raw: orderData,
     };
   } catch (err) {
     const detail = err.response?.data?.detail || err.response?.data?.message || err.message;
