@@ -4,6 +4,26 @@ const PROVIDERS = {
     label: '🏠 Мои ключи',
     shortLabel: 'Мои ключи',
   },
+  jaha: {
+    id: 'jaha',
+    label: '🌐 Jaha Digital API',
+    shortLabel: 'Jaha Digital',
+  },
+  toolsmarket: {
+    id: 'toolsmarket',
+    label: '🌐 ToolsMarket API',
+    shortLabel: 'ToolsMarket',
+  },
+  akunding: {
+    id: 'akunding',
+    label: '🛒 Akunding API',
+    shortLabel: 'Akunding',
+  },
+  canboso: {
+    id: 'canboso',
+    label: '🌐 Canboso API',
+    shortLabel: 'Canboso',
+  },
   u1traby: {
     id: 'u1traby',
     label: '🌐 U1traby',

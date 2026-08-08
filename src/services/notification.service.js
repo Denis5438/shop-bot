@@ -96,9 +96,12 @@ const notifyAdminNewOrder = async (order, user, product) => {
   const profit = Math.max(0, parseFloat((order.price - cost).toFixed(2)));
   const profitStr = profit > 0 ? `\n💵 <b>Ваша чистая прибыль: +${profit.toFixed(2)} USDT</b> 🚀` : '';
 
-  const deliveryStr = order.deliveryData
-    ? `\n🔑 <b>Выдано клиенту:</b>\n<code>${escapeHtml(String(order.deliveryData))}</code>\n`
-    : '';
+  let deliveryStr = '';
+  if (order.status === 'pending' && order.notes) {
+    deliveryStr = `\n\n❌ <b>Ошибка при выдаче:</b>\n<i>${escapeHtml(String(order.notes))}</i>\n⚠️ Заказ ждёт вашей ручной выдачи!`;
+  } else if (order.deliveryData) {
+    deliveryStr = `\n\n🔑 <b>Выдано клиенту:</b>\n<code>${escapeHtml(String(order.deliveryData))}</code>\n`;
+  }
 
   const mskTime = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
 

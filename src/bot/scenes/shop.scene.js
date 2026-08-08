@@ -899,6 +899,8 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           },
         }
       );
+      orders[0].status = 'completed';
+      orders[0].deliveryData = String(suppRes.deliveryData);
 
       const text =
         `✅ <b>${lang === 'en' ? 'Order delivered automatically ⚡' : 'Товар выдан моментально через API ⚡'}</b>\n\n` +
@@ -924,10 +926,13 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       await ctx.answerCbQuery().catch(() => {});
     } else {
       // Если у поставщика сбой или 0 остатков - заказ ставится в очередь ручной выдачи
+      const errNote = `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}`;
       await Order.updateOne(
         { _id: orders[0]._id },
-        { $set: { status: 'pending', notes: `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}` } }
+        { $set: { status: 'pending', notes: errNote } }
       );
+      orders[0].status = 'pending';
+      orders[0].notes = errNote;
 
       const text =
         `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ принят в обработку'}</b>\n\n` +
