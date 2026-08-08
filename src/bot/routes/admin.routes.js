@@ -121,6 +121,41 @@ module.exports = (bot) => {
     await bulkScene.execResetWarranty(ctx);
   });
 
+  bot.action('admin:bulk:reset_logistics_confirm', adminMiddleware, async (ctx) => {
+    await bulkScene.showResetLogisticsConfirm(ctx);
+  });
+  bot.action('admin:bulk:reset_logistics_exec', adminMiddleware, async (ctx) => {
+    await bulkScene.execResetLogistics(ctx);
+  });
+
+  bot.action('admin:bulk:reset_products_confirm', adminMiddleware, async (ctx) => {
+    await bulkScene.showResetProductsConfirm(ctx);
+  });
+  bot.action('admin:bulk:reset_products_exec', adminMiddleware, async (ctx) => {
+    await bulkScene.execResetProducts(ctx);
+  });
+
+  bot.action('admin:bulk:reset_categories_confirm', adminMiddleware, async (ctx) => {
+    await bulkScene.showResetCategoriesConfirm(ctx);
+  });
+  bot.action('admin:bulk:reset_categories_exec', adminMiddleware, async (ctx) => {
+    await bulkScene.execResetCategories(ctx);
+  });
+
+  bot.action('admin:bulk:hide_products_confirm', adminMiddleware, async (ctx) => {
+    await bulkScene.showHideProductsConfirm(ctx);
+  });
+  bot.action('admin:bulk:hide_products_exec', adminMiddleware, async (ctx) => {
+    await bulkScene.execHideProducts(ctx);
+  });
+
+  bot.action('admin:bulk:hide_categories_confirm', adminMiddleware, async (ctx) => {
+    await bulkScene.showHideCategoriesConfirm(ctx);
+  });
+  bot.action('admin:bulk:hide_categories_exec', adminMiddleware, async (ctx) => {
+    await bulkScene.execHideCategories(ctx);
+  });
+
   // ─── ADMIN: Управление гарантией конкретного пользователя ───
   bot.action(/^admin:user:warranty:([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const userId = ctx.match[1];

@@ -1,6 +1,8 @@
 const User = require('../models/User');
 const Order = require('../models/Order');
 const Transaction = require('../models/Transaction');
+const Product = require('../models/Product');
+const Category = require('../models/Category');
 
 /**
  * Сброс всех балансов пользователей до 0.00 USDT
@@ -69,4 +71,57 @@ module.exports = {
   grantBalanceToAll,
   bulkAddWarranty,
   bulkResetWarranty,
+};
+
+/**
+ * Очистка всей логистики (заказы и транзакции)
+ */
+const deleteAllLogistics = async () => {
+  const oRes = await Order.deleteMany({});
+  const tRes = await Transaction.deleteMany({});
+  return { orders: oRes.deletedCount, transactions: tRes.deletedCount };
+};
+
+/**
+ * Удаление всех товаров
+ */
+const deleteAllProducts = async () => {
+  const res = await Product.deleteMany({});
+  return res.deletedCount;
+};
+
+/**
+ * Удаление всех категорий
+ */
+const deleteAllCategories = async () => {
+  const res = await Category.deleteMany({});
+  return res.deletedCount;
+};
+
+/**
+ * Скрыть все товары (isActive: false)
+ */
+const hideAllProducts = async () => {
+  const res = await Product.updateMany({}, { $set: { isActive: false } });
+  return res.modifiedCount;
+};
+
+/**
+ * Скрыть все категории (isActive: false)
+ */
+const hideAllCategories = async () => {
+  const res = await Category.updateMany({}, { $set: { isActive: false } });
+  return res.modifiedCount;
+};
+
+module.exports = {
+  resetAllBalances,
+  grantBalanceToAll,
+  bulkAddWarranty,
+  bulkResetWarranty,
+  deleteAllLogistics,
+  deleteAllProducts,
+  deleteAllCategories,
+  hideAllProducts,
+  hideAllCategories,
 };

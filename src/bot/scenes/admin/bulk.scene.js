@@ -17,6 +17,17 @@ const showBulkMain = async (ctx) => {
     [Markup.button.callback('💰 Обнулить ВСЕ балансы', 'admin:bulk:reset_bal_confirm')],
     [Markup.button.callback('🎁 Начислить баланс ВСЕМ', 'admin:bulk:give_bal_prompt')],
     [Markup.button.callback('🛡 Массовая гарантия (выдать/снять)', 'admin:bulk:warranty_menu')],
+    [
+      Markup.button.callback('🗑 Обнулить логистику', 'admin:bulk:reset_logistics_confirm'),
+      Markup.button.callback('🗑 Обнулить товары', 'admin:bulk:reset_products_confirm'),
+    ],
+    [
+      Markup.button.callback('🗑 Обнулить категории', 'admin:bulk:reset_categories_confirm'),
+    ],
+    [
+      Markup.button.callback('🙈 Скрыть все товары', 'admin:bulk:hide_products_confirm'),
+      Markup.button.callback('🙈 Скрыть категории', 'admin:bulk:hide_categories_confirm'),
+    ],
     [Markup.button.callback('⬅️ В админку', 'admin:main')],
   ]);
 
@@ -94,6 +105,63 @@ const execResetWarranty = async (ctx) => {
   await showBulkWarrantyMenu(ctx);
 };
 
+// --- Подтверждения и выполнение очистки/скрытия ---
+
+const showResetLogisticsConfirm = async (ctx) => {
+  const text = `⚠️ <b>Очистка логистики</b>\n\nВы собираетесь безвозвратно удалить <b>ВСЕ</b> заказы и историю транзакций пополнений. Балансы пользователей при этом сохранятся.\nПодтверждаете?`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔥 Да, удалить ВСЮ логистику', 'admin:bulk:reset_logistics_exec')], [Markup.button.callback('❌ Отмена', 'admin:bulk:main')]]);
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+};
+const execResetLogistics = async (ctx) => {
+  const count = await bulkService.deleteAllLogistics();
+  await ctx.answerCbQuery(`✅ Логистика очищена! (Удалено ${count.orders} заказов, ${count.transactions} транзакций)`, { show_alert: true }).catch(() => {});
+  await showBulkMain(ctx);
+};
+
+const showResetProductsConfirm = async (ctx) => {
+  const text = `⚠️ <b>Очистка товаров</b>\n\nВы собираетесь безвозвратно удалить <b>ВСЕ</b> товары из базы. Категории и логистика не пострадают.\nПодтверждаете?`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔥 Да, удалить ВСЕ товары', 'admin:bulk:reset_products_exec')], [Markup.button.callback('❌ Отмена', 'admin:bulk:main')]]);
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+};
+const execResetProducts = async (ctx) => {
+  const count = await bulkService.deleteAllProducts();
+  await ctx.answerCbQuery(`✅ Удалено ${count} товаров!`, { show_alert: true }).catch(() => {});
+  await showBulkMain(ctx);
+};
+
+const showResetCategoriesConfirm = async (ctx) => {
+  const text = `⚠️ <b>Очистка категорий</b>\n\nВы собираетесь безвозвратно удалить <b>ВСЕ</b> категории. Товары и логистика не пострадают.\nПодтверждаете?`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔥 Да, удалить ВСЕ категории', 'admin:bulk:reset_categories_exec')], [Markup.button.callback('❌ Отмена', 'admin:bulk:main')]]);
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+};
+const execResetCategories = async (ctx) => {
+  const count = await bulkService.deleteAllCategories();
+  await ctx.answerCbQuery(`✅ Удалено ${count} категорий!`, { show_alert: true }).catch(() => {});
+  await showBulkMain(ctx);
+};
+
+const showHideProductsConfirm = async (ctx) => {
+  const text = `🙈 <b>Скрыть все товары</b>\n\nВы собираетесь перевести <b>ВСЕ</b> товары в статус неактивных (невидимых для покупателей).\nПодтверждаете?`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🙈 Да, скрыть ВСЕ товары', 'admin:bulk:hide_products_exec')], [Markup.button.callback('❌ Отмена', 'admin:bulk:main')]]);
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+};
+const execHideProducts = async (ctx) => {
+  const count = await bulkService.hideAllProducts();
+  await ctx.answerCbQuery(`✅ Скрыто ${count} товаров!`, { show_alert: true }).catch(() => {});
+  await showBulkMain(ctx);
+};
+
+const showHideCategoriesConfirm = async (ctx) => {
+  const text = `🙈 <b>Скрыть все категории</b>\n\nВы собираетесь перевести <b>ВСЕ</b> категории в статус неактивных (невидимых для покупателей).\nПодтверждаете?`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🙈 Да, скрыть ВСЕ категории', 'admin:bulk:hide_categories_exec')], [Markup.button.callback('❌ Отмена', 'admin:bulk:main')]]);
+  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+};
+const execHideCategories = async (ctx) => {
+  const count = await bulkService.hideAllCategories();
+  await ctx.answerCbQuery(`✅ Скрыто ${count} категорий!`, { show_alert: true }).catch(() => {});
+  await showBulkMain(ctx);
+};
+
 module.exports = {
   showBulkMain,
   showResetBalanceConfirm,
@@ -102,4 +170,14 @@ module.exports = {
   showBulkWarrantyMenu,
   execAddWarranty,
   execResetWarranty,
+  showResetLogisticsConfirm,
+  execResetLogistics,
+  showResetProductsConfirm,
+  execResetProducts,
+  showResetCategoriesConfirm,
+  execResetCategories,
+  showHideProductsConfirm,
+  execHideProducts,
+  showHideCategoriesConfirm,
+  execHideCategories,
 };
