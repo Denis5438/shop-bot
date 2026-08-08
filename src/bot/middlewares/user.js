@@ -16,11 +16,20 @@ const userCache = new Map(); // telegramId → { user, isSeller, ts }
 const cacheCleanup = () => {
   if (userCache.size <= USER_CACHE_MAX) return;
   const now = Date.now();
+  // Сначала удаляем протухшие
   for (const [key, entry] of userCache) {
     if (now - entry.ts > USER_CACHE_TTL_MS) userCache.delete(key);
   }
-  // Если и после чистки переполнен - сбрасываем целиком (крайний случай)
-  if (userCache.size > USER_CACHE_MAX) userCache.clear();
+  // Если всё ещё переполнен — удаляем самые старые записи (LRU), а не весь кэш
+  if (userCache.size > USER_CACHE_MAX) {
+    const excess = userCache.size - USER_CACHE_MAX + Math.floor(USER_CACHE_MAX * 0.2);
+    let removed = 0;
+    for (const key of userCache.keys()) {
+      if (removed >= excess) break;
+      userCache.delete(key);
+      removed++;
+    }
+  }
 };
 
 // Точечная инвалидация (например, из админки после бана/смены роли/зачисления)

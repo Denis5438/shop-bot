@@ -400,7 +400,7 @@ module.exports = (bot) => {
     await keysScene.clearUsedKeys(ctx, ctx.match[1]);
   });
 
-  bot.action('admin:noop', (ctx) => ctx.answerCbQuery());
+  bot.action('admin:noop', adminMiddleware, (ctx) => ctx.answerCbQuery());
 
   // ─── ADMIN: Заказы ───
   bot.action('admin:orders', adminMiddleware, async (ctx) => {

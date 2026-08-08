@@ -305,8 +305,14 @@ const cancelPreorder = async (ctx, orderId) => {
   }
 
   const User = require('../../models/User');
-  await User.updateOne({ _id: ctx.user._id }, { $inc: { balance: order.price } });
-  ctx.user.balance = parseFloat((ctx.user.balance + order.price).toFixed(8));
+  try {
+    await User.updateOne({ _id: ctx.user._id }, { $inc: { balance: order.price } });
+    ctx.user.balance = parseFloat((ctx.user.balance + order.price).toFixed(8));
+  } catch (refundErr) {
+    // Откатываем статус заказа обратно, чтобы деньги не пропали
+    await Order.updateOne({ _id: order._id }, { $set: { status: 'preorder_pending' } }).catch(() => {});
+    return ctx.answerCbQuery('❌ Ошибка возврата средств. Попробуйте ещё раз.', { show_alert: true });
+  }
 
   const Transaction = require('../../models/Transaction');
   await new Transaction({

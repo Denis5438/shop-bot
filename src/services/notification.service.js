@@ -378,17 +378,12 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
 
   let sent = 0;
   let failed = 0;
-  let skip = 0;
-  const batchSize = 100;
-  let batch;
-  do {
-    batch = await User.find(query)
-      .select('telegramId language')
-      .lean()
-      .skip(skip)
-      .limit(batchSize);
+  const cursor = User.find(query)
+    .select('telegramId language')
+    .lean()
+    .cursor();
 
-    for (const user of batch) {
+  for await (const user of cursor) {
       const lang = user.language || 'ru';
       const stockLine = stock === '∞' || stock === null
         ? i18n.translate(lang, 'broadcast_stock_unlimited')
@@ -422,8 +417,6 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
       }
       await new Promise(r => setTimeout(r, 50));
     }
-    skip += batchSize;
-  } while (batch.length === batchSize);
 
   return { sent, failed };
 };

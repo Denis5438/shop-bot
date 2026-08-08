@@ -118,7 +118,7 @@ const disputeOrder = async (ctx, orderId) => {
   await notif.sendToAdmins(adminMsg, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([[Markup.button.callback('🔍 К спорам', 'admin:disputes:list')]])
-  });
+  }).catch(() => {});
 };
 
 module.exports = {

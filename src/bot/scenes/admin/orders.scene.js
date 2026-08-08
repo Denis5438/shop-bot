@@ -500,15 +500,12 @@ const retryApiOrder = async (ctx, orderId) => {
       }
     );
 
-    // Уведомляем пользователя об успешной выдаче
-    const bot = require('../../bot/index').bot;
-    if (bot) {
-      const text = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
-        `📦 Товар: ${escapeHtml(product.name)}\n` +
-        `🔑 <b>Ваши данные для доступа:</b>\n<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
-        `<i>Спасибо за ожидание!</i>`;
-      await bot.telegram.sendMessage(order.userId.telegramId, text, { parse_mode: 'HTML' }).catch(() => {});
-    }
+    // Уведомляем пользователя об успешной выдаче через notification service
+    const deliveryMsg = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
+      `📦 Товар: ${escapeHtml(product.name)}\n` +
+      `🔑 <b>Ваши данные для доступа:</b>\n<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
+      `<i>Спасибо за ожидание!</i>`;
+    await notif.sendToUser(order.userId.telegramId, deliveryMsg, { parse_mode: 'HTML' }).catch(() => {});
 
     await ctx.answerCbQuery('✅ Успешно выкуплено и отправлено клиенту!', { show_alert: true }).catch(() => {});
   } else {

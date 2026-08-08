@@ -329,10 +329,13 @@ const handleSellerDelivery = async (ctx) => {
     }
   }
 
-  order.status = 'awaiting_confirmation';
-  order.deliveredAt = new Date();
-  order.activationResult = 'Ожидает подтверждения покупателя';
-  await order.save();
+  // Атомарно меняем статус, чтобы избежать двойной выдачи
+  const updated = await Order.findOneAndUpdate(
+    { _id: order._id, status: 'pending' },
+    { $set: { status: 'awaiting_confirmation', deliveredAt: new Date(), activationResult: 'Ожидает подтверждения покупателя', deliveryData: order.deliveryData } },
+    { new: true }
+  );
+  if (!updated) return; // Уже обработан
 
   // Очищаем сессию
   ctx.session.sellerAction = null;
@@ -461,7 +464,12 @@ const saveWallet = async (ctx, address, network) => {
 
   seller.walletAddress = address;
   seller.walletNetwork = network;
-  await seller.save();
+  try {
+    await seller.save();
+  } catch (err) {
+    await ctx.reply('❌ Ошибка сохранения кошелька. Попробуйте ещё раз.').catch(() => {});
+    return false;
+  }
 
   ctx.session.sellerAction = null;
   ctx.session.sellerWalletAddress = null;

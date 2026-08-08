@@ -340,7 +340,14 @@ const runActivation = async (ctx, token) => {
     }, 1200);
 
     const emailFromToken = extractEmailFromToken(token);
-    const result = await startActivation(provider, key.value);
+    let result;
+    try {
+      result = await startActivation(provider, key.value);
+    } catch (activationErr) {
+      clearInterval(animInterval);
+      await finishWithFailure(ctx, order, key, provider, activationErr.message || 'Ошибка подключения к поставщику', msg.message_id, 'Критическая ошибка активации (шаг 1)');
+      return;
+    }
     clearInterval(animInterval);
 
     if (!result.success) {
@@ -395,7 +402,13 @@ const runActivation = async (ctx, token) => {
     { parse_mode: 'HTML' }
   );
 
-  const result = await finishActivation(provider, key.value, token);
+  let result;
+  try {
+    result = await finishActivation(provider, key.value, token);
+  } catch (activationErr) {
+    await finishWithFailure(ctx, order, key, provider, activationErr.message || 'Ошибка подключения к поставщику', progressMessage.message_id, 'Критическая ошибка активации (шаг 2)');
+    return;
+  }
 
   if (result.success) {
     const successLabel = result.externalStatus
@@ -436,11 +449,17 @@ tokenCollectionScene.enter(async (ctx) => {
 tokenCollectionScene.on('text', async (ctx) => {
   const chunk = ctx.message.text;
   if (!chunk) return;
+  const lang = ctx.user?.language || 'ru';
+
+  if ((ctx.scene.state.tokenBuffer || '').length > 50000) {
+    const tooLongMsg = lang === 'en' ? '❌ Token is too long. Please try again.' : '❌ Токен слишком длинный. Попробуйте ещё раз.';
+    return ctx.reply(tooLongMsg);
+  }
 
   ctx.scene.state.tokenBuffer = (ctx.scene.state.tokenBuffer || '') + chunk;
   const totalLen = ctx.scene.state.tokenBuffer.length;
   const timeLeft = getRemainingMins(ctx.scene.state.orderCreatedAt);
-  const lang = ctx.user?.language || 'ru';
+
 
   logger.info(`[TokenScene] chunk=${chunk.length} buffer=${totalLen}`);
 
@@ -503,6 +522,7 @@ tokenCollectionScene.on('document', async (ctx) => {
     const response = await axios.get(fileLink.href, {
       responseType: 'text',
       timeout: 15_000,
+      maxContentLength: 5 * 1024 * 1024,
     });
 
     const raw = String(response.data);
