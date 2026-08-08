@@ -187,6 +187,9 @@ const showOrderDetail = async (ctx, orderId) => {
   }
 
   if (['pending', 'activating', 'retry'].includes(order.status)) {
+    if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product?.provider || order.provider)) {
+      buttons.push([Markup.button.callback('🔄 Выкупить через API поставщика', `admin:order:retry_api:${orderId}`)]);
+    }
     buttons.push([Markup.button.callback('✅ Выполнить вручную', `admin:order:complete:${orderId}`)]);
   }
 
@@ -468,6 +471,56 @@ const completeOrderManually = async (ctx, orderId) => {
   await showOrderDetail(ctx, orderId);
 };
 
+const retryApiOrder = async (ctx, orderId) => {
+  const order = await Order.findById(orderId).populate('productId').populate('userId');
+  if (!order) return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
+  if (order.status !== 'pending') return ctx.answerCbQuery('⚠️ Заказ больше не в ожидании', { show_alert: true });
+
+  const product = order.productId;
+  if (!['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product?.provider || order.provider)) {
+    return ctx.answerCbQuery('❌ Этот заказ не привязан к API поставщику', { show_alert: true });
+  }
+
+  await ctx.answerCbQuery('🔄 Пробую выкупить через API...', { show_alert: false }).catch(() => {});
+
+  const supplierManager = require('../../services/supplierManager.service');
+  const qty = order.qty || 1;
+  const suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId);
+
+  if (suppRes.success && suppRes.deliveryData) {
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          status: 'completed',
+          confirmedAt: new Date(),
+          deliveryData: String(suppRes.deliveryData),
+          activationResult: 'Повторный выкуп администратором ⚡',
+        },
+      }
+    );
+
+    // Уведомляем пользователя об успешной выдаче
+    const bot = require('../../bot/index').bot;
+    if (bot) {
+      const text = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
+        `📦 Товар: ${escapeHtml(product.name)}\n` +
+        `🔑 <b>Ваши данные для доступа:</b>\n<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
+        `<i>Спасибо за ожидание!</i>`;
+      await bot.telegram.sendMessage(order.userId.telegramId, text, { parse_mode: 'HTML' }).catch(() => {});
+    }
+
+    await ctx.answerCbQuery('✅ Успешно выкуплено и отправлено клиенту!', { show_alert: true }).catch(() => {});
+  } else {
+    // Обновляем текст ошибки
+    const errNote = `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}`;
+    await Order.updateOne({ _id: order._id }, { $set: { notes: errNote } });
+    await ctx.answerCbQuery(`❌ Снова ошибка: ${suppRes.error || 'неизвестно'}`, { show_alert: true }).catch(() => {});
+  }
+
+  await showOrderDetail(ctx, orderId);
+};
+
 const cancelOrder = async (ctx, orderId) => {
   const preview = await Order.findById(orderId).populate('userId').populate('productId');
   if (!preview) return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
@@ -550,5 +603,6 @@ module.exports = {
   showOrderDetail,
   confirmAndActivate,
   completeOrderManually,
+  retryApiOrder,
   cancelOrder,
 };

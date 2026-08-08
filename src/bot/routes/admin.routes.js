@@ -421,6 +421,10 @@ module.exports = (bot) => {
     await ordersScene.confirmAndActivate(ctx, ctx.match[1]);
   });
 
+  bot.action(/^admin:order:retry_api:(.+)$/, adminMiddleware, async (ctx) => {
+    await ordersScene.retryApiOrder(ctx, ctx.match[1]);
+  });
+
   bot.action(/^admin:order:complete:(.+)$/, adminMiddleware, async (ctx) => {
     await ordersScene.completeOrderManually(ctx, ctx.match[1]);
   });
