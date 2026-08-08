@@ -87,25 +87,41 @@ const sendAdminAlertThrottled = (message, extra = {}) => {
   if (typeof timer.unref === 'function') timer.unref();
 };
 
-// Новый заказ - уведомление администраторам
+// Новый заказ - мгновенное уведомление администраторам
 const notifyAdminNewOrder = async (order, user, product) => {
   const providerLabel = getProviderLabel(resolveOrderProvider(order, product));
-  // Краткая строка для digest (если включён - уходит в буфер, а не сразу).
-  const digestLine = `@${user.username || user.telegramId} - ${product?.name || 'Товар'} (${order.price} USDT)`;
-  if (digest.queue('NEW_ORDER', digestLine)) return;
+  const qtyLine = order.qty > 1 ? `📊 Количество: <b>${order.qty} шт.</b>\n` : '';
 
-  const qtyLine = order.qty > 1 ? `📊 Количество: ${order.qty} шт\n` : '';
+  const cost = (order.costPrice || product?.costPrice || 0) * (order.qty || 1);
+  const profit = Math.max(0, parseFloat((order.price - cost).toFixed(2)));
+  const profitStr = profit > 0 ? `\n💵 <b>Ваша чистая прибыль: +${profit.toFixed(2)} USDT</b> 🚀` : '';
+
+  const deliveryStr = order.deliveryData
+    ? `\n🔑 <b>Выдано клиенту:</b>\n<code>${escapeHtml(String(order.deliveryData))}</code>\n`
+    : '';
+
+  const mskTime = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+
   const msg =
-    `🛒 <b>Новый заказ!</b>\n\n` +
-    `📋 ID: <code>${order._id}</code>\n` +
-    `👤 Пользователь: ${h(user.firstName)} (@${h(user.username || 'нет')}) | <code>${h(user.telegramId)}</code>\n` +
-    `📦 Товар: ${product?.icon || '📦'} ${h(product?.name, 'Товар')}\n` +
+    `🛒 <b>Новая покупка в магазине!</b>\n\n` +
+    `📋 Заказ: <code>#${order._id}</code>\n` +
+    `👤 Покупатель: <b>${h(user.firstName)}</b> (@${h(user.username || 'нет')}) | <code>${h(user.telegramId)}</code>\n` +
+    `📦 Товар: ${product?.icon || '📦'} <b>${h(product?.name, 'Товар')}</b>\n` +
     qtyLine +
-    `🧩 Поставщик: ${h(providerLabel)}\n` +
-    `💰 Сумма: ${order.price} USDT (~${toRub(order.price)} ₽)\n` +
-    `📅 Дата: ${new Date().toLocaleString('ru-RU')}`;
+    `🧩 Источник: <b>${h(providerLabel)}</b>\n` +
+    `💰 Оплачено клиентом: <b>${order.price} USDT</b> (~${toRub(order.price)} ₽)\n` +
+    `💸 Себестоимость: ${cost.toFixed(2)} USDT` +
+    profitStr +
+    deliveryStr +
+    `\n📅 Дата (МСК): ${mskTime}`;
 
-  await sendToAdmins(msg);
+  await sendToAdmins(msg, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: `👤 Написать покупателю`, url: `tg://user?id=${user.telegramId}` }],
+      ],
+    },
+  });
 };
 
 // Токен получен - уведомление администраторам

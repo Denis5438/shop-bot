@@ -817,11 +817,9 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     }
   }
 
-  if (product.type !== 'key') {
-    // Если купили несколько manual, то шлем несколько уведомлений админу
-    for (const order of orders) {
-      await notif.notifyAdminNewOrder(order, ctx.user, product);
-    }
+  // Отправляем мгновенное уведомление администратору о каждой покупке
+  for (const order of orders) {
+    await notif.notifyAdminNewOrder(order, ctx.user, product).catch(() => {});
   }
 
   if (product.type === 'gpt_activation') {
