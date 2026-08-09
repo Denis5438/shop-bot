@@ -12,7 +12,7 @@ const productSchema = new mongoose.Schema({
   manualStock: { type: Number, default: -1 },
   provider: {
     type: String,
-    enum: ['local', 'u1traby', 'jaha', 'toolsmarket', 'akunding', 'canboso'],
+    enum: ['local', 'u1traby', 'jaha', 'akunding', 'canboso'],
     default() {
       return this.type === 'gpt_activation' ? 'u1traby' : 'local';
     },

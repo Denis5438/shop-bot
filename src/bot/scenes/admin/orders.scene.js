@@ -187,7 +187,7 @@ const showOrderDetail = async (ctx, orderId) => {
   }
 
   if (['pending', 'activating', 'retry'].includes(order.status)) {
-    if (['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product?.provider || order.provider)) {
+    if (['jaha', 'akunding', 'canboso'].includes(product?.provider || order.provider)) {
       buttons.push([Markup.button.callback('🔄 Выкупить через API поставщика', `admin:order:retry_api:${orderId}`)]);
     }
     buttons.push([Markup.button.callback('✅ Выполнить вручную', `admin:order:complete:${orderId}`)]);
@@ -477,7 +477,7 @@ const retryApiOrder = async (ctx, orderId) => {
   if (order.status !== 'pending') return ctx.answerCbQuery('⚠️ Заказ больше не в ожидании', { show_alert: true });
 
   const product = order.productId;
-  if (!['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product?.provider || order.provider)) {
+  if (!['jaha', 'akunding', 'canboso'].includes(product?.provider || order.provider)) {
     return ctx.answerCbQuery('❌ Этот заказ не привязан к API поставщику', { show_alert: true });
   }
 

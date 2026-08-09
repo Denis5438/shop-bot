@@ -9,11 +9,6 @@ const PROVIDERS = {
     label: '🌐 Jaha Digital API',
     shortLabel: 'Jaha Digital',
   },
-  toolsmarket: {
-    id: 'toolsmarket',
-    label: '🌐 ToolsMarket API',
-    shortLabel: 'ToolsMarket',
-  },
   akunding: {
     id: 'akunding',
     label: '🛒 Akunding API',

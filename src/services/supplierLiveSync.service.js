@@ -1,13 +1,11 @@
 const SupplierConfig = require('../models/SupplierConfig');
 const Product = require('../models/Product');
 const jahaAdapter = require('./suppliers/jaha.adapter');
-const toolsmarketAdapter = require('./suppliers/toolsmarket.adapter');
 const akundingAdapter = require('./suppliers/akunding.adapter');
 const canbosoAdapter = require('./suppliers/canboso.adapter');
 
 const ADAPTERS = {
   jaha: jahaAdapter,
-  toolsmarket: toolsmarketAdapter,
   akunding: akundingAdapter,
   canboso: canbosoAdapter,
 };

@@ -80,7 +80,7 @@ const showProductsList = async (ctx, page = 1, searchQuery = null) => {
     const autoKeys = (c[prov] || 0) + (c['__null__'] || 0);
     const stock = autoKeys > 0
       ? autoKeys
-      : (product.type === 'manual' || ['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)
+      : (product.type === 'manual' || ['jaha', 'akunding', 'canboso'].includes(product.provider)
           ? (product.manualStock === -1 ? '∞' : product.manualStock)
           : 0);
     const status = product.isActive ? '✅' : '🔴';
@@ -125,7 +125,7 @@ const showProductEdit = async (ctx, productId, page = 1) => {
   const autoKeysCount = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   const stock = autoKeysCount > 0
     ? `${autoKeysCount} шт. (автовыдача ⚡)`
-    : (product.type === 'manual' || ['jaha', 'toolsmarket', 'akunding', 'canboso'].includes(product.provider)
+    : (product.type === 'manual' || ['jaha', 'akunding', 'canboso'].includes(product.provider)
         ? (product.manualStock === -1 ? '∞ (ручной остаток)' : `${product.manualStock} шт.`)
         : '0 шт. (нет в наличии)');
 
