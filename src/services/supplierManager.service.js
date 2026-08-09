@@ -22,6 +22,7 @@ const SUPPLIER_META = {
  * Инициализация записей поставщиков в БД
  */
 const initSuppliers = async () => {
+  const knownIds = Object.keys(SUPPLIER_META);
   for (const [sId, meta] of Object.entries(SUPPLIER_META)) {
     const exists = await SupplierConfig.findOne({ supplierId: sId });
     if (!exists) {
@@ -33,6 +34,8 @@ const initSuppliers = async () => {
       });
     }
   }
+  // Удаляем записи поставщиков, которых больше нет в коде
+  await SupplierConfig.deleteMany({ supplierId: { $nin: knownIds } }).catch(() => {});
 };
 
 /**
@@ -40,7 +43,7 @@ const initSuppliers = async () => {
  */
 const getAllSuppliers = async () => {
   await initSuppliers();
-  return SupplierConfig.find().lean();
+  return SupplierConfig.find({ supplierId: { $in: Object.keys(SUPPLIER_META) } }).lean();
 };
 
 /**
