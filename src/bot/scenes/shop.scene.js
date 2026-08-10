@@ -298,15 +298,14 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   if (navButtons.length) buttons.push(navButtons);
 
   buttons.push([
-    Markup.button.callback('🔄 Обновить', `shop:category:${categoryId}:${safePage}`),
-    Markup.button.callback('⬅️ К категориям', 'shop:main'),
+    Markup.button.callback(lang === 'en' ? '🔄 Refresh' : '🔄 Обновить', `shop:category:${categoryId}:${safePage}`),
+    Markup.button.callback(lang === 'en' ? '⬅️ To Categories' : '⬅️ К категориям', 'shop:main'),
   ]);
 
-  const text = `📁 <b>${escapeHtml(category.name)}</b>\nВыберите продукт:`;
+  const text = `📁 <b>${escapeHtml(category.name)}</b>\n${lang === 'en' ? 'Select a product:' : 'Выберите товар:'}`;
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
 
-  await ctx.editMessageText(text, opts).catch(() => {});
-  await ctx.answerCbQuery().catch(() => {});
+  await safeEdit(ctx, text, opts);
 };
 
 const toggleOutOfStock = async (ctx, categoryId, page = 1) => {

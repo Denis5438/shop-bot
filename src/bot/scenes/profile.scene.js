@@ -67,8 +67,8 @@ const showProfile = async (ctx) => {
     `📅 ${t('profile_joined')}: ${createdAt}</blockquote>`;
 
   const btnStyleLabel = user.btnStyle === 'classic'
-    ? (lang === 'en' ? '🎨 Button Theme: 🔘 Classic' : '🎨 Стиль кнопок: 🔘 Прозрачные')
-    : (lang === 'en' ? '🎨 Button Theme: 🟢 Colored' : '🎨 Стиль кнопок: 🟢 Цветные');
+    ? (lang === 'en' ? '🎨 Theme: 🔘 Classic' : '🎨 Стиль: 🔘 Прозрачные')
+    : (lang === 'en' ? '🎨 Theme: 🟢 Colored' : '🎨 Стиль: 🟢 Цветные');
 
   const buttons = [];
   if (activeOrder) {
@@ -77,10 +77,14 @@ const showProfile = async (ctx) => {
       `profile:continue_order:${activeOrder._id}`
     )]);
   }
-  buttons.push([Markup.button.callback(t('btn_orders'), 'profile:orders')]);
-  buttons.push([Markup.button.callback('🎟 Активировать промокод', 'user:activate_promo')]);
-  buttons.push([Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements')]);
-  buttons.push([Markup.button.callback(btnStyleLabel, 'profile:toggle_btn_style')]);
+  buttons.push([
+    Markup.button.callback(t('btn_orders'), 'profile:orders'),
+    Markup.button.callback(lang === 'en' ? '🎟 Promo Code' : '🎟 Промокод', 'user:activate_promo'),
+  ]);
+  buttons.push([
+    Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements'),
+    Markup.button.callback(btnStyleLabel, 'profile:toggle_btn_style'),
+  ]);
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
 
   const keyboard = Markup.inlineKeyboard(buttons);

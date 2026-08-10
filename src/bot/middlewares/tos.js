@@ -7,8 +7,10 @@ const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-01-39';
  * Клавиатура ToS-гейта (показывается до принятия условий).
  */
 const tosGateKeyboard = (t) => Markup.inlineKeyboard([
-  [Markup.button.url(t('tos_privacy'), PRIVACY_URL)],
-  [Markup.button.url(t('tos_agreement'), AGREEMENT_URL)],
+  [
+    Markup.button.url(t('tos_privacy'), PRIVACY_URL),
+    Markup.button.url(t('tos_agreement'), AGREEMENT_URL),
+  ],
   [Markup.button.callback(t('tos_accept'), 'tos:accept')],
   [Markup.button.callback(t('tos_decline'), 'tos:decline')],
 ]);

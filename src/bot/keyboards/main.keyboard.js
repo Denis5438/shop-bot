@@ -2,24 +2,23 @@ const { Markup } = require('telegraf');
 
 // Главное меню пользователя
 const mainKeyboard = (t, isSeller = false) => {
+  const cartLabel = t ? (t('btn_change_lang') === 'Language' ? '🛒 Cart' : '🛒 Корзина') : '🛒 Корзина';
   const buttons = [
     [
       Markup.button.callback(t('btn_shop'), 'menu:shop'),
-      Markup.button.callback('🛒 Корзина', 'menu:cart'),
+      Markup.button.callback(cartLabel, 'menu:cart'),
     ],
     [
       Markup.button.callback(t('btn_topup'), 'menu:topup'),
       Markup.button.callback(t('btn_profile'), 'menu:profile'),
     ],
     [
+      Markup.button.callback(t('btn_referral'), 'menu:referral'),
       Markup.button.callback(t('btn_support'), 'menu:support'),
+    ],
+    [
+      Markup.button.callback(t('btn_documents'), 'menu:documents'),
       Markup.button.callback(t('btn_change_lang'), 'profile:lang'),
-    ],
-    [
-      Markup.button.callback(t('btn_referral'), 'menu:referral')
-    ],
-    [
-      Markup.button.callback(t('btn_documents'), 'menu:documents')
     ],
   ];
 

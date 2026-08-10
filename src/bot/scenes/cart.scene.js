@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const cartService = require('../../services/cart.service');
-const { escapeHtml } = require('../utils/ui');
+const { escapeHtml, safeEdit } = require('../utils/ui');
 const { toRub } = require('../../services/currency.service');
 
 /**
@@ -8,35 +8,32 @@ const { toRub } = require('../../services/currency.service');
  */
 const showCart = async (ctx) => {
   const user = ctx.user;
+  const lang = ctx.user?.language || 'ru';
   const cartData = await cartService.getCart(user);
 
   if (cartData.items.length === 0) {
-    const emptyText = `🛒 <b>Ваша корзина пуста</b>\n\n` +
-      `Вы пока не добавили ни одного товара.\n` +
-      `Перейдите в магазин и нажмите <b>«🛒 В корзину»</b> на любом товаре!`;
+    const emptyText = lang === 'en'
+      ? `🛒 <b>Your Cart is Empty</b>\n\n<blockquote>Add products from the catalog using the <b>«🛒 To Cart»</b> button!</blockquote>`
+      : `🛒 <b>Ваша корзина пуста</b>\n\n<blockquote>Добавьте понравившиеся товары из каталога с помощью кнопки <b>«🛒 В корзину»</b>!</blockquote>`;
 
     const emptyButtons = [
-      [Markup.button.callback('🛍 Перейти в магазин', 'menu:shop')],
-      [Markup.button.callback('⬅️ Главное меню', 'menu:main')],
+      [Markup.button.callback(lang === 'en' ? '🛍 Go to Catalog' : '🛍 В каталог', 'menu:shop')],
+      [Markup.button.callback(lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню', 'menu:main')],
     ];
 
     const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) };
-    if (ctx.callbackQuery) {
-      await ctx.editMessageText(emptyText, opts).catch(() => {});
-      await ctx.answerCbQuery().catch(() => {});
-    } else {
-      await ctx.reply(emptyText, opts);
-    }
-    return;
+    return safeEdit(ctx, emptyText, opts);
   }
 
-  let text = `🛒 <b>Ваша корзина (${cartData.totalCount} шт.)</b>\n\n`;
+  let text = lang === 'en'
+    ? `🛒 <b>Your Cart (${cartData.totalCount} pcs)</b>\n\n`
+    : `🛒 <b>Ваша корзина (${cartData.totalCount} шт.)</b>\n\n`;
 
   const buttons = [];
 
   cartData.items.forEach((item, index) => {
     const p = item.product;
-    const stockWarning = !item.isAvailable ? ' ⚠️ <i>(недостаточно на складе)</i>' : '';
+    const stockWarning = !item.isAvailable ? (lang === 'en' ? ' ⚠️ <i>(out of stock)</i>' : ' ⚠️ <i>(недостаточно на складе)</i>') : '';
 
     text += `${index + 1}. <b>${escapeHtml(p.name)}</b>${stockWarning}\n` +
       `   └ <b>${item.qty} шт.</b> × $${p.price.toFixed(2)} = <b>$${item.itemTotal.toFixed(2)}</b>\n\n`;
@@ -51,50 +48,45 @@ const showCart = async (ctx) => {
   });
 
   text += `────────────────────\n`;
-  text += `Сумма товаров: <b>$${cartData.subtotal.toFixed(2)}</b>\n`;
+  text += `${lang === 'en' ? 'Subtotal' : 'Сумма товаров'}: <b>$${cartData.subtotal.toFixed(2)}</b>\n`;
 
   if (cartData.discountAmount > 0 && cartData.activePromo) {
-    text += `🎟 Скидка по промокоду (<code>${escapeHtml(cartData.activePromo.code)}</code>): <b>-$${cartData.discountAmount.toFixed(2)}</b>\n`;
+    text += `🎟 ${lang === 'en' ? 'Promo Discount' : 'Скидка по промокоду'} (<code>${escapeHtml(cartData.activePromo.code)}</code>): <b>-$${cartData.discountAmount.toFixed(2)}</b>\n`;
   }
 
-  text += `💰 <b>Итого к оплате: $${cartData.finalTotal.toFixed(2)} USDT</b> (≈ ${toRub(cartData.finalTotal)})\n`;
-  text += `💳 Ваш баланс: <b>${user.balance.toFixed(2)} USDT</b>\n`;
+  text += `💰 <b>${lang === 'en' ? 'Total to pay' : 'Итого к оплате'}: $${cartData.finalTotal.toFixed(2)} USDT</b> (≈ ${toRub(cartData.finalTotal)})\n`;
+  text += `💳 ${lang === 'en' ? 'Your balance' : 'Ваш баланс'}: <b>${user.balance.toFixed(2)} USDT</b>\n`;
 
   if (cartData.hasStockIssue) {
-    text += `\n⚠️ <i>Пожалуйста, уменьшите количество позиций, которых нет на складе.</i>`;
+    text += `\n⚠️ <i>${lang === 'en' ? 'Please adjust items that are out of stock.' : 'Пожалуйста, уменьшите количество позиций, которых нет на складе.'}</i>`;
   }
 
   // Кнопка оплаты или пополнения
   if (user.balance < cartData.finalTotal) {
     const deficit = parseFloat((cartData.finalTotal - user.balance).toFixed(2));
     buttons.push([
-      Markup.button.callback(`💰 Пополнить на ${deficit} USDT`, `topup:quick:${deficit}`),
+      Markup.button.callback(lang === 'en' ? `💰 Top up ${deficit} USDT` : `💰 Пополнить на ${deficit} USDT`, `topup:quick:${deficit}`),
     ]);
   } else if (!cartData.hasStockIssue) {
     buttons.push([
-      Markup.button.callback(`✅ Оплатить всю корзину ($${cartData.finalTotal.toFixed(2)})`, 'cart:checkout'),
+      Markup.button.callback(lang === 'en' ? `✅ Checkout All ($${cartData.finalTotal.toFixed(2)})` : `✅ Оплатить корзину ($${cartData.finalTotal.toFixed(2)})`, 'cart:checkout'),
     ]);
   }
 
   // Промокод и действия
   const promoBtn = cartData.activePromo
-    ? Markup.button.callback(`🎟 Промокод: ${cartData.activePromo.code} (✅)`, 'cart:promo')
-    : Markup.button.callback('🎟 Ввести промокод на скидку', 'cart:promo');
+    ? Markup.button.callback(`🎟 ${lang === 'en' ? 'Promo' : 'Промокод'}: ${cartData.activePromo.code} (✅)`, 'cart:promo')
+    : Markup.button.callback(lang === 'en' ? '🎟 Apply Promo Code' : '🎟 Ввести промокод на скидку', 'cart:promo');
 
   buttons.push([promoBtn]);
   buttons.push([
-    Markup.button.callback('🗑 Очистить корзину', 'cart:clear'),
-    Markup.button.callback('🛍 В магазин', 'menu:shop'),
+    Markup.button.callback(lang === 'en' ? '🗑 Clear Cart' : '🗑 Очистить корзину', 'cart:clear'),
+    Markup.button.callback(lang === 'en' ? '🛍 To Catalog' : '🛍 В каталог', 'menu:shop'),
   ]);
-  buttons.push([Markup.button.callback('⬅️ Главное меню', 'menu:main')]);
+  buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню', 'menu:main')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 /**

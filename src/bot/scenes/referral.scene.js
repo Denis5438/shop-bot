@@ -4,7 +4,7 @@ const Transaction = require('../../models/Transaction');
 const { toRub } = require('../../services/currency.service');
 const { getSettings } = require('../../services/settingsCache.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../../services/referral.service');
-const { escapeHtml } = require('../utils/ui');
+const { escapeHtml, safeEdit } = require('../utils/ui');
 
 const showReferral = async (ctx) => {
   const user = ctx.user;
@@ -24,35 +24,37 @@ const showReferral = async (ctx) => {
   const refBonus = settings?.referralBonus || 0.5;
 
   const title = lang === 'en' ? 'Referral Program' : 'Реферальная программа';
-  const yourLink = lang === 'en' ? 'Your link' : 'Ваша ссылка';
+  const yourLink = lang === 'en' ? 'Your personal link' : 'Ваша пригласительная ссылка';
   const bonusLine = lang === 'en'
-    ? `Bonus for first completed referral purchase: <b>${refBonus} USDT</b> (~${toRub(refBonus)} ₽)`
-    : `Бонус за первую завершённую покупку реферала: <b>${refBonus} USDT</b> (~${toRub(refBonus)} ₽)`;
-  const invitedLine = lang === 'en' ? `Invited: ${referralsCount}` : `Приглашено: ${referralsCount}`;
-  const earnedLine = lang === 'en' ? `Earned: ${totalEarned.toFixed(2)} USDT` : `Заработано: ${totalEarned.toFixed(2)} USDT`;
+    ? `Bonus per 1st referral purchase: <b>+${refBonus} USDT</b> (~${toRub(refBonus)} ₽)`
+    : `Бонус за первую покупку друга: <b>+${refBonus} USDT</b> (~${toRub(refBonus)} ₽)`;
+  const invitedLine = lang === 'en' ? `Invited friends: <b>${referralsCount}</b>` : `Приглашено друзей: <b>${referralsCount}</b>`;
+  const earnedLine = lang === 'en' ? `Total earned: <b>${totalEarned.toFixed(2)} USDT</b>` : `Всего заработано: <b>${totalEarned.toFixed(2)} USDT</b>`;
   const footer = lang === 'en'
-    ? 'Share your link with friends. The bonus is credited automatically after the first completed purchase of an invited user.'
-    : 'Поделитесь ссылкой с друзьями. Бонус начисляется автоматически после первой завершённой покупки приглашённого пользователя.';
+    ? '<i>Send your link to friends. Bonus is credited automatically after their first purchase.</i>'
+    : '<i>Отправьте ссылку друзьям. Бонус начисляется сразу после первой покупки приглашённого пользователя.</i>';
 
   const text =
     `🎁 <b>${title}</b>\n\n` +
-    `🔗 ${yourLink}:\n<code>${escapeHtml(link)}</code>\n\n` +
-    `💸 ${bonusLine}\n\n` +
+    `🔗 <b>${yourLink}:</b>\n<code>${escapeHtml(link)}</code>\n\n` +
+    `<blockquote>💸 ${bonusLine}\n` +
     `👥 ${invitedLine}\n` +
-    `💰 ${earnedLine}\n\n` +
+    `💰 ${earnedLine}</blockquote>\n\n` +
     footer;
+
+  const shareText = encodeURIComponent(lang === 'en' ? 'Get licensed keys & subscriptions with instant delivery!' : 'Покупай лицензионные подписки и ключи с моментальной выдачей!');
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${shareText}`;
 
   const extra = {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
-    ...Markup.inlineKeyboard([[Markup.button.callback(t('btn_back'), 'menu:main')]]),
+    ...Markup.inlineKeyboard([
+      [Markup.button.url(lang === 'en' ? '📤 Share Link' : '📤 Поделиться ссылкой', shareUrl)],
+      [Markup.button.callback(t('btn_back'), 'menu:main')],
+    ]),
   };
 
-  try {
-    await ctx.editMessageText(text, extra);
-  } catch (_) {
-    await ctx.reply(text, extra);
-  }
+  await safeEdit(ctx, text, extra);
 };
 
 module.exports = {
