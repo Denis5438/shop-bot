@@ -60,11 +60,9 @@ const syncSupplierStock = async (supplierId) => {
       p.manualStock = liveData.stock;
       if (liveData.costPrice && liveData.costPrice > 0) {
         p.costPrice = liveData.costPrice;
-        // Пересчитываем розничную цену с учетом наценки
-        const marginPercent = config.marginPercent || 30;
-        const marginFixed = config.marginFixed || 0;
-        let retail = liveData.costPrice * (1 + marginPercent / 100) + marginFixed;
-        p.price = Math.max(0.5, Math.round(retail * 100) / 100);
+        // Пересчитываем розничную цену с учетом умной наценки (Smart Pricing)
+        const pricingService = require('./pricing.service');
+        p.price = pricingService.calculateRetailPrice(liveData.costPrice, config);
       }
       await p.save();
       updatedCount++;

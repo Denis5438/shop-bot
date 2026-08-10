@@ -22,6 +22,11 @@ const userSchema = new mongoose.Schema({
   acceptedToSAt: { type: Date, default: null },
   btnStyle: { type: String, enum: ['colored', 'classic'], default: 'colored' },
   activePromoCode: { type: mongoose.Schema.Types.ObjectId, ref: 'PromoCode', default: null },
+  cart: [{
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    qty: { type: Number, default: 1, min: 1 },
+    addedAt: { type: Date, default: Date.now },
+  }],
   createdAt: { type: Date, default: Date.now },
 
   // №20 Достижения: массив ID разблокированных ачивок и дата получения.

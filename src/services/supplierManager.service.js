@@ -147,10 +147,10 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
       categoryCache.set(catName, categoryId);
     }
 
-    // 2. Расчёт розничной цены продажи с учётом вашей маржи
+    // 2. Расчёт розничной цены продажи с учётом умной наценки (Smart Pricing)
+    const pricingService = require('./pricing.service');
     const wholesaleCost = parseFloat(item.priceUsdt || 0);
-    let retailPrice = wholesaleCost * (1 + marginPercent / 100) + marginFixed;
-    retailPrice = Math.max(0.5, Math.round(retailPrice * 100) / 100);
+    const retailPrice = pricingService.calculateRetailPrice(wholesaleCost, config);
 
     // 3. Создание или обновление товара в базе данных
     const existing = await Product.findOne({

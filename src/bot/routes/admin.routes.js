@@ -50,8 +50,20 @@ module.exports = (bot) => {
     await suppliersScene.startSetApiKey(ctx, ctx.match[1]);
   });
 
-  bot.action(/^admin:supplier:margin:(.+)$/, adminMiddleware, async (ctx) => {
+  bot.action(/^admin:supplier:margin_menu:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.showMarginMenu(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:margin_simple:(.+)$/, adminMiddleware, async (ctx) => {
     await suppliersScene.startSetMargin(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:preset:(.+):(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.applySmartPreset(ctx, ctx.match[1], ctx.match[2]);
+  });
+
+  bot.action(/^admin:supplier:margin:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.showMarginMenu(ctx, ctx.match[1]);
   });
 
   bot.action(/^admin:supplier:import:(.+)$/, adminMiddleware, async (ctx) => {
@@ -66,8 +78,52 @@ module.exports = (bot) => {
     await suppliersScene.execSyncStock(ctx, ctx.match[1]);
   });
 
+  bot.action('admin:promos', adminMiddleware, async (ctx) => {
+    await promosScene.showPromosMain(ctx);
+  });
+
   bot.action('admin:promo:create', adminMiddleware, async (ctx) => {
     await promosScene.startCreatePromo(ctx);
+  });
+
+  bot.action(/^admin:promo:view:(.+)$/, adminMiddleware, async (ctx) => {
+    await promosScene.showPromoDetail(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:promo:post:(.+)$/, adminMiddleware, async (ctx) => {
+    await promosScene.generateChannelPost(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:promo:toggle:(.+)$/, adminMiddleware, async (ctx) => {
+    await promosScene.togglePromoStatus(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:promo:delete:(.+)$/, adminMiddleware, async (ctx) => {
+    await promosScene.deletePromo(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:promo:quick_code:(.+)$/, adminMiddleware, async (ctx) => {
+    ctx.session = ctx.session || {};
+    ctx.session.newPromo = ctx.session.newPromo || {};
+    ctx.session.newPromo.code = ctx.match[1].toUpperCase();
+    ctx.session.userAction = null;
+
+    const text = `🎟 <b>Создание промокода:</b> <code>${ctx.session.newPromo.code}</code>\n\n` +
+      `<b>Шаг 2 из 4:</b> Выберите тип промокода:`;
+
+    const keyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('💳 На баланс (+USDT)', 'admin:promo:type:balance'),
+        Markup.button.callback('📉 Скидка в % (-%)', 'admin:promo:type:percent'),
+      ],
+      [
+        Markup.button.callback('💰 Скидка в USDT (-$)', 'admin:promo:type:fixed'),
+      ],
+      [Markup.button.callback('❌ Отмена', 'admin:promos')],
+    ]);
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
+    await ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action(/^admin:promo:type:(balance|percent|fixed)$/, adminMiddleware, async (ctx) => {
@@ -79,17 +135,9 @@ module.exports = (bot) => {
     const typeLabel = ctx.match[1] === 'balance' ? 'USDT на баланс' : ctx.match[1] === 'percent' ? '% скидки' : 'USDT скидки';
     const text = `🎟 <b>Создание промокода</b>\n\n` +
       `Тип: <b>${typeLabel}</b>\n\n` +
-      `Шаг 3 из 4: Введите значение (например: <code>5</code> для ${typeLabel}):`;
+      `<b>Шаг 3 из 4:</b> Введите значение (например: <code>10</code> для ${typeLabel}):`;
 
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]) }).catch(() => {});
-  });
-
-  bot.action('admin:promo:delete_select', adminMiddleware, async (ctx) => {
-    await promosScene.showDeleteSelect(ctx);
-  });
-
-  bot.action(/^admin:promo:delete:(.+)$/, adminMiddleware, async (ctx) => {
-    await promosScene.deletePromo(ctx, ctx.match[1]);
   });
 
   // ─── ADMIN: Массовые операции ───

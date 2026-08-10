@@ -113,8 +113,13 @@ module.exports = (bot) => {
           `🏷 Ваша скидка: <b>${valStr}</b> при покупке товара!\n` +
           `Скидка автоматически применится при следующем заказе.`;
 
+        const isFromCart = session.promoReturnTo === 'cart';
+        session.promoReturnTo = null;
+
         const keyboard = Markup.inlineKeyboard([
-          [Markup.button.callback('🛒 В магазин', 'shop:main')],
+          isFromCart
+            ? [Markup.button.callback('🛒 Вернуться в корзину', 'menu:cart')]
+            : [Markup.button.callback('🛍 В магазин', 'menu:shop')],
           [Markup.button.callback('👤 В профиль', 'menu:profile')],
         ]);
 
@@ -246,12 +251,24 @@ module.exports = (bot) => {
       session.adminAction = null;
       session.targetSupplierId = null;
 
-      const supplierManager = require('../../services/supplierManager.service');
       const SupplierConfig = require('../../models/SupplierConfig');
-      const cfg = await SupplierConfig.findOne({ supplierId });
-      await supplierManager.saveSupplierKey(supplierId, cfg?.apiKey || '', marginVal, cfg?.marginFixed || 0);
+      const liveSync = require('../../services/supplierLiveSync.service');
 
-      await ctx.reply(`✅ Наценка <b>+${marginVal}%</b> успешно установлена!`, {
+      await SupplierConfig.findOneAndUpdate(
+        { supplierId },
+        {
+          $set: {
+            marginPercent: marginVal,
+            smartPricingEnabled: false,
+          },
+        },
+        { new: true, upsert: true }
+      );
+
+      const syncRes = await liveSync.syncSupplierStock(supplierId).catch(() => ({}));
+      const updatedInfo = syncRes?.success ? ` (Пересчитано товаров: ${syncRes.updatedCount})` : '';
+
+      await ctx.reply(`✅ Фиксированная наценка <b>+${marginVal}%</b> успешно установлена!${updatedInfo}`, {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([[Markup.button.callback('🔌 К поставщику', `admin:supplier:view:${supplierId}`)]]),
       });

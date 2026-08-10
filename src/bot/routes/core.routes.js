@@ -11,6 +11,7 @@ const logger = require('../../config/logger');
 const profileScene = require('../scenes/profile.scene');
 const sellerScene = require('../scenes/seller.scene');
 const shopScene = require('../scenes/shop.scene');
+const cartScene = require('../scenes/cart.scene');
 const topupScene = require('../scenes/topup.scene');
 const { Markup } = require('telegraf');
 const { adminMiddleware } = require('../middlewares/auth');
@@ -392,6 +393,44 @@ module.exports = (bot) => {
 
   bot.action('menu:shop', async (ctx) => {
     await shopScene.showShopPage(ctx, 1);
+  });
+
+  // ─── КОРЗИНА ТОВАРОВ ───
+  bot.action(['menu:cart', 'cart:main'], async (ctx) => {
+    await cartScene.showCart(ctx);
+  });
+
+  bot.action(/^cart:add:(.+)$/, async (ctx) => {
+    await cartScene.handleAddToCart(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^cart:qty:(.+):(-?\d+)$/, async (ctx) => {
+    await cartScene.handleUpdateQty(ctx, ctx.match[1], ctx.match[2]);
+  });
+
+  bot.action(/^cart:remove:(.+)$/, async (ctx) => {
+    await cartScene.handleRemoveItem(ctx, ctx.match[1]);
+  });
+
+  bot.action('cart:clear', async (ctx) => {
+    await cartScene.handleClearCart(ctx);
+  });
+
+  bot.action('cart:checkout', async (ctx) => {
+    await cartScene.handleCheckout(ctx);
+  });
+
+  bot.action('cart:promo', async (ctx) => {
+    ctx.session = ctx.session || {};
+    ctx.session.userAction = 'enter_promo';
+    ctx.session.promoReturnTo = 'cart';
+    const text = `🎟 <b>Применение промокода</b>\n\n` +
+      `Введите код купона/промокода в ответном сообщении для получения скидки на корзину:`;
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад в корзину', 'menu:cart')]]),
+    });
+    await ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action('menu:profile', async (ctx) => {

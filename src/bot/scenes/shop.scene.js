@@ -365,7 +365,10 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const buttons = [];
   if (!outOfStock) {
     if (product.type !== 'gpt_activation') {
-      buttons.push([Markup.button.callback(t('btn_buy'), `shop:qty:${productId}:${fromPage}:1`)]);
+      buttons.push([
+        Markup.button.callback(t('btn_buy') || '⚡ Купить', `shop:qty:${productId}:${fromPage}:1`),
+        Markup.button.callback('🛒 В корзину (+1)', `cart:add:${productId}`),
+      ]);
     } else {
       buttons.push([Markup.button.callback(t('btn_buy'), `shop:buy:${productId}:${fromPage}:1`)]);
     }
@@ -373,6 +376,14 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     buttons.push([Markup.button.callback('🔔 Уведомить о наличии', `shop:notify:${productId}`)]);
     buttons.push([Markup.button.callback('⏳ Сделать предзаказ', `shop:preorder_qty:${productId}:${fromPage}:1`)]);
   }
+
+  // Кнопка перехода в корзину, если в ней есть товары
+  const cartItems = ctx.user?.cart || [];
+  const cartCount = cartItems.reduce((acc, it) => acc + (it.qty || 1), 0);
+  if (cartCount > 0) {
+    buttons.push([Markup.button.callback(`🛍 Перейти в корзину (${cartCount} шт.)`, 'menu:cart')]);
+  }
+
   if (product.type === 'gpt_activation') {
     buttons.push([Markup.button.callback(t('shop_check_token'), `shop:check_token:${productId}`)]);
   }

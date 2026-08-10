@@ -3,7 +3,10 @@ const { Markup } = require('telegraf');
 // Главное меню пользователя
 const mainKeyboard = (t, isSeller = false) => {
   const buttons = [
-    [Markup.button.callback(t('btn_shop'), 'menu:shop')],
+    [
+      Markup.button.callback(t('btn_shop'), 'menu:shop'),
+      Markup.button.callback('🛒 Корзина', 'menu:cart'),
+    ],
     [
       Markup.button.callback(t('btn_topup'), 'menu:topup'),
       Markup.button.callback(t('btn_profile'), 'menu:profile'),
