@@ -387,8 +387,8 @@ const handleEnterTxid = async (ctx) => {
 
   const isUid = topup.network === 'uid';
   const text = isUid 
-    ? (lang === 'en' ? '👇 Please, <b>send your Bybit UID</b> (From which you transferred the funds):' : '👇 Пожалуйста, <b>отправьте ваш Bybit UID</b> (С которого вы перевели средства):')
-    : (lang === 'en' ? '👇 Please, <b>send your TXID (Transaction Hash) to this chat</b> in the next message:' : '👇 Пожалуйста, <b>отправьте ваш TXID (Хэш транзакции) в этот чат</b> следующим сообщением:');
+    ? (lang === 'en' ? 'Отправьте ваш <b>Bybit UID</b>, с которого был совершён перевод:' : 'Отправьте ваш <b>Bybit UID</b>, с которого был совершён перевод:')
+    : (lang === 'en' ? 'Отправьте <b>TXID (хэш транзакции)</b> следующим сообщением:' : 'Отправьте <b>TXID (хэш транзакции)</b> следующим сообщением:');
     
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]]) };
 
@@ -544,7 +544,6 @@ const handleTopupProof = async (ctx) => {
         { label: lang === 'en' ? '⏳ Finalizing' : '⏳ Финализация', pct: 95 },
       ],
       // 1500 мс editMessage на пользователя быстро выжигали общий rate-limit
-      // Telegram (30 msg/sec) при нескольких параллельных проверках
       intervalMs: 3000,
       editMessageId: topup.msgId || null,
     });
@@ -620,8 +619,8 @@ const handleTopupProof = async (ctx) => {
       if (progress) await progress.stop(lang === 'en' ? '⏳ Generating response...' : '⏳ Формирую ответ...').catch(() => {});
       topup.step = 'proof'; // остаёмся в режиме ввода TXID
       const retryTxt = lang === 'en'
-        ? `❌ <b>Could not verify the transaction</b>\n\n${bResult.reason}\n\n👇 Check the TXID and send it again with the next message. If the problem persists - contact support.`
-        : `❌ <b>Не удалось подтвердить транзакцию</b>\n\n${bResult.reason}\n\n👇 Проверьте TXID и отправьте его ещё раз следующим сообщением. Если проблема повторяется - напишите в поддержку.`;
+        ? `❌ <b>Could not verify the transaction</b>\n\n${bResult.reason}\n\nCheck the TXID and send it again. If the issue persists, contact support.`
+        : `❌ <b>Не удалось подтвердить транзакцию</b>\n\n${bResult.reason}\n\nПроверьте TXID и отправьте его ещё раз. Если проблема повторяется — напишите в поддержку.`;
       const retryOpts = {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([

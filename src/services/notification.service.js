@@ -603,12 +603,12 @@ const fulfillPreorders = async (product) => {
       const msgText = userLang === 'en'
         ? `🎉 <b>Your Pre-order #${preorder._id} has been fulfilled!</b>\n\n` +
           `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n\n` +
-          `👇 <b>Your account data:</b>\n${formattedItem}\n\n` +
-          `<i>Thank you for waiting!</i>`
-        : `🎉 <b>Ваш Предзаказ #${preorder._id} выполнен!</b>\n\n` +
+          `🔑 <b>Your access data:</b>\n${formattedItem}\n\n` +
+          `<i>Thank you for your order!</i>`
+        : `🎉 <b>Ваш предзаказ #${preorder._id} выполнен!</b>\n\n` +
           `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n\n` +
-          `👇 <b>Ваши данные товара:</b>\n${formattedItem}\n\n` +
-          `<i>Спасибо за ожидание!</i>`;
+          `🔑 <b>Ваши данные для доступа:</b>\n${formattedItem}\n\n` +
+          `<i>Спасибо за заказ!</i>`;
 
       await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
         parse_mode: 'HTML',
