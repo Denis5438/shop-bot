@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const orderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-  provider: { type: String, enum: ['local', 'u1traby', 'jaha', 'akunding', 'canboso'], default: undefined },
+  provider: { type: String, enum: ['local', 'u1traby', 'jaha', 'akunding', 'canboso', 'trumpstore'], default: undefined },
   status: {
     type: String,
     enum: ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'completed', 'cancelled', 'failed', 'retry', 'disputed', 'preorder_pending'],

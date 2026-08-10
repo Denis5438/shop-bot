@@ -100,7 +100,7 @@ const getStock = async (product, autoKeysPrecomputed = null) => {
     ? autoKeysPrecomputed
     : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   if (autoKeys > 0) return autoKeys;
-  if (['jaha', 'akunding', 'canboso'].includes(product.provider)) {
+  if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider)) {
     const mStock = product.manualStock;
     if (mStock === -1) return '∞';
     return (typeof mStock === 'number') ? mStock : 0;
@@ -142,7 +142,7 @@ const getStockMap = async (products) => {
     const autoKeys = (c[provider] || 0) + (c['__null__'] || 0);
     let stock = autoKeys;
     if (autoKeys === 0) {
-      if (['jaha', 'akunding', 'canboso'].includes(p.provider)) {
+      if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(p.provider)) {
         const manualStock = p.manualStock;
         stock = manualStock === -1 ? '∞' : ((typeof manualStock === 'number') ? manualStock : 0);
       } else if (p.type === 'manual') {
@@ -641,7 +641,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       balanceDebited = true;
       ctx.user = debitedUser;
 
-      if (!isAutoKeyProduct && (product.type === 'manual' || ['jaha', 'akunding', 'canboso'].includes(product.provider))) {
+      if (!isAutoKeyProduct && (product.type === 'manual' || ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider))) {
         if (product.manualStock !== -1) {
           // Атомарное уменьшение остатка с условием manualStock >= qty (защита от оверселла)
           const stockRes = await Product.updateOne(
@@ -878,7 +878,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       await ctx.reply(text, opts).catch(() => {});
     }
     await ctx.answerCbQuery().catch(() => {});
-  } else if (['jaha', 'akunding', 'canboso'].includes(product.provider)) {
+  } else if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider)) {
     // ─── Автоматический выкуп у внешнего поставщика через API (On-Demand) ───
     const supplierManager = require('../../services/supplierManager.service');
     const suppRes = await supplierManager.fulfillSupplierOrder(product, qty, ctx.user);

@@ -19,6 +19,11 @@ const PROVIDERS = {
     label: '🌐 Canboso API',
     shortLabel: 'Canboso',
   },
+  trumpstore: {
+    id: 'trumpstore',
+    label: '🏛️ Trump Store API',
+    shortLabel: 'Trump Store',
+  },
   u1traby: {
     id: 'u1traby',
     label: '🌐 U1traby',

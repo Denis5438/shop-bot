@@ -3,11 +3,13 @@ const Product = require('../models/Product');
 const jahaAdapter = require('./suppliers/jaha.adapter');
 const akundingAdapter = require('./suppliers/akunding.adapter');
 const canbosoAdapter = require('./suppliers/canboso.adapter');
+const trumpstoreAdapter = require('./suppliers/trumpstore.adapter');
 
 const ADAPTERS = {
   jaha: jahaAdapter,
   akunding: akundingAdapter,
   canboso: canbosoAdapter,
+  trumpstore: trumpstoreAdapter,
 };
 
 /**

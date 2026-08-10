@@ -5,17 +5,20 @@ const Category = require('../models/Category');
 const jahaAdapter = require('./suppliers/jaha.adapter');
 const akundingAdapter = require('./suppliers/akunding.adapter');
 const canbosoAdapter = require('./suppliers/canboso.adapter');
+const trumpstoreAdapter = require('./suppliers/trumpstore.adapter');
 
 const ADAPTERS = {
   jaha: jahaAdapter,
   akunding: akundingAdapter,
   canboso: canbosoAdapter,
+  trumpstore: trumpstoreAdapter,
 };
 
 const SUPPLIER_META = {
   jaha: { title: '🤖 Jaha Digital API', defaultMargin: 30 },
   akunding: { title: '🛒 Akunding Store API', defaultMargin: 30 },
   canboso: { title: '🌐 Canboso API', defaultMargin: 30 },
+  trumpstore: { title: '🏛️ Trump Store API', defaultMargin: 30 },
 };
 
 /**
