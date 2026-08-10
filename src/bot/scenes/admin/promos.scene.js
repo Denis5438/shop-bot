@@ -1,7 +1,7 @@
 const { Markup } = require('telegraf');
 const PromoCode = require('../../../models/PromoCode');
 const PromoUsage = require('../../../models/PromoUsage');
-const { escapeHtml } = require('../../utils/ui');
+const { escapeHtml, safeEdit } = require('../../utils/ui');
 
 /**
  * Главный экран управления промокодами
@@ -37,13 +37,7 @@ const showPromosMain = async (ctx) => {
   buttons.push([Markup.button.callback('⬅️ В админку', 'admin:main')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 /**
@@ -89,12 +83,7 @@ const showPromoDetail = async (ctx, promoId) => {
   ];
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 /**
@@ -116,13 +105,12 @@ const generateChannelPost = async (ctx, promoId) => {
     `3. Введите код и забирайте бонус!\n\n` +
     `⏳ <i>Количество активаций ограничено. Успейте воспользоваться!</i>`;
 
-  await ctx.reply(postText, {
+  await safeEdit(ctx, postText, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
       [Markup.button.callback('⬅️ В карточку промокода', `admin:promo:view:${promo._id}`)],
     ]),
   });
-  await ctx.answerCbQuery().catch(() => {});
 };
 
 /**
@@ -146,6 +134,7 @@ const startCreatePromo = async (ctx) => {
   ctx.session = ctx.session || {};
   ctx.session.userAction = 'promo_create_code';
   ctx.session.newPromo = {};
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
 
   const randomCode = `PROMO${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -158,12 +147,7 @@ const startCreatePromo = async (ctx) => {
     [Markup.button.callback('❌ Отмена', 'admin:promos')],
   ]);
 
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
-  }
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 /**

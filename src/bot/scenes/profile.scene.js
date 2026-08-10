@@ -4,7 +4,7 @@ const Transaction = require('../../models/Transaction');
 const User = require('../../models/User');
 const { toRub } = require('../../services/currency.service');
 const { ORDER_STATUS_LABELS } = require('../constants/ux');
-const { escapeHtml } = require('../utils/ui');
+const { escapeHtml, safeEdit } = require('../utils/ui');
 const { getAllWithProgress, renderAchievementsText } = require('../../services/achievements.service');
 
 const PER_PAGE = 5;
@@ -84,12 +84,7 @@ const showProfile = async (ctx) => {
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
 
   const keyboard = Markup.inlineKeyboard(buttons);
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  } catch (_) {
-    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
-  }
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 // Смена языка
@@ -103,11 +98,7 @@ const showLanguageSelect = async (ctx) => {
     [Markup.button.callback('⬅️ Назад', 'menu:profile')],
   ]);
 
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  } catch (_) {
-    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
-  }
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 // История заказов с фильтром и пагинацией
@@ -144,11 +135,7 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
     emptyButtons.push([Markup.button.callback(t('orders_to_shop'), 'menu:shop')]);
     emptyButtons.push([Markup.button.callback(t('btn_back'), 'menu:profile')]);
 
-    try {
-      return await ctx.editMessageText(emptyMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) });
-    } catch (_) {
-      return await ctx.reply(emptyMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) });
-    }
+    return await safeEdit(ctx, emptyMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) });
   }
 
   let text = `${filterLabel}  ·  ${t('orders_page')} ${page}/${totalPages}\n\n`;
@@ -185,12 +172,7 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:profile')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 // №20 Достижения: отдельный экран со списком ачивок + прогрессом
@@ -204,11 +186,7 @@ const showAchievements = async (ctx) => {
     [Markup.button.callback(t('profile_back_to_profile'), 'menu:profile')],
   ]);
 
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
-  } catch (_) {
-    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
-  }
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 const showOrderDetail = async (ctx, orderId) => {
@@ -285,11 +263,7 @@ const showOrderDetail = async (ctx, orderId) => {
   buttons.push([Markup.button.callback('⬅️ К заказам', 'profile:orders:all:1')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 const cancelPreorder = async (ctx, orderId) => {

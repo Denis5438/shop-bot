@@ -16,7 +16,7 @@ const {
 const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
-const { balanceHeader, errorScreen, escapeHtml, formatDigitalItem } = require('../utils/ui');
+const { balanceHeader, errorScreen, escapeHtml, formatDigitalItem, safeEdit } = require('../utils/ui');
 
 const getEffectivePrice = async (product, stockCount, activePromo = null) => {
   const settings = await getSettings();
@@ -242,13 +242,7 @@ const showShopPage = async (ctx) => {
 
   const text = t('shop_title') || '🛒 Магазин';
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery('✅').catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 const showCategory = async (ctx, categoryId, page = 1) => {
@@ -391,12 +385,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   buttons.push([Markup.button.callback(t('shop_back_to_list'), `shop:page:${safePage}`)]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts).catch(() => {});
-  }
-  await ctx.answerCbQuery().catch(() => {});
+  await safeEdit(ctx, text, opts);
 };
 
 const handleWaitlist = async (ctx, productId) => {
@@ -458,12 +447,7 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
   ];
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts).catch(() => {});
-  }
-  await ctx.answerCbQuery().catch(() => {});
+  await safeEdit(ctx, text, opts);
 };
 
 const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
@@ -499,15 +483,14 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       balance: user.balance.toFixed(2),
       diff
     });
-    await ctx.editMessageText(text, {
+    return safeEdit(ctx, text, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback(topupLabel, `topup:quick:${diff}`)],
         [Markup.button.callback(otherLabel, 'menu:topup')],
         [Markup.button.callback(backLabel, `shop:product:${productId}:${safePage}`)],
       ]),
-    }).catch(() => {});
-    return ctx.answerCbQuery().catch(() => {});
+    });
   }
 
   const newBalance = (user.balance - totalCost).toFixed(2);
@@ -543,11 +526,7 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       [Markup.button.callback(backToProductLabel, `shop:product:${productId}:${safePage}`)],
     ]),
   };
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts).catch(() => {});
-  }
+  await safeEdit(ctx, text, opts);
   await ctx.answerCbQuery().catch(() => {});
 };
 

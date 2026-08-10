@@ -138,16 +138,14 @@ module.exports = (bot) => {
 
     // ─── СОЗДАНИЕ ПРОМОКОДА АДМИНОМ ───
     if (session.userAction === 'promo_create_code' && ctx.user.role === 'admin') {
-      const PromoCode = require('../../models/PromoCode');
       const code = ctx.message.text.trim().toUpperCase();
-
-      const exists = await PromoCode.findOne({ code });
-      if (exists) {
-        return ctx.reply('❌ Промокод с таким кодом уже существует. Напишите другой:');
-      }
-
       session.newPromo.code = code;
       session.userAction = null;
+      const targetMsgId = session.wizardMsgId;
+
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
 
       const text = `🎟 <b>Создание промокода:</b> <code>${code}</code>\n\n` +
         `Шаг 2 из 4: Выберите тип промокода:`;
@@ -163,13 +161,37 @@ module.exports = (bot) => {
         [Markup.button.callback('❌ Отмена', 'admin:promos')],
       ]);
 
-      return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+      if (targetMsgId) {
+        try {
+          await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+          return;
+        } catch (_) {}
+      }
+
+      const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+      if (sent?.message_id) session.wizardMsgId = sent.message_id;
+      return;
     }
 
     if (session.userAction === 'promo_create_value' && ctx.user.role === 'admin') {
+      const targetMsgId = session.wizardMsgId;
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
       const val = parseFloat(ctx.message.text.replace(',', '.'));
       if (isNaN(val) || val <= 0) {
-        return ctx.reply('❌ Введите корректное число больше 0:');
+        const errText = '❌ Введите корректное число больше 0:';
+        if (targetMsgId) {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, errText, {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]),
+            });
+            return;
+          } catch (_) {}
+        }
+        return ctx.reply(errText);
       }
 
       session.newPromo.value = val;
@@ -178,13 +200,39 @@ module.exports = (bot) => {
       const text = `🎟 <b>Создание промокода</b>\n\n` +
         `Шаг 4 из 4: Напишите макс. число активаций всего (например <code>100</code> или <code>-1</code> для безлимита):`;
 
-      return ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]) });
+      const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]);
+
+      if (targetMsgId) {
+        try {
+          await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+          return;
+        } catch (_) {}
+      }
+
+      const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+      if (sent?.message_id) session.wizardMsgId = sent.message_id;
+      return;
     }
 
     if (session.userAction === 'promo_create_max' && ctx.user.role === 'admin') {
+      const targetMsgId = session.wizardMsgId;
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
       const max = parseInt(ctx.message.text.trim(), 10);
       if (isNaN(max)) {
-        return ctx.reply('❌ Введите число (например 100 или -1):');
+        const errText = '❌ Введите число (например 100 или -1):';
+        if (targetMsgId) {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, errText, {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]),
+            });
+            return;
+          } catch (_) {}
+        }
+        return ctx.reply(errText);
       }
 
       const PromoCode = require('../../models/PromoCode');
@@ -200,48 +248,85 @@ module.exports = (bot) => {
 
       session.userAction = null;
       session.newPromo = null;
+      session.wizardMsgId = null;
 
-      await ctx.reply('✅ Промокод успешно создан!');
       return promosScene.showPromosMain(ctx);
     }
 
     // ─── МАССОВОЕ НАЧИСЛЕНИЕ БАЛАНСА ───
     if (session.adminAction === 'bulk_give_balance' && ctx.user.role === 'admin') {
+      const targetMsgId = session.wizardMsgId;
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
       const amount = parseFloat(ctx.message.text.trim().replace(',', '.'));
       if (isNaN(amount) || amount <= 0) {
         return ctx.reply('❌ Введите корректную сумму больше 0 (например: 1.5):');
       }
 
       session.adminAction = null;
+      session.wizardMsgId = null;
       const bulkService = require('../../services/bulkOperations.service');
       const count = await bulkService.grantBalanceToAll(amount);
 
-      await ctx.reply(`✅ Баланс <b>+${amount.toFixed(2)} USDT</b> успешно начислен <b>${count}</b> пользователям!`, {
+      const text = `✅ Баланс <b>+${amount.toFixed(2)} USDT</b> успешно начислен <b>${count}</b> пользователям!`;
+      const keyboard = Markup.inlineKeyboard([[Markup.button.callback('⚡ В меню массовых операций', 'admin:bulk')]]);
+
+      if (targetMsgId) {
+        try {
+          await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+          return;
+        } catch (_) {}
+      }
+
+      await ctx.reply(text, {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('⚡ В меню массовых операций', 'admin:bulk')]]),
+        ...keyboard,
       });
       return;
     }
 
     // ─── ВВОД API-КЛЮЧА ПОСТАВЩИКА ───
     if (session.adminAction === 'supplier_set_key' && ctx.user.role === 'admin') {
+      const targetMsgId = session.wizardMsgId;
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
       const supplierId = session.targetSupplierId;
       const keyStr = ctx.message.text.trim();
       session.adminAction = null;
       session.targetSupplierId = null;
+      session.wizardMsgId = null;
 
       const supplierManager = require('../../services/supplierManager.service');
       const updated = await supplierManager.saveSupplierKey(supplierId, keyStr);
 
-      await ctx.reply(`✅ API-ключ для <b>${escapeHtml(updated.title)}</b> успешно сохранен!\nТекущий баланс: <b>${updated.cachedBalance.toFixed(2)} USDT</b>`, {
+      const text = `✅ API-ключ для <b>${escapeHtml(updated.title)}</b> успешно сохранен!\nТекущий баланс: <b>${updated.cachedBalance.toFixed(2)} USDT</b>`;
+      const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔌 К поставщику', `admin:supplier:view:${supplierId}`)]]);
+
+      if (targetMsgId) {
+        try {
+          await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+          return;
+        } catch (_) {}
+      }
+
+      await ctx.reply(text, {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('🔌 К поставщику', `admin:supplier:view:${supplierId}`)]]),
+        ...keyboard,
       });
       return;
     }
 
     // ─── ВВОД НАЦЕНКИ % ПОСТАВЩИКА ───
     if (session.adminAction === 'supplier_set_margin' && ctx.user.role === 'admin') {
+      const targetMsgId = session.wizardMsgId;
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
       const supplierId = session.targetSupplierId;
       const marginVal = parseFloat(ctx.message.text.trim().replace(',', '.'));
       if (isNaN(marginVal) || marginVal < 0) {

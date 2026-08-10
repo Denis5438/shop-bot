@@ -15,7 +15,7 @@ const cartScene = require('../scenes/cart.scene');
 const topupScene = require('../scenes/topup.scene');
 const { Markup } = require('telegraf');
 const { adminMiddleware } = require('../middlewares/auth');
-const { escapeHtml, formatDateTimeMSK } = require('../utils/ui');
+const { escapeHtml, formatDateTimeMSK, safeEdit } = require('../utils/ui');
 const { mainKeyboard, languageKeyboard } = require('../keyboards/main.keyboard');
 const { toRub } = require('../../services/currency.service');
 const { tosGateKeyboard, tosGateText, PRIVACY_URL, AGREEMENT_URL } = require('../middlewares/tos');
@@ -217,11 +217,7 @@ module.exports = (bot) => {
       [Markup.button.url(t('tos_agreement'), AGREEMENT_URL)],
       [Markup.button.callback(t('btn_back'), 'menu:main')],
     ]);
-    try {
-      await ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...keyboard });
-    } catch (_) {
-      await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', ...keyboard }).catch(() => {});
-    }
+    await safeEdit(ctx, lines.join('\n'), { parse_mode: 'HTML', ...keyboard });
   });
 
   bot.command('admin', adminMiddleware, async (ctx) => {
@@ -376,19 +372,13 @@ module.exports = (bot) => {
 
   // ─────────────────── ГЛАВНОЕ МЕНЮ ───────────────────
   bot.action('menu:main', async (ctx) => {
-    await ctx.answerCbQuery();
     const t = ctx.t;
-    try {
-      await ctx.editMessageText(
-        t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
-        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-      );
-    } catch (_) {
-      await ctx.reply(
-        t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
-        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-      );
-    }
+    const text = t('welcome_back', {
+      name: escapeHtml(ctx.user.firstName),
+      balance: ctx.user.balance.toFixed(2),
+      balanceRub: toRub(ctx.user.balance),
+    });
+    await safeEdit(ctx, text, { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) });
   });
 
   bot.action('menu:shop', async (ctx) => {
@@ -426,20 +416,17 @@ module.exports = (bot) => {
     ctx.session.promoReturnTo = 'cart';
     const text = `🎟 <b>Применение промокода</b>\n\n` +
       `Введите код купона/промокода в ответном сообщении для получения скидки на корзину:`;
-    await ctx.reply(text, {
+    await safeEdit(ctx, text, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад в корзину', 'menu:cart')]]),
     });
-    await ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action('menu:profile', async (ctx) => {
-    await ctx.answerCbQuery();
     await profileScene.showProfile(ctx);
   });
 
   bot.action('menu:topup', async (ctx) => {
-    await ctx.answerCbQuery();
     await topupScene.startTopup(ctx);
   });
 
@@ -449,7 +436,6 @@ module.exports = (bot) => {
     if (!amount || amount <= 0) {
       return ctx.answerCbQuery('⚠️ Некорректная сумма', { show_alert: true });
     }
-    await ctx.answerCbQuery();
     await topupScene.startTopupWithAmount(ctx, amount);
   });
 
@@ -459,35 +445,28 @@ module.exports = (bot) => {
 
   // Прямой перевод
   bot.action('topup:method:direct', async (ctx) => {
-    await ctx.answerCbQuery();
     await topupScene.showDirectOptions(ctx);
   });
 
   // Назад (к выбору платёжной системы)
   bot.action('topup:pay:back', async (ctx) => {
-    await ctx.answerCbQuery();
     await topupScene.showDirectOptions(ctx);
   });
 
   // Карта
   bot.action('topup:pay:card', async (ctx) => {
-    await ctx.answerCbQuery();
     await topupScene.showCardDetails(ctx);
   });
 
   // Bybit - выбор сети
   bot.action('topup:pay:bybit', async (ctx) => {
-    await ctx.answerCbQuery();
     await topupScene.showBybitOptions(ctx);
   });
 
   // Bybit - конкретная сеть
   bot.action(/^topup:network:(trc20|bep20|uid)$/, async (ctx) => {
-    await ctx.answerCbQuery();
     await topupScene.showBybitNetwork(ctx, ctx.match[1]);
   });
-
-
 
   // UX-1: быстрые пресеты сумм на экране ввода.
   bot.action(/^topup:preset:(usdt|rub):(\d+(?:\.\d+)?)$/, async (ctx) => {
@@ -508,50 +487,45 @@ module.exports = (bot) => {
       return ctx.answerCbQuery('✅ Уже ожидаем скриншот чека');
     }
     topup.step = 'proof';
-    await ctx.answerCbQuery('✅ Отлично! Пришлите скриншот чека.');
-    await ctx.editMessageText(
+    await safeEdit(
+      ctx,
       `✅ <b>Оплата подтверждена!</b>\n\n📸 Теперь пришлите <b>скриншот чека</b> для проверки оператором:`,
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'menu:topup')]]),
       }
-    ).catch(() => {});
+    );
   });
 
   bot.action('menu:support', async (ctx) => {
-    await ctx.answerCbQuery();
     const t = ctx.t;
     const lang = ctx.user?.language || 'ru';
     const { TEXTS } = require('../constants/ux');
     const supportLink = TEXTS.SUPPORT_URL;
     const btnLabel = lang === 'en' ? '✉️ Write to Support' : '✉️ Написать поддержке';
 
-    try {
-      await ctx.editMessageText(
-        t('support_text'),
-        {
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([
-            [Markup.button.url(btnLabel, supportLink)],
-            [Markup.button.callback(t('btn_back'), 'menu:main')],
-          ]),
-        }
-      );
-    } catch (_) { }
+    await safeEdit(
+      ctx,
+      t('support_text'),
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url(btnLabel, supportLink)],
+          [Markup.button.callback(t('btn_back'), 'menu:main')],
+        ]),
+      }
+    );
   });
 
   bot.action('menu:about', async (ctx) => {
-    await ctx.answerCbQuery();
     const t = ctx.t;
-
-    try {
-      await ctx.editMessageText(
-        t('about_text'),
-        {
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'menu:main')]]),
-        }
-      );
-    } catch (_) { }
+    await safeEdit(
+      ctx,
+      t('about_text'),
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'menu:main')]]),
+      }
+    );
   });
 };

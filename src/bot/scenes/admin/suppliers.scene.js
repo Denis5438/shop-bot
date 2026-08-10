@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const supplierManager = require('../../../services/supplierManager.service');
-const { escapeHtml } = require('../../utils/ui');
+const { escapeHtml, safeEdit } = require('../../utils/ui');
 
 /**
  * Главное меню управления внешними поставщиками
@@ -25,12 +25,7 @@ const showSuppliersMain = async (ctx) => {
   buttons.push([Markup.button.callback('⬅️ В админку', 'admin:main')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 /**
@@ -66,12 +61,7 @@ const showSupplierDetail = async (ctx, supplierId) => {
   ];
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 /**
@@ -102,12 +92,7 @@ const showMarginMenu = async (ctx, supplierId) => {
   ];
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 /**
@@ -134,7 +119,8 @@ const applySmartPreset = async (ctx, supplierId, presetKey) => {
   const syncRes = await liveSync.syncSupplierStock(supplierId);
   const updatedInfo = syncRes.success ? ` (Обновлено товаров: ${syncRes.updatedCount})` : '';
 
-  await ctx.reply(`✅ <b>Умная наценка успешно применена!</b>${updatedInfo}\n\nВсе цены в магазине автоматически пересчитаны по новым правилам.`, {
+  const text = `✅ <b>Умная наценка успешно применена!</b>${updatedInfo}\n\nВсе цены в магазине автоматически пересчитаны по новым правилам.`;
+  await safeEdit(ctx, text, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В карточку поставщика', `admin:supplier:view:${supplierId}`)]]),
   });
@@ -147,13 +133,13 @@ const startSetApiKey = async (ctx, supplierId) => {
   ctx.session = ctx.session || {};
   ctx.session.adminAction = 'supplier_set_key';
   ctx.session.targetSupplierId = supplierId;
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
 
   const text = `🔑 <b>Ввод API-ключа</b>\n\n` +
     `Отправьте API-ключ (токен авторизации) для поставщика <code>${supplierId}</code> сообщением в чат:`;
 
   const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:supplier:view:${supplierId}`)]]);
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
-  await ctx.answerCbQuery().catch(() => {});
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 /**
@@ -163,14 +149,14 @@ const startSetMargin = async (ctx, supplierId) => {
   ctx.session = ctx.session || {};
   ctx.session.adminAction = 'supplier_set_margin';
   ctx.session.targetSupplierId = supplierId;
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
 
   const text = `📈 <b>Настройка простого процента наценки</b>\n\n` +
     `Введите процент наценки на все товары этого поставщика (например: <code>15</code> для +15% или <code>30</code> для +30%):\n\n` +
     `<i>(Это отключит Smart Pricing и включит единый процент на все товары)</i>`;
 
   const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:supplier:margin_menu:${supplierId}`)]]);
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {});
-  await ctx.answerCbQuery().catch(() => {});
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 /**
@@ -181,7 +167,9 @@ const execImportCatalog = async (ctx, supplierId) => {
   const res = await supplierManager.importSupplierCatalog(supplierId);
 
   if (!res.success) {
-    await ctx.reply(`❌ Ошибка импорта: ${res.error}`, {
+    const errText = `❌ Ошибка импорта: ${res.error}`;
+    await safeEdit(ctx, errText, {
+      parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', `admin:supplier:view:${supplierId}`)]]),
     });
     return;
@@ -193,7 +181,7 @@ const execImportCatalog = async (ctx, supplierId) => {
     `🔄 Существующих обновлено: <b>${res.updatedCount}</b>\n\n` +
     `<i>Все товары автоматически выставлены в магазин с вашей наценкой!</i>`;
 
-  await ctx.reply(successText, {
+  await safeEdit(ctx, successText, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В меню поставщика', `admin:supplier:view:${supplierId}`)]]),
   });

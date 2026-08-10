@@ -3,7 +3,7 @@ const Order = require('../../../models/Order');
 const Seller = require('../../../models/Seller');
 const User = require('../../../models/User');
 const notif = require('../../../services/notification.service');
-const { escapeHtml } = require('../../utils/ui');
+const { escapeHtml, safeEdit } = require('../../utils/ui');
 
 const PAGE_SIZE = 10;
 
@@ -28,12 +28,7 @@ const listDisputes = async (ctx, page = 1) => {
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В панель', 'admin:main')]]),
     };
     const txt = '⚠️ <b>Споры отсутствуют</b>\n\nВсе заказы идут гладко!';
-    try {
-      await ctx.editMessageText(txt, opts);
-    } catch (_) {
-      await ctx.reply(txt, opts);
-    }
-    return;
+    return safeEdit(ctx, txt, opts);
   }
 
   let text = `⚠️ <b>Споры (страница ${page})</b>\n\n`;
@@ -56,11 +51,7 @@ const listDisputes = async (ctx, page = 1) => {
   buttons.push([Markup.button.callback('⬅️ В панель', 'admin:main')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 const viewDispute = async (ctx, orderId) => {
@@ -95,11 +86,7 @@ const viewDispute = async (ctx, orderId) => {
     [Markup.button.callback('⬅️ К списку споров', 'admin:disputes:list')],
   ];
 
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  } catch (_) {
-    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  }
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
 };
 
 const resolveRefundBuyer = async (ctx, orderId) => {

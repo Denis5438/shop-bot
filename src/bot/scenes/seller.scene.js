@@ -13,7 +13,7 @@ const Seller = require('../../models/Seller');
 const SellerWithdrawal = require('../../models/SellerWithdrawal');
 const Order = require('../../models/Order');
 const notif = require('../../services/notification.service');
-const { escapeHtml } = require('../utils/ui');
+const { escapeHtml, safeEdit } = require('../utils/ui');
 const i18n = require('../middlewares/i18n');
 const { getSettings } = require('../../services/settingsCache.service');
 
@@ -94,18 +94,10 @@ const showSellerCabinet = async (ctx) => {
 
   if (!seller) {
     const text = ctx.t('seller_access_denied_title') + ctx.t('seller_access_denied_text');
-    try {
-      await ctx.editMessageText(text, {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('back_to_menu'), 'menu:main')]]),
-      });
-    } catch (_) {
-      await ctx.reply(text, {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('back_to_menu'), 'menu:main')]]),
-      });
-    }
-    return;
+    return safeEdit(ctx, text, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('back_to_menu'), 'menu:main')]]),
+    });
   }
 
   if (!seller.isActive) {
@@ -153,12 +145,7 @@ const showSellerCabinet = async (ctx) => {
   }
 
   buttons.push([Markup.button.callback(ctx.t('back_to_menu'), 'menu:main')]);
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  } catch (_) {
-    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  }
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
 };
 
 // ─── Заказы продавца ─────────────────────────────────────────────────────────
@@ -193,12 +180,7 @@ const showSellerOrders = async (ctx, filter = 'active') => {
         [Markup.button.callback(ctx.t('seller_btn_cabinet'), 'seller:cabinet')],
       ]),
     };
-    try {
-      await ctx.editMessageText(ctx.t('seller_orders_title', { text: emptyText }), opts);
-    } catch (_) {
-      await ctx.reply(ctx.t('seller_orders_title', { text: emptyText }), opts);
-    }
-    return;
+    return safeEdit(ctx, ctx.t('seller_orders_title', { text: emptyText }), opts);
   }
 
   let text = ctx.t('seller_orders_list_title', { type: filter === 'active' ? ctx.t('seller_order_active_type') : ctx.t('seller_order_history_type') });
@@ -227,11 +209,7 @@ const showSellerOrders = async (ctx, filter = 'active') => {
   buttons.push([Markup.button.callback(ctx.t('seller_btn_cabinet'), 'seller:cabinet')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 // ─── Выполнить заказ (Шаг 1: запрос данных) ──────────────────────────────────
@@ -258,17 +236,10 @@ const completeSellerOrder = async (ctx, orderId) => {
   const productName = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
   const text = ctx.t('seller_order_deliver_title', { name: productName });
 
-  try {
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('btn_cancel'), 'seller:orders')]]),
-    });
-  } catch (_) {
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('btn_cancel'), 'seller:orders')]]),
-    });
-  }
+  await safeEdit(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('btn_cancel'), 'seller:orders')]]),
+  });
 };
 
 // ─── Выполнить заказ (Шаг 2: получение данных и отправка покупателю) ───────
@@ -378,17 +349,10 @@ const startWalletSetup = async (ctx) => {
 
   const text = ctx.t('seller_wallet_setup_title', { current: currentLine });
 
-  try {
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('btn_cancel'), 'seller:cabinet')]]),
-    });
-  } catch (_) {
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('btn_cancel'), 'seller:cabinet')]]),
-    });
-  }
+  await safeEdit(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([[Markup.button.callback(ctx.t('btn_cancel'), 'seller:cabinet')]]),
+  });
 };
 
 // ─── Шаг 2: получили адрес, просим сеть ──────────────────────────────────────
@@ -506,31 +470,20 @@ const startWithdraw = async (ctx) => {
   ctx.session = ctx.session || {};
   ctx.session.sellerAction = 'withdraw_amount';
 
-  await ctx.answerCbQuery().catch(() => {});
+  const withdrawText = ctx.t('seller_withdraw_title', {
+    balance: seller.balance.toFixed(2),
+    wallet: escapeHtml(seller.walletAddress),
+    network: escapeHtml(seller.walletNetwork || '-'),
+    min: minWithdraw,
+  });
 
-  try {
-    await ctx.editMessageText(
-      ctx.t('seller_withdraw_title', { balance: seller.balance.toFixed(2), wallet: escapeHtml(seller.walletAddress), network: escapeHtml(seller.walletNetwork || '-'), min: minWithdraw }),
-      {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback(ctx.t('seller_btn_withdraw_all', { balance: seller.balance.toFixed(2) }), `seller:withdraw:all`)],
-          [Markup.button.callback(ctx.t('btn_cancel'), 'seller:cabinet')],
-        ]),
-      }
-    );
-  } catch (_) {
-    await ctx.reply(
-      ctx.t('seller_withdraw_title_short', { min: minWithdraw }),
-      {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback(ctx.t('seller_btn_withdraw_all', { balance: seller.balance.toFixed(2) }), `seller:withdraw:all`)],
-          [Markup.button.callback(ctx.t('btn_cancel'), 'seller:cabinet')],
-        ]),
-      }
-    );
-  }
+  await safeEdit(ctx, withdrawText, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback(ctx.t('seller_btn_withdraw_all', { balance: seller.balance.toFixed(2) }), `seller:withdraw:all`)],
+      [Markup.button.callback(ctx.t('btn_cancel'), 'seller:cabinet')],
+    ]),
+  });
 };
 
 const handleWithdrawAll = async (ctx) => {

@@ -5,7 +5,7 @@ const Transaction = require('../../../models/Transaction');
 const notif = require('../../../services/notification.service');
 const { toRub } = require('../../../services/currency.service');
 const { withTransaction } = require('../../../services/transactionHelper.service');
-const { escapeHtml } = require('../../utils/ui');
+const { escapeHtml, safeEdit } = require('../../utils/ui');
 
 const METHOD_LABELS = {
   card: '🏦 Карта Idbank',
@@ -38,12 +38,7 @@ const showPaymentsList = async (ctx) => {
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:main')]]),
     };
     const emptyText = `💳 <b>Заявки на пополнение</b>\n\n📭 Нет новых заявок.`;
-    try {
-      await ctx.editMessageText(emptyText, emptyOpts);
-    } catch (_) {
-      await ctx.reply(emptyText, emptyOpts).catch(() => {});
-    }
-    return;
+    return safeEdit(ctx, emptyText, emptyOpts);
   }
 
   const buttons = [];
@@ -62,11 +57,7 @@ const showPaymentsList = async (ctx) => {
 
   buttons.push([Markup.button.callback('⬅️ Назад', 'admin:main')]);
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  try {
-    await ctx.editMessageText(text, opts);
-  } catch (_) {
-    await ctx.reply(text, opts).catch(() => {});
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 const showPaymentDetail = async (ctx, requestId) => {
@@ -112,12 +103,7 @@ const showPaymentDetail = async (ctx, requestId) => {
     } catch (_) {}
   }
 
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  } catch (_) {
-    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  }
-  await ctx.answerCbQuery().catch(() => {});
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
 };
 
 const confirmPayment = async (ctx, requestId) => {
@@ -125,8 +111,6 @@ const confirmPayment = async (ctx, requestId) => {
   if (!request || request.status !== 'pending') {
     return ctx.answerCbQuery('⚠️ Уже обработано', { show_alert: true });
   }
-
-  await ctx.answerCbQuery();
 
   const user = request.userId;
   const amount = request.amount || 0;
@@ -145,11 +129,7 @@ const confirmPayment = async (ctx, requestId) => {
     [Markup.button.callback('⬅️ Назад', `admin:payment:${requestId}`)],
   ];
 
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  } catch (_) {
-    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  }
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
 };
 
 const approvePayment = async (ctx, requestId) => {
@@ -168,19 +148,14 @@ const editPaymentAmount = async (ctx, requestId) => {
     return ctx.answerCbQuery('⚠️ Уже обработано', { show_alert: true });
   }
 
-  await ctx.answerCbQuery();
-
   ctx.session = ctx.session || {};
   ctx.session.adminAction = 'confirm_topup';
   ctx.session.topupRequestId = requestId;
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
 
-  await ctx.reply(
-    `✏️ <b>Введите сумму в USDT</b> для зачисления:\n\n<i>Пример: 5.0</i>`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:payments')]]),
-    }
-  );
+  const text = `✏️ <b>Введите сумму в USDT</b> для зачисления:\n\n<i>Пример: 5.0</i>`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:payments')]]);
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 const approveTopupRequest = async (ctx, requestId, amount) => {
@@ -200,27 +175,18 @@ const approveTopupRequest = async (ctx, requestId, amount) => {
             processedAt: new Date(),
           },
         },
-        {
-          new: true,
-          ...sessionOptions,
-        }
+        { new: true, ...sessionOptions }
       );
 
       if (!approvedRequest) return;
 
-      // Атомарный $inc: read-modify-write через save() терял параллельные
-      // изменения баланса (например, одновременную покупку пользователя)
-      approvedUser = await User.findOneAndUpdate(
-        { _id: approvedRequest.userId },
+      approvedUser = await User.findByIdAndUpdate(
+        approvedRequest.userId,
         { $inc: { balance: amount } },
-        { new: true, ...(sessionOptions || {}) }
+        { new: true, ...sessionOptions }
       );
+
       if (!approvedUser) {
-        await TopupRequest.updateOne(
-          { _id: approvedRequest._id },
-          { $set: { status: 'pending', adminId: null, processedAt: null } },
-          sessionOptions
-        );
         throw new Error('TOPUP_USER_NOT_FOUND');
       }
 
@@ -240,41 +206,24 @@ const approveTopupRequest = async (ctx, requestId, amount) => {
   }
 
   if (!approvedRequest || !approvedUser) {
-    // Race condition: другой админ уже обработал заявку.
-    // answerCbQuery мог быть вызван ранее в approvePayment - повторный вызов
-    // вернёт "query is too old" от Telegram, поэтому просто сообщаем через
-    // текст сообщения (с fallback на reply).
     const text = '⚠️ Заявка уже была обработана другим администратором.';
     const opts = {
       ...Markup.inlineKeyboard([[Markup.button.callback('💳 К заявкам', 'admin:payments')]]),
     };
-
-    try {
-      await ctx.editMessageText(text, opts);
-    } catch (_) {
-      await ctx.reply(text, opts).catch(() => {});
-    }
+    await safeEdit(ctx, text, opts);
     return false;
   }
 
-  // Сброс кэша middleware: пользователь после «Баланс пополнен» сразу жмёт
-  // «Купить» - pre-check не должен видеть старый баланс
+  // Сброс кэша middleware
   require('../../middlewares/user').invalidateUserCache(approvedUser.telegramId);
 
   await notif.notifyUserTopupConfirmed(approvedUser, amount);
 
   const text = renderApprovedText(approvedUser, amount);
-  try {
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('💳 К заявкам', 'admin:payments')]]),
-    });
-  } catch (_) {
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('💳 К заявкам', 'admin:payments')]]),
-    });
-  }
+  await safeEdit(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([[Markup.button.callback('💳 К заявкам', 'admin:payments')]]),
+  });
 
   return true;
 };
@@ -283,22 +232,48 @@ const finalizeTopup = async (ctx, amountText) => {
   const requestId = ctx.session?.topupRequestId;
   if (!requestId) return false;
 
+  if (ctx.message && ctx.message.message_id) {
+    ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+  }
+
+  const targetMsgId = ctx.session?.wizardMsgId;
+
   const amount = parseFloat(amountText.trim().replace(',', '.'));
   if (Number.isNaN(amount) || amount <= 0) {
-    await ctx.reply('❌ Неверная сумма. Введите число больше 0:');
+    const text = '❌ Неверная сумма. Введите число больше 0 (например: 5.0):';
+    if (targetMsgId) {
+      try {
+        await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:payments')]]),
+        });
+        return true;
+      } catch (_) {}
+    }
+    await ctx.reply(text);
     return true;
   }
 
   ctx.session.adminAction = null;
   ctx.session.topupRequestId = null;
+  ctx.session.wizardMsgId = null;
 
   const request = await TopupRequest.findById(requestId);
   if (!request || request.status !== 'pending') {
-    await ctx.reply('⚠️ Заявка уже обработана.');
+    const text = '⚠️ Заявка уже обработана.';
+    if (targetMsgId) {
+      try {
+        await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('💳 К заявкам', 'admin:payments')]]),
+        });
+        return true;
+      } catch (_) {}
+    }
+    await ctx.reply(text);
     return true;
   }
 
-  await ctx.reply(`✅ Зачисляю <b>${amount.toFixed(2)} USDT</b>...`, { parse_mode: 'HTML' });
   await approveTopupRequest(ctx, requestId, amount);
   return true;
 };

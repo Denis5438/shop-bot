@@ -1,7 +1,7 @@
 const { Markup } = require('telegraf');
 const Category = require('../../../models/Category');
 const Product = require('../../../models/Product');
-const { escapeHtml } = require('../../utils/ui');
+const { escapeHtml, safeEdit } = require('../../utils/ui');
 
 const showCategories = async (ctx) => {
   const categories = await Category.find().sort({ sortOrder: 1 });
@@ -14,26 +14,17 @@ const showCategories = async (ctx) => {
 
   const text = `🗂 <b>Управление Категориями</b>\n\nВыберите категорию для редактирования или создайте новую:`;
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 const startAddCategory = async (ctx) => {
   ctx.session = ctx.session || {};
   ctx.session.adminAction = 'add_category';
-  
-  await ctx.editMessageText(
-    `➕ <b>Новая категория</b>\n\nВведите название (например: <code>ChatGPT</code>):`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:categories')]])
-    }
-  ).catch(() => {});
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
+
+  const text = `➕ <b>Новая категория</b>\n\nВведите название (например: <code>ChatGPT</code>):`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:categories')]]);
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
 };
 
 const handleCategoryInput = async (ctx) => {
@@ -43,6 +34,8 @@ const handleCategoryInput = async (ctx) => {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
   }
 
+  const targetMsgId = session.wizardMsgId;
+
   if (session.adminAction === 'add_category') {
     const name = ctx.message.text.trim();
     if (!name) return true;
@@ -50,10 +43,18 @@ const handleCategoryInput = async (ctx) => {
     session.newCategoryName = name;
     session.adminAction = 'add_category_icon';
 
-    await ctx.reply(`Название: <b>${escapeHtml(name)}</b>\n\nТеперь отправьте эмодзи для категории (например: 🤖):`, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:categories')]])
-    });
+    const text = `Название: <b>${escapeHtml(name)}</b>\n\nТеперь отправьте эмодзи для категории (например: 🤖):`;
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:categories')]]);
+
+    if (targetMsgId) {
+      try {
+        await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+        return true;
+      } catch (_) {}
+    }
+
+    const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+    if (sent?.message_id) session.wizardMsgId = sent.message_id;
     return true;
   }
 
@@ -66,11 +67,19 @@ const handleCategoryInput = async (ctx) => {
 
     session.adminAction = null;
     session.newCategoryName = null;
+    session.wizardMsgId = null;
 
-    await ctx.reply(`✅ Категория <b>${escapeHtml(cat.icon)} ${escapeHtml(cat.name)}</b> создана!`, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🗂 К категориям', 'admin:categories')]])
-    });
+    const text = `✅ Категория <b>${escapeHtml(cat.icon)} ${escapeHtml(cat.name)}</b> успешно создана!`;
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🗂 К категориям', 'admin:categories')]]);
+
+    if (targetMsgId) {
+      try {
+        await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+        return true;
+      } catch (_) {}
+    }
+
+    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
     return true;
   }
 
@@ -92,8 +101,7 @@ const showCategoryEdit = async (ctx, catId) => {
     [Markup.button.callback('⬅️ Назад', 'admin:categories')]
   ];
 
-  await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
-  await ctx.answerCbQuery().catch(() => {});
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
 };
 
 module.exports = {

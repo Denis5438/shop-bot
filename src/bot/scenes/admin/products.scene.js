@@ -5,7 +5,7 @@ const Order = require('../../../models/Order');
 const Seller = require('../../../models/Seller');
 const keysScene = require('./keys.scene');
 const notif = require('../../../services/notification.service');
-const { escapeHtml, extractTextWithEmojis } = require('../../utils/ui');
+const { escapeHtml, extractTextWithEmojis, safeEdit } = require('../../utils/ui');
 const {
   buildKeyQueryForProduct,
   getProviderLabel,
@@ -29,54 +29,49 @@ const showProductsList = async (ctx, page = 1, searchQuery = null) => {
     query.name = new RegExp(searchQuery.trim(), 'i');
   }
 
-  const totalCount = await Product.countDocuments(query);
-
-  if (totalCount === 0) {
-    const emptyText = searchQuery
-      ? `🔍 По запросу "<b>${escapeHtml(searchQuery)}</b>" ничего не найдено.`
-      : '📦 Товаров пока нет.';
-    return ctx.editMessageText(emptyText, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔍 Другой поиск', 'admin:product:search')],
-        [Markup.button.callback('➕ Добавить товар', 'admin:product:add')],
-        [Markup.button.callback('⬅️ В панель', 'admin:main')],
-      ]),
-    });
-  }
-
-  const totalPages = Math.ceil(totalCount / PRODUCTS_PER_PAGE);
-  const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
-  const skip = (safePage - 1) * PRODUCTS_PER_PAGE;
+  const total = await Product.countDocuments(query);
+  const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PER_PAGE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
 
   const products = await Product.find(query)
     .sort({ sortOrder: 1, createdAt: -1 })
-    .skip(skip)
+    .skip((safePage - 1) * PRODUCTS_PER_PAGE)
     .limit(PRODUCTS_PER_PAGE)
     .lean();
 
-  // Остатки товаров на текущей странице
-  const keyAgg = await Key.aggregate([
-    { $match: { productId: { $in: products.map((p) => p._id) }, isUsed: false } },
-    { $group: { _id: { productId: '$productId', provider: '$provider' }, cnt: { $sum: 1 } } },
-  ]);
-  const freeCounts = new Map();
-  for (const r of keyAgg) {
-    const pid = String(r._id.productId);
-    const prov = r._id.provider || '__null__';
-    if (!freeCounts.has(pid)) freeCounts.set(pid, {});
-    freeCounts.get(pid)[prov] = r.cnt;
+  if (products.length === 0) {
+    const emptyText = searchQuery
+      ? `🔍 По запросу «<b>${escapeHtml(searchQuery)}</b>» ничего не найдено.`
+      : '📦 <b>Управление Товарами</b>\n\nСписок товаров пуст.';
+    const emptyButtons = [
+      [Markup.button.callback('🔍 Повторить поиск', 'admin:product:search')],
+      [Markup.button.callback('➕ Добавить товар', 'admin:product:add')],
+      [Markup.button.callback('⬅️ В панель управления', 'admin:main')],
+    ];
+    return safeEdit(ctx, emptyText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) });
   }
 
-  let text = `📦 <b>Управление товарами</b> (${totalCount} шт.)\n`;
-  if (searchQuery) text += `🔍 <i>Поиск: "${escapeHtml(searchQuery)}"</i>\n`;
-  text += `Страница: <b>${safePage}/${totalPages}</b>\n\n`;
+  const pIds = products.map((p) => p._id);
+  const keyCounts = await Key.aggregate([
+    { $match: { productId: { $in: pIds }, isUsed: false } },
+    { $group: { _id: { productId: '$productId', provider: '$provider' }, count: { $sum: 1 } } },
+  ]);
 
+  const countsMap = new Map();
+  for (const row of keyCounts) {
+    const pidStr = String(row._id.productId);
+    const prov = row._id.provider || '__null__';
+    if (!countsMap.has(pidStr)) countsMap.set(pidStr, {});
+    countsMap.get(pidStr)[prov] = row.count;
+  }
+
+  const searchHeader = searchQuery ? `🔍 Результаты поиска «<b>${escapeHtml(searchQuery)}</b>»\n\n` : '';
+  let text = `📦 <b>Управление Товарами</b>  ·  Стр. ${safePage}/${totalPages}\n\n` + searchHeader;
   const buttons = [];
 
   for (const product of products) {
-    const c = freeCounts.get(String(product._id)) || {};
-    const prov = resolveProductProvider(product);
+    const c = countsMap.get(String(product._id)) || {};
+    const prov = product.provider || 'local';
     const autoKeys = (c[prov] || 0) + (c['__null__'] || 0);
     const stock = autoKeys > 0
       ? autoKeys
@@ -84,15 +79,21 @@ const showProductsList = async (ctx, page = 1, searchQuery = null) => {
           ? (product.manualStock === -1 ? '∞' : product.manualStock)
           : 0);
     const status = product.isActive ? '✅' : '🔴';
-    const sellerTag = product.sellerId ? ' 👤' : '';
+    const typeLabel = TYPE_LABELS[product.type] || product.type;
 
-    text += `${status} ${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b> | <b>${product.price} USDT</b> (Остаток: ${stock})${sellerTag}\n`;
+    text +=
+      `${status} <b>${escapeHtml(product.name)}</b> — <b>${product.price} USDT</b>\n` +
+      `   ├ Тип: ${typeLabel} | Поставщик: ${escapeHtml(product.provider || 'local')}\n` +
+      `   └ В наличии: <b>${stock}</b> шт.\n\n`;
+
     buttons.push([
-      Markup.button.callback(`✏️ ${product.name.substring(0, 22)} ($${product.price})`, `admin:product:edit:${product._id}:${safePage}`),
+      Markup.button.callback(
+        `${status} ${product.icon || '📦'} ${product.name.slice(0, 22)}`,
+        `admin:product:edit:${product._id}:${safePage}`
+      ),
     ]);
   }
 
-  // Навигация по страницам
   const navRow = [];
   if (safePage > 1) {
     navRow.push(Markup.button.callback('⬅️ Назад', `admin:products:${safePage - 1}`));
@@ -110,12 +111,7 @@ const showProductsList = async (ctx, page = 1, searchQuery = null) => {
   buttons.push([Markup.button.callback('⬅️ В панель управления', 'admin:main')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  if (ctx.callbackQuery) {
-    await ctx.editMessageText(text, opts).catch(() => {});
-    await ctx.answerCbQuery().catch(() => {});
-  } else {
-    await ctx.reply(text, opts);
-  }
+  await safeEdit(ctx, text, opts);
 };
 
 const showProductEdit = async (ctx, productId, page = 1) => {
@@ -181,34 +177,34 @@ const showProductEdit = async (ctx, productId, page = 1) => {
   ]);
   buttons.push([Markup.button.callback('⬅️ К списку товаров', `admin:products:${page}`)]);
 
-  await ctx.editMessageText(text, {
+  await safeEdit(ctx, text, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard(buttons),
   });
-  await ctx.answerCbQuery().catch(() => {});
 };
 
 const startAddProduct = async (ctx) => {
   ctx.session = ctx.session || {};
   ctx.session.adminAction = 'add_product';
   ctx.session.newProduct = {};
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
 
-  await ctx.editMessageText(
+  const text =
     `➕ <b>Новый товар</b>\n\n` +
     `Сначала выберите <b>тип товара</b>:\n\n` +
     `🔑 <b>Ключи</b> - бот сразу отправляет ключ/код из базы\n` +
     `🤖 <b>GPT Активация</b> - авто-активация на аккаунте пользователя\n` +
-    `✋ <b>Ручной</b> - выдаёте товар сами вручную`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔑 Ключи', 'admin:product:type:key')],
-        [Markup.button.callback('🤖 GPT Активация', 'admin:product:type:gpt_activation')],
-        [Markup.button.callback('✋ Ручной', 'admin:product:type:manual')],
-        [Markup.button.callback('❌ Отмена', 'admin:products')],
-      ]),
-    }
-  );
+    `✋ <b>Ручной</b> - выдаёте товар сами вручную`;
+
+  await safeEdit(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('🔑 Ключи', 'admin:product:type:key')],
+      [Markup.button.callback('🤖 GPT Активация', 'admin:product:type:gpt_activation')],
+      [Markup.button.callback('✋ Ручной', 'admin:product:type:manual')],
+      [Markup.button.callback('❌ Отмена', 'admin:products')],
+    ]),
+  });
 };
 
 const askNameForNewProduct = async (ctx, type) => {

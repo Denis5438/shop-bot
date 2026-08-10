@@ -1,88 +1,76 @@
 const { Markup } = require('telegraf');
 const axios = require('axios');
-const Key = require('../../../models/Key');
 const Product = require('../../../models/Product');
-const {
-  buildKeyQueryForProduct,
-  getProviderLabel,
-  resolveProductProvider,
-} = require('../../../services/provider.service');
-const { escapeHtml } = require('../../utils/ui');
+const Key = require('../../../models/Key');
+const { getProviderLabel, resolveProductProvider, buildKeyQueryForProduct } = require('../../../services/provider.service');
 const notif = require('../../../services/notification.service');
+const { escapeHtml, safeEdit } = require('../../utils/ui');
 
 const showKeysList = async (ctx) => {
-  const products = await Product.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
+  const products = await Product.find().sort({ sortOrder: 1 }).lean();
 
   if (products.length === 0) {
-    return ctx.editMessageText('🔑 Нет созданных товаров.', {
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:main')]]),
-    });
+    const text = '🔑 <b>Управление Ключами</b>\n\nНет созданных товаров.';
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:main')]]);
+    return safeEdit(ctx, text, keyboard);
   }
 
-  // Счётчики free/used всех товаров одной агрегацией (раньше - 2 запроса
-  // на каждый товар)
-  const keyAgg = await Key.aggregate([
-    { $match: { productId: { $in: products.map((p) => p._id) } } },
-    {
-      $group: {
-        _id: { productId: '$productId', provider: '$provider', isUsed: '$isUsed' },
-        cnt: { $sum: 1 },
-      },
-    },
+  // Оптимизация: 2 aggregation-запроса вместо 2N countDocuments в цикле.
+  // Группируем ключи по productId и статусу isUsed.
+  const [activeCounts, usedCounts] = await Promise.all([
+    Key.aggregate([
+      { $match: { isUsed: false } },
+      { $group: { _id: '$productId', count: { $sum: 1 } } },
+    ]),
+    Key.aggregate([
+      { $match: { isUsed: true } },
+      { $group: { _id: '$productId', count: { $sum: 1 } } },
+    ]),
   ]);
-  const keyCounts = new Map(); // pid → { '<provider>|free': n, '<provider>|used': n }
-  for (const r of keyAgg) {
-    const pid = String(r._id.productId);
-    const prov = r._id.provider || '__null__';
-    const bucket = r._id.isUsed ? 'used' : 'free';
-    if (!keyCounts.has(pid)) keyCounts.set(pid, {});
-    keyCounts.get(pid)[`${prov}|${bucket}`] = r.cnt;
-  }
 
+  const activeMap = new Map(activeCounts.map((r) => [String(r._id), r.count]));
+  const usedMap = new Map(usedCounts.map((r) => [String(r._id), r.count]));
+
+  let text = '🔑 <b>Управление Авто-товарами и Ключами</b>\n\n';
   const buttons = [];
-  let text = `🔑 <b>Управление ключами</b>\n\n`;
 
   for (const product of products) {
-    const c = keyCounts.get(String(product._id)) || {};
-    const prov = resolveProductProvider(product);
-    // provider: null учитывается как совместимый (как в buildKeyQueryForProduct)
-    const free = (c[`${prov}|free`] || 0) + (c['__null__|free'] || 0);
-    const used = (c[`${prov}|used`] || 0) + (c['__null__|used'] || 0);
-    const provider = getProviderLabel(prov);
+    const pId = String(product._id);
+    const active = activeMap.get(pId) || 0;
+    const used = usedMap.get(pId) || 0;
+    const provider = resolveProductProvider(product);
 
-    text += `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b>\n`;
-    text += `   🧩 ${escapeHtml(provider)}\n`;
-    text += `   🟢 Свободных: ${free} | 🔴 Использованных: ${used}\n\n`;
+    text +=
+      `📦 <b>${escapeHtml(product.name)}</b>\n` +
+      `   ├ Доступно: <b>${active}</b> шт.\n` +
+      `   ├ Использовано: <b>${used}</b> шт.\n` +
+      `   └ Поставщик: ${escapeHtml(getProviderLabel(provider))}\n\n`;
 
     buttons.push([
-      Markup.button.callback(`➕ Добавить в: ${product.name.substring(0, 20)}`, `admin:keys:add:${product._id}`),
+      Markup.button.callback(
+        `➕ Загрузить: ${product.name.slice(0, 16)}`,
+        `admin:keys:add:${product._id}`
+      ),
     ]);
-    buttons.push([
-      Markup.button.callback(`🗑 Очистить использ. (${used})`, `admin:keys:clear:${product._id}`),
-    ]);
+
+    if (used > 0) {
+      buttons.push([
+        Markup.button.callback(`🗑 Очистить использ. (${used})`, `admin:keys:clear:${product._id}`),
+      ]);
+    }
   }
 
   buttons.push([Markup.button.callback('⬅️ Назад', 'admin:main')]);
-
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-  } catch (err) {
-    // «message is not modified» - нормальное состояние после clearUsedKeys,
-    // когда ничего не изменилось. Не ломаем поток.
-    if (err.description?.includes('message is not modified')) {
-      return ctx.answerCbQuery('✅ Уже актуально').catch(() => {});
-    }
-    // Все прочие - fallback на новое сообщение.
-    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
-  }
+  await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 };
 
 const askKeysAfterCreate = async (ctx, product) => {
+  ctx.session = ctx.session || {};
   ctx.session.adminAction = 'add_keys';
   ctx.session.keysProductId = product._id.toString();
   ctx.session.keysProductAfterCreate = true;
 
-  await ctx.reply(
+  const text =
     `✅ <b>Товар «${escapeHtml(product.name)}» создан!</b>\n\n` +
     `🔑 <b>Загрузка авто-товаров / аккаунтов / ключей:</b>\n\n` +
     `▫️ Отправьте <b>.txt файл</b> (каждый товар с новой строки)\n` +
@@ -92,15 +80,15 @@ const askKeysAfterCreate = async (ctx, product) => {
     `• <code>login:pass:2fa</code>\n` +
     `• <code>login|pass|2fa</code>\n` +
     `• <code>https://ссылка</code>\n` +
-    `• <code>промокод_или_ключ</code>`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('⏩ Пропустить (добавлю позже)', `admin:product:broadcast:${product._id}`)],
-        [Markup.button.callback('❌ Отмена', 'admin:products')],
-      ]),
-    }
-  );
+    `• <code>промокод_или_ключ</code>`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('⏩ Пропустить (добавлю позже)', `admin:product:broadcast:${product._id}`)],
+    [Markup.button.callback('❌ Отмена', 'admin:products')],
+  ]);
+
+  const sent = await safeEdit(ctx, text, keyboard);
+  if (sent?.message_id) ctx.session.wizardMsgId = sent.message_id;
 };
 
 const startAddKeys = async (ctx, productId) => {
@@ -110,6 +98,7 @@ const startAddKeys = async (ctx, productId) => {
   ctx.session = ctx.session || {};
   ctx.session.adminAction = 'add_keys';
   ctx.session.keysProductId = productId;
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
 
   const text =
     `🔑 <b>Загрузка товаров для: ${escapeHtml(product.name)}</b>\n\n` +
@@ -122,18 +111,8 @@ const startAddKeys = async (ctx, productId) => {
     `• <code>https://ссылка</code>\n` +
     `• <code>промокод_или_ключ</code>`;
 
-  try {
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
-    });
-  } catch (_) {
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]),
-    });
-  }
-  await ctx.answerCbQuery().catch(() => {});
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]]);
+  await safeEdit(ctx, text, keyboard);
 };
 
 const handleKeysInput = async (ctx) => {
@@ -144,6 +123,7 @@ const handleKeysInput = async (ctx) => {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
   }
 
+  const targetMsgId = session.wizardMsgId;
   const productId = session.keysProductId;
   const afterCreate = session.keysProductAfterCreate || false;
   const product = await Product.findById(productId);
@@ -152,6 +132,7 @@ const handleKeysInput = async (ctx) => {
     ctx.session.adminAction = null;
     ctx.session.keysProductId = null;
     ctx.session.keysProductAfterCreate = false;
+    ctx.session.wizardMsgId = null;
     await ctx.reply('❌ Товар не найден.');
     return true;
   }
@@ -169,8 +150,6 @@ const handleKeysInput = async (ctx) => {
     }
 
     const link = await ctx.telegram.getFileLink(file.file_id);
-    // Таймаут и лимит размера: единственный HTTP-вызов проекта без timeout
-    // мог зависнуть навсегда и загрузить файл любого размера в память
     const res = await axios.get(link.href, {
       responseType: 'text',
       timeout: 15000,
@@ -186,7 +165,6 @@ const handleKeysInput = async (ctx) => {
     return true;
   }
 
-  // distinct вместо загрузки полных документов всех ключей товара в память
   const existingValues = new Set(await Key.distinct('value', buildKeyQueryForProduct(product)));
   const newKeys = lines.filter((value) => !existingValues.has(value));
 
@@ -204,26 +182,34 @@ const handleKeysInput = async (ctx) => {
   ctx.session.adminAction = null;
   ctx.session.keysProductId = null;
   ctx.session.keysProductAfterCreate = false;
+  ctx.session.wizardMsgId = null;
 
   const successText =
     `✅ <b>Добавлено ${newKeys.length} ключей!</b>` +
     `\n🧩 Поставщик: ${escapeHtml(getProviderLabel(provider))}` +
     (skipped > 0 ? `\n⚠️ Пропущено дублей: ${skipped}` : '');
 
-  if (afterCreate) {
-    await ctx.reply(successText, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
+  const buttons = afterCreate
+    ? [
         [Markup.button.callback(`📣 Разослать всем (${newKeys.length} шт.)`, `admin:product:broadcast:${productId}`)],
         [Markup.button.callback('📦 К товарам', 'admin:products')],
-      ]),
-    });
-  } else {
-    await ctx.reply(successText, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔑 К ключам', 'admin:keys')]]),
-    });
+      ]
+    : [[Markup.button.callback('🔑 К ключам', 'admin:keys')]];
+
+  if (targetMsgId) {
+    try {
+      await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, successText, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard(buttons),
+      });
+      return true;
+    } catch (_) {}
   }
+
+  await ctx.reply(successText, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard(buttons),
+  });
 
   return true;
 };
