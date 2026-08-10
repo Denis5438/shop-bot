@@ -1,6 +1,8 @@
 const axios = require('axios');
 
 const BASE_URL = 'https://api-ca7cdf16.bug.edu.vn/api/client';
+// Курс VND к USD / USDT (по курсу из бота Trump Store)
+const VND_TO_USD_RATE = 26129.0;
 
 /**
  * Получение баланса Trump Store
@@ -17,14 +19,15 @@ const getBalance = async (apiKey) => {
       timeout: 10000,
     });
     const data = res.data;
-    // Пробуем разные варианты поля баланса
-    const balance = parseFloat(
-      data?.balance ?? data?.wallet?.balance ?? data?.usdt ?? data?.amount ?? 0
+    const rawBal = parseFloat(
+      data?.data?.balance ?? data?.balance ?? data?.wallet?.balance ?? data?.usdt ?? data?.amount ?? 0
     );
+    // Конвертируем баланс из VND в USD
+    const balance = rawBal > 0 ? Math.round((rawBal / VND_TO_USD_RATE) * 100) / 100 : 0;
     return {
       success: true,
       balance,
-      username: data?.username || data?.name || data?.email || 'Trump Store Reseller',
+      username: data?.data?.chat_id ? `Trump User #${data.data.chat_id}` : (data?.username || 'Trump Store Reseller'),
       raw: data,
     };
   } catch (err) {
@@ -50,7 +53,6 @@ const getProducts = async (apiKey) => {
       timeout: 15000,
     });
 
-    // Ответ может быть массивом или обёрнут в { data: [...] } / { products: [...] }
     const raw = res.data;
     const items = Array.isArray(raw)
       ? raw
@@ -63,9 +65,11 @@ const getProducts = async (apiKey) => {
     return {
       success: true,
       products: items.map((p) => {
-        // Определяем остаток
+        // Определяем остаток из API (Trump Store использует stock_count)
         let stockVal = 0;
-        if (p.stock !== undefined && p.stock !== null && !isNaN(Number(p.stock))) {
+        if (p.stock_count !== undefined && p.stock_count !== null && !isNaN(Number(p.stock_count))) {
+          stockVal = Number(p.stock_count);
+        } else if (p.stock !== undefined && p.stock !== null && !isNaN(Number(p.stock))) {
           stockVal = Number(p.stock);
         } else if (p.quantity !== undefined && p.quantity !== null && !isNaN(Number(p.quantity))) {
           stockVal = Number(p.quantity);
@@ -75,15 +79,19 @@ const getProducts = async (apiKey) => {
           stockVal = 99;
         }
 
+        // Конвертируем оптовую цену из VND в USD (USDT)
+        const rawPrice = parseFloat(p.price || p.price_usdt || p.cost || 0);
+        const priceUsdt = rawPrice > 1000 ? Math.round((rawPrice / VND_TO_USD_RATE) * 100) / 100 : rawPrice;
+
         return {
           productCode: String(p.id || p.product_id || p._id),
           name: p.name || p.title || 'Без названия',
           nameEn: p.name_en || p.name || '',
           description: p.description || '',
           descriptionEn: p.description_en || p.description || '',
-          priceUsdt: parseFloat(p.price || p.price_usdt || p.cost || 0),
+          priceUsdt,
           stock: isNaN(stockVal) ? 0 : Math.max(0, stockVal),
-          category: p.category_name || p.category || 'Trump Store',
+          category: p.category || p.category_name || 'Trump Store',
           icon: '🏛️',
         };
       }),
@@ -124,7 +132,7 @@ const createOrder = async (apiKey, { productCode, quantity = 1, idempotencyKey, 
     const data = res.data;
 
     // Проверяем успешность
-    if (data?.success === false || data?.error) {
+    if (data?.success === false || data?.error || data?.ok === false) {
       return {
         success: false,
         error: data?.message || data?.error || 'Trump Store: покупка не удалась',
@@ -134,34 +142,35 @@ const createOrder = async (apiKey, { productCode, quantity = 1, idempotencyKey, 
     // Формируем текст выдачи
     let deliveryData = '';
 
+    const payload = data?.data || data;
+
     // Если в ответе есть аккаунты / ключи
-    if (Array.isArray(data?.accounts) && data.accounts.length > 0) {
-      deliveryData = data.accounts
+    if (Array.isArray(payload?.accounts) && payload.accounts.length > 0) {
+      deliveryData = payload.accounts
         .map((acc, i) => {
           const parts = [];
           if (acc.login || acc.user || acc.email) parts.push(`Login: ${acc.login || acc.user || acc.email}`);
           if (acc.password || acc.pass) parts.push(`Password: ${acc.password || acc.pass}`);
           if (acc.token) parts.push(`Token: ${acc.token}`);
-          const prefix = data.accounts.length > 1 ? `#${i + 1}: ` : '';
+          const prefix = payload.accounts.length > 1 ? `#${i + 1}: ` : '';
           return prefix + parts.join(' | ');
         })
         .join('\n');
-    } else if (data?.key || data?.account || data?.result || data?.content) {
-      deliveryData = String(data.key || data.account || data.result || data.content);
-    } else if (data?.data) {
-      // Рекурсивно ищем полезные данные
-      deliveryData = typeof data.data === 'string' ? data.data : JSON.stringify(data.data);
-    } else if (data?.order_id || data?.id) {
-      deliveryData = `Заказ #${data.order_id || data.id} принят. Ожидайте выдачи.`;
+    } else if (payload?.key || payload?.account || payload?.result || payload?.content) {
+      deliveryData = String(payload.key || payload.account || payload.result || payload.content);
+    } else if (payload?.data) {
+      deliveryData = typeof payload.data === 'string' ? payload.data : JSON.stringify(payload.data);
+    } else if (payload?.order_id || payload?.id) {
+      deliveryData = `Заказ #${payload.order_id || payload.id} принят. Ожидайте выдачи.`;
     } else {
-      deliveryData = JSON.stringify(data);
+      deliveryData = JSON.stringify(payload);
     }
 
     return {
       success: true,
-      orderNumber: data?.order_id || data?.id || data?.orderCode,
+      orderNumber: payload?.order_id || payload?.id || payload?.orderCode,
       deliveryData,
-      status: data?.status || 'completed',
+      status: payload?.status || 'completed',
       raw: data,
     };
   } catch (err) {
