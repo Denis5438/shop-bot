@@ -181,15 +181,24 @@ const answerCbSafe = (ctx, text, opts) => {
 
 const showUserProfile = async (ctx, userId) => {
   try {
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).lean();
     if (!user) return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
 
-    const ordersCount = await Order.countDocuments({ userId: user._id }).catch(() => 0);
-    const referralsCount = await User.countDocuments({ referredBy: user._id }).catch(() => 0);
-    const isSeller = await Seller.exists({ telegramId: user.telegramId, isActive: true }).catch(() => false);
+    let ordersCount = 0;
+    let referralsCount = 0;
+    let isSeller = false;
+
+    try {
+      ordersCount = await Order.countDocuments({ userId: user._id });
+    } catch (_) {}
+    try {
+      referralsCount = await User.countDocuments({ referredBy: user._id });
+    } catch (_) {}
+    try {
+      isSeller = (await Seller.exists({ telegramId: user.telegramId, isActive: true })) != null;
+    } catch (_) {}
 
     const tosDateStr = user.acceptedToSAt ? formatDateTimeMSK(user.acceptedToSAt) : null;
-
     const tosLine = user.acceptedToS
       ? `📜 Оферта (ToS): ✅ <b>Принята</b> (${tosDateStr || 'Да'})\n`
       : `📜 Оферта (ToS): 🔴 <b>Не принята</b>\n`;
@@ -198,33 +207,36 @@ const showUserProfile = async (ctx, userId) => {
       ? `\n⚖️ <i>Юр. выписка: Пользователь ID ${user.telegramId} ${tosDateStr} нажал кнопку согласия с Офертой.</i>\n`
       : '';
 
-    const cleanUsername = user.username ? String(user.username).replace(/^@/, '').trim() : null;
+    const cleanUsername = user.username ? String(user.username).replace(/^@+/, '').trim() : '';
     const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'Пользователь';
-    const nameLink = cleanUsername
-      ? `<a href="https://t.me/${cleanUsername}">${escapeHtml(fullName)}</a>`
+    
+    // Безопасные ссылки (без лишних спецсимволов и пробелов)
+    const nameDisplay = cleanUsername
+      ? `<a href="https://t.me/${encodeURIComponent(cleanUsername)}">${escapeHtml(fullName)}</a>`
       : `<a href="tg://user?id=${user.telegramId}">${escapeHtml(fullName)}</a>`;
     const usernameDisplay = cleanUsername
-      ? `<a href="https://t.me/${cleanUsername}">@${escapeHtml(cleanUsername)}</a>`
+      ? `<a href="https://t.me/${encodeURIComponent(cleanUsername)}">@${escapeHtml(cleanUsername)}</a>`
       : '<i>нет</i>';
 
-    const totalSpent = typeof user.totalSpent === 'number' ? user.totalSpent : (parseFloat(user.totalSpent) || 0);
-    const registeredDate = user.createdAt ? formatDateMSK(user.createdAt) : 'Неизвестно';
+    const userBalance = typeof user.balance === 'number' ? user.balance : (parseFloat(user.balance) || 0);
+    const userSpent = typeof user.totalSpent === 'number' ? user.totalSpent : (parseFloat(user.totalSpent) || 0);
+    const regDate = user.createdAt ? formatDateMSK(user.createdAt) : 'Неизвестно';
 
     const text =
       `👤 <b>Пользователь</b>\n\n` +
-      `🆔 TG ID: <code>${escapeHtml(user.telegramId)}</code>\n` +
-      `📛 Имя: ${nameLink}\n` +
+      `🆔 TG ID: <code>${user.telegramId}</code>\n` +
+      `📛 Имя: ${nameDisplay}\n` +
       `👤 Username: ${usernameDisplay}\n` +
       `🌐 Язык: ${escapeHtml(user.language || 'ru')}\n` +
       `🔘 Роль: ${escapeHtml(user.role || 'user')}\n` +
       `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n` +
       tosLine +
       tosLegalProof + '\n' +
-      `💰 Баланс: ${fmtUSDT(user.balance)}\n` +
+      `💰 Баланс: ${fmtUSDT(userBalance)}\n` +
       `📦 Заказов: ${ordersCount}\n` +
-      `💸 Потрачено: ${totalSpent.toFixed(2)} USDT\n` +
+      `💸 Потрачено: ${userSpent.toFixed(2)} USDT\n` +
       `👥 Рефералов: ${referralsCount}\n` +
-      `📅 Регистрация: ${registeredDate}`;
+      `📅 Регистрация: ${regDate}`;
 
     const buttons = [
       [Markup.button.callback('💰 Изменить баланс', `admin:user:balance:${user._id}`)],
@@ -247,7 +259,7 @@ const showUserProfile = async (ctx, userId) => {
     ];
 
     if (cleanUsername) {
-      buttons.push([Markup.button.url(`👤 Открыть @${cleanUsername} в Telegram`, `https://t.me/${cleanUsername}`)]);
+      buttons.push([Markup.button.url(`👤 Открыть @${cleanUsername} в Telegram`, `https://t.me/${encodeURIComponent(cleanUsername)}`)]);
     }
 
     buttons.push([Markup.button.callback('📨 Написать в боте', `admin:msg:user:${user.telegramId}`)]);
