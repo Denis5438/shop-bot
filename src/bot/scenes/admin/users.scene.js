@@ -6,7 +6,7 @@ const Seller = require('../../../models/Seller');
 const mongoose = require('mongoose');
 const { escapeHtml, formatDateTimeMSK, formatDateMSK, fmtUSDT, safeEdit } = require('../../utils/ui');
 const i18n = require('../../middlewares/i18n');
-const logger = require('../../../utils/logger');
+const logger = require('../../../config/logger');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
