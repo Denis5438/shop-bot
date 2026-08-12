@@ -197,11 +197,19 @@ const showUserProfile = async (ctx, userId) => {
     ? `\n⚖️ <i>Юр. выписка: Пользователь ID ${user.telegramId} ${tosDateStr} нажал кнопку согласия с Офертой.</i>\n`
     : '';
 
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Пользователь';
+  const nameLink = user.username
+    ? `<a href="https://t.me/${user.username}">${escapeHtml(fullName)}</a>`
+    : `<a href="tg://user?id=${user.telegramId}">${escapeHtml(fullName)}</a>`;
+  const usernameDisplay = user.username
+    ? `<a href="https://t.me/${user.username}">@${escapeHtml(user.username)}</a>`
+    : '<i>нет</i>';
+
   const text =
     `👤 <b>Пользователь</b>\n\n` +
     `🆔 TG ID: <code>${escapeHtml(user.telegramId)}</code>\n` +
-    `📛 Имя: <a href="tg://user?id=${user.telegramId}">${escapeHtml(user.firstName)} ${escapeHtml(user.lastName || '')}</a>\n` +
-    `👤 Username: @${escapeHtml(user.username || 'нет')}\n` +
+    `📛 Имя: ${nameLink}\n` +
+    `👤 Username: ${usernameDisplay}\n` +
     `🌐 Язык: ${escapeHtml(user.language)}\n` +
     `🔘 Роль: ${escapeHtml(user.role)}\n` +
     `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n` +
@@ -231,21 +239,17 @@ const showUserProfile = async (ctx, userId) => {
     [Markup.button.callback('🕹 Перехватить управление', `admin:takeover:start:${user._id}`)],
     [Markup.button.callback('🛡 Управление гарантией', `admin:user:warranty:${user._id}`)],
     [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)],
-    [Markup.button.callback('📨 Написать', `admin:msg:user:${user.telegramId}`)],
-    [Markup.button.callback('⬅️ К пользователям', 'admin:users')],
   ];
 
-  // editMessageText сработает только если это callback-ctx; для text-ctx
-  // (поиск по username/ID) отправляем новое сообщение.
-  if (ctx.callbackQuery) {
-    try {
-      await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-    } catch (_) {
-      await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-    }
-  } else {
-    await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  if (user.username) {
+    buttons.push([Markup.button.url(`👤 Открыть @${user.username} в Telegram`, `https://t.me/${user.username}`)]);
   }
+
+  buttons.push([Markup.button.callback('📨 Написать в боте', `admin:msg:user:${user.telegramId}`)]);
+  buttons.push([Markup.button.callback('⬅️ К пользователям', 'admin:users')]);
+
+  const opts = { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) };
+  await safeEdit(ctx, text, opts);
   await answerCbSafe(ctx);
 };
 
