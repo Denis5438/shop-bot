@@ -180,77 +180,87 @@ const answerCbSafe = (ctx, text, opts) => {
 };
 
 const showUserProfile = async (ctx, userId) => {
-  const user = await User.findById(userId);
-  if (!user) return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
+  try {
+    const user = await User.findById(userId);
+    if (!user) return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
 
-  const ordersCount = await Order.countDocuments({ userId: user._id });
-  const referralsCount = await User.countDocuments({ referredBy: user._id });
-  const isSeller = await Seller.exists({ telegramId: user.telegramId, isActive: true });
+    const ordersCount = await Order.countDocuments({ userId: user._id }).catch(() => 0);
+    const referralsCount = await User.countDocuments({ referredBy: user._id }).catch(() => 0);
+    const isSeller = await Seller.exists({ telegramId: user.telegramId, isActive: true }).catch(() => false);
 
-  const tosDateStr = user.acceptedToSAt ? formatDateTimeMSK(user.acceptedToSAt) : null;
+    const tosDateStr = user.acceptedToSAt ? formatDateTimeMSK(user.acceptedToSAt) : null;
 
-  const tosLine = user.acceptedToS
-    ? `📜 Оферта (ToS): ✅ <b>Принята</b> (${tosDateStr || 'Да'})\n`
-    : `📜 Оферта (ToS): 🔴 <b>Не принята</b>\n`;
+    const tosLine = user.acceptedToS
+      ? `📜 Оферта (ToS): ✅ <b>Принята</b> (${tosDateStr || 'Да'})\n`
+      : `📜 Оферта (ToS): 🔴 <b>Не принята</b>\n`;
 
-  const tosLegalProof = user.acceptedToS && tosDateStr
-    ? `\n⚖️ <i>Юр. выписка: Пользователь ID ${user.telegramId} ${tosDateStr} нажал кнопку согласия с Офертой.</i>\n`
-    : '';
+    const tosLegalProof = user.acceptedToS && tosDateStr
+      ? `\n⚖️ <i>Юр. выписка: Пользователь ID ${user.telegramId} ${tosDateStr} нажал кнопку согласия с Офертой.</i>\n`
+      : '';
 
-  const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Пользователь';
-  const nameLink = user.username
-    ? `<a href="https://t.me/${user.username}">${escapeHtml(fullName)}</a>`
-    : `<a href="tg://user?id=${user.telegramId}">${escapeHtml(fullName)}</a>`;
-  const usernameDisplay = user.username
-    ? `<a href="https://t.me/${user.username}">@${escapeHtml(user.username)}</a>`
-    : '<i>нет</i>';
+    const cleanUsername = user.username ? String(user.username).replace(/^@/, '').trim() : null;
+    const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || 'Пользователь';
+    const nameLink = cleanUsername
+      ? `<a href="https://t.me/${cleanUsername}">${escapeHtml(fullName)}</a>`
+      : `<a href="tg://user?id=${user.telegramId}">${escapeHtml(fullName)}</a>`;
+    const usernameDisplay = cleanUsername
+      ? `<a href="https://t.me/${cleanUsername}">@${escapeHtml(cleanUsername)}</a>`
+      : '<i>нет</i>';
 
-  const text =
-    `👤 <b>Пользователь</b>\n\n` +
-    `🆔 TG ID: <code>${escapeHtml(user.telegramId)}</code>\n` +
-    `📛 Имя: ${nameLink}\n` +
-    `👤 Username: ${usernameDisplay}\n` +
-    `🌐 Язык: ${escapeHtml(user.language)}\n` +
-    `🔘 Роль: ${escapeHtml(user.role)}\n` +
-    `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n` +
-    tosLine +
-    tosLegalProof + '\n' +
-    `💰 Баланс: ${fmtUSDT(user.balance)}\n` +
-    `📦 Заказов: ${ordersCount}\n` +
-    `💸 Потрачено: ${user.totalSpent.toFixed(2)} USDT\n` +
-    `👥 Рефералов: ${referralsCount}\n` +
-    `📅 Регистрация: ${formatDateMSK(user.createdAt)}`;
+    const totalSpent = typeof user.totalSpent === 'number' ? user.totalSpent : (parseFloat(user.totalSpent) || 0);
+    const registeredDate = user.createdAt ? formatDateMSK(user.createdAt) : 'Неизвестно';
 
-  const buttons = [
-    [Markup.button.callback('💰 Изменить баланс', `admin:user:balance:${user._id}`)],
-    [
-      user.isBanned
-        ? Markup.button.callback('✅ Разбанить', `admin:user:unban:${user._id}`)
-        : Markup.button.callback('🚫 Забанить', `admin:user:ban:${user._id}`),
-      user.role === 'admin'
-        ? Markup.button.callback('👤 Снять права', `admin:user:demote:${user._id}`)
-        : Markup.button.callback('🔧 Сделать админом', `admin:user:promote:${user._id}`),
-    ],
-    [
-      isSeller
-        ? Markup.button.callback('👔 Снять селлера', `admin:user:seller_toggle:${user._id}`)
-        : Markup.button.callback('👔 Сделать селлером', `admin:user:seller_toggle:${user._id}`),
-    ],
-    [Markup.button.callback('🕹 Перехватить управление', `admin:takeover:start:${user._id}`)],
-    [Markup.button.callback('🛡 Управление гарантией', `admin:user:warranty:${user._id}`)],
-    [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)],
-  ];
+    const text =
+      `👤 <b>Пользователь</b>\n\n` +
+      `🆔 TG ID: <code>${escapeHtml(user.telegramId)}</code>\n` +
+      `📛 Имя: ${nameLink}\n` +
+      `👤 Username: ${usernameDisplay}\n` +
+      `🌐 Язык: ${escapeHtml(user.language || 'ru')}\n` +
+      `🔘 Роль: ${escapeHtml(user.role || 'user')}\n` +
+      `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n` +
+      tosLine +
+      tosLegalProof + '\n' +
+      `💰 Баланс: ${fmtUSDT(user.balance)}\n` +
+      `📦 Заказов: ${ordersCount}\n` +
+      `💸 Потрачено: ${totalSpent.toFixed(2)} USDT\n` +
+      `👥 Рефералов: ${referralsCount}\n` +
+      `📅 Регистрация: ${registeredDate}`;
 
-  if (user.username) {
-    buttons.push([Markup.button.url(`👤 Открыть @${user.username} в Telegram`, `https://t.me/${user.username}`)]);
+    const buttons = [
+      [Markup.button.callback('💰 Изменить баланс', `admin:user:balance:${user._id}`)],
+      [
+        user.isBanned
+          ? Markup.button.callback('✅ Разбанить', `admin:user:unban:${user._id}`)
+          : Markup.button.callback('🚫 Забанить', `admin:user:ban:${user._id}`),
+        user.role === 'admin'
+          ? Markup.button.callback('👤 Снять права', `admin:user:demote:${user._id}`)
+          : Markup.button.callback('🔧 Сделать админом', `admin:user:promote:${user._id}`),
+      ],
+      [
+        isSeller
+          ? Markup.button.callback('👔 Снять селлера', `admin:user:seller_toggle:${user._id}`)
+          : Markup.button.callback('👔 Сделать селлером', `admin:user:seller_toggle:${user._id}`),
+      ],
+      [Markup.button.callback('🕹 Перехватить управление', `admin:takeover:start:${user._id}`)],
+      [Markup.button.callback('🛡 Управление гарантией', `admin:user:warranty:${user._id}`)],
+      [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)],
+    ];
+
+    if (cleanUsername) {
+      buttons.push([Markup.button.url(`👤 Открыть @${cleanUsername} в Telegram`, `https://t.me/${cleanUsername}`)]);
+    }
+
+    buttons.push([Markup.button.callback('📨 Написать в боте', `admin:msg:user:${user.telegramId}`)]);
+    buttons.push([Markup.button.callback('⬅️ К пользователям', 'admin:users')]);
+
+    const opts = { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) };
+    await safeEdit(ctx, text, opts);
+  } catch (err) {
+    logger.error(`Error in showUserProfile: ${err.message}`, { stack: err.stack });
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery('❌ Ошибка при открытии профиля', { show_alert: true }).catch(() => {});
+    }
   }
-
-  buttons.push([Markup.button.callback('📨 Написать в боте', `admin:msg:user:${user.telegramId}`)]);
-  buttons.push([Markup.button.callback('⬅️ К пользователям', 'admin:users')]);
-
-  const opts = { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) };
-  await safeEdit(ctx, text, opts);
-  await answerCbSafe(ctx);
 };
 
 // Изменение баланса

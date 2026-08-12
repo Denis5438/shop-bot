@@ -6,7 +6,10 @@ const { toRub } = require('../../services/currency.service');
  * Единый формат суммы: «X.XX USDT (~Y ₽)».
  * Используйте вместо ручной конкатенации toFixed + toRub.
  */
-const fmtUSDT = (usdt) => `${usdt.toFixed(2)} USDT (~${toRub(usdt)} ₽)`;
+const fmtUSDT = (usdt) => {
+  const n = typeof usdt === 'number' ? usdt : (parseFloat(usdt) || 0);
+  return `${n.toFixed(2)} USDT (~${toRub(n)} ₽)`;
+};
 
 /**
  * Переиспользуемые UI-хелперы для сцен бота.
