@@ -55,7 +55,23 @@ const main = async () => {
   // Логируем ДО launch(): в Telegraf 4 bot.launch() резолвится только при
   // ОСТАНОВКЕ бота, поэтому лог после await печатался бы лишь при выключении.
   logger.info('✅ Бот запущен и ждёт сообщений!');
-  await bot.launch();
+
+  // Автоматический перезапуск при 409 Conflict (переходный момент при деплое на Render)
+  const launchWithRetry = async (retries = 5) => {
+    try {
+      await bot.launch();
+    } catch (err) {
+      const isConflict = err?.response?.error_code === 409 || err?.message?.includes('409') || err?.message?.includes('Conflict');
+      if (isConflict && retries > 0 && !shuttingDown) {
+        logger.warn(`⚠️ 409 Conflict: старый процесс ещё освобождает getUpdates. Ожидание 3 сек... (попыток: ${retries})`);
+        await new Promise((r) => setTimeout(r, 3000));
+        return launchWithRetry(retries - 1);
+      }
+      throw err;
+    }
+  };
+
+  await launchWithRetry();
 };
 
 // Глобальные обработчики ошибок для предотвращения падения процесса
