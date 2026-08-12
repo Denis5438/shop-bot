@@ -118,13 +118,12 @@ const notifyAdminNewOrder = async (order, user, product) => {
     deliveryStr +
     `\n📅 Дата (МСК): ${mskTime}`;
 
-  await sendToAdmins(msg, {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: `👤 Написать покупателю`, url: `tg://user?id=${user.telegramId}` }],
-      ],
-    },
-  });
+  const adminButtons = [];
+  if (user?.username) {
+    adminButtons.push([{ text: `✉️ Написать @${user.username}`, url: `https://t.me/${user.username}` }]);
+  }
+
+  await sendToAdmins(msg, adminButtons.length ? { reply_markup: { inline_keyboard: adminButtons } } : {});
 };
 
 // Токен получен - уведомление администраторам
@@ -199,13 +198,12 @@ const notifyAdminTopupRequest = async (request, user, method = 'unknown', networ
     `📅 <b>Дата:</b> ${new Date().toLocaleString('ru-RU')}\n\n` +
     statusText;
 
-  await sendToAdmins(msg, {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: `✉️ Написать @${user.username || user.telegramId}`, url: `tg://user?id=${user.telegramId}` }],
-      ],
-    },
-  });
+  const adminTopupButtons = [];
+  if (user?.username) {
+    adminTopupButtons.push([{ text: `✉️ Написать @${user.username}`, url: `https://t.me/${user.username}` }]);
+  }
+
+  await sendToAdmins(msg, adminTopupButtons.length ? { reply_markup: { inline_keyboard: adminTopupButtons } } : {});
 
   // Если есть скриншот - шлём фото отдельно
   if (request.proofFileId && botInstance) {

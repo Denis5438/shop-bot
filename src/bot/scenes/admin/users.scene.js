@@ -99,37 +99,66 @@ const handleGlobalSearch = async (ctx) => {
   if (session.adminAction !== 'search_global') return false;
 
   ctx.session.adminAction = null;
-  const query = ctx.message.text.trim().replace('@', '');
+  const rawText = ctx.message.text.trim();
+  const query = rawText.replace('@', '').trim();
 
   if (ctx.message && ctx.message.message_id) {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
   }
 
-  // 1. Поиск по ID заказа (24 символа MongoDB ObjectId)
+  // 1. Поиск по 24-символьному MongoDB ObjectId (Заказ, Заявка на пополнение или Пользователь)
   if (mongoose.Types.ObjectId.isValid(query)) {
+    // 1.1 Заказ
     const order = await Order.findById(query);
     if (order) {
       const ordersScene = require('./orders.scene');
       await ordersScene.showOrderDetail(ctx, order._id);
       return true;
     }
+
+    // 1.2 Заявка на пополнение
+    const TopupRequest = require('../../../models/TopupRequest');
+    const topup = await TopupRequest.findById(query);
+    if (topup) {
+      const paymentsScene = require('./payments.scene');
+      await paymentsScene.showPaymentDetail(ctx, topup._id);
+      return true;
+    }
+
+    // 1.3 Пользователь по _id
+    const userById = await User.findById(query);
+    if (userById) {
+      await showUserProfile(ctx, userById._id.toString());
+      return true;
+    }
   }
 
   let user = null;
 
-  // Попытка по telegramId
-  const asNumber = parseInt(query);
+  // 2. Попытка по telegramId (число)
+  const asNumber = parseInt(query, 10);
   if (!isNaN(asNumber)) {
     user = await User.findOne({ telegramId: asNumber });
   }
 
-  // Попытка по username
+  // 3. Попытка по username
   if (!user) {
     user = await User.findOne({ username: { $regex: new RegExp(`^${escapeRegExp(query)}$`, 'i') } });
   }
 
+  // 4. Попытка поиска заявки на пополнение по TXID / Bybit UID
   if (!user) {
-    await ctx.reply('❌ Ничего не найдено по этому запросу.', {
+    const TopupRequest = require('../../../models/TopupRequest');
+    const topupByProof = await TopupRequest.findOne({ proofText: { $regex: escapeRegExp(query), $options: 'i' } });
+    if (topupByProof) {
+      const paymentsScene = require('./payments.scene');
+      await paymentsScene.showPaymentDetail(ctx, topupByProof._id);
+      return true;
+    }
+  }
+
+  if (!user) {
+    await ctx.reply('❌ Ничего не найдено по этому запросу (проверьте ID, @username или номер заказа).', {
       ...Markup.inlineKeyboard([[Markup.button.callback('🔍 Искать снова', 'admin:search')]]),
     });
     return true;

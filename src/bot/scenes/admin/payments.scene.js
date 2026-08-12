@@ -47,11 +47,13 @@ const showPaymentsList = async (ctx) => {
   for (const request of requests) {
     const date = new Date(request.createdAt).toLocaleDateString('ru-RU');
     const method = METHOD_LABELS[request.method] || request.method;
-    const username = request.userId?.username || request.userId?.telegramId;
+    const userLabel = request.userId?.username
+      ? `@${request.userId.username}`
+      : `ID: ${request.userId?.telegramId || '?'}`;
     const amount = request.amount ? `${request.amount.toFixed(2)} USDT` : '? USDT';
-    text += `👤 @${escapeHtml(username || '?')} | ${amount} | ${escapeHtml(method)} | ${date}\n`;
+    text += `👤 <b>${escapeHtml(userLabel)}</b> | ${amount} | ${escapeHtml(method)} | ${date}\n`;
     buttons.push([
-      Markup.button.callback(`@${username} - ${amount} - ${method}`, `admin:payment:${request._id}`),
+      Markup.button.callback(`${userLabel} - ${amount} - ${method}`, `admin:payment:${request._id}`),
     ]);
   }
 
@@ -69,36 +71,44 @@ const showPaymentDetail = async (ctx, requestId) => {
   const network = request.network ? NETWORK_LABELS[request.network] || request.network : null;
 
   const amountLine = request.amount
-    ? `\n💵 <b>Сумма:</b> <b>${request.amount.toFixed(2)} USDT</b>`
+    ? `\n💵 <b>Сумма:</b> <b>${request.amount.toFixed(2)} USDT</b> (~${toRub(request.amount)} ₽)`
     : '';
 
+  const userMention = user?.telegramId
+    ? `<a href="tg://user?id=${user.telegramId}">${escapeHtml(user.firstName || 'Пользователь')}</a> (ID: <code>${user.telegramId}</code>${user.username ? ', @' + escapeHtml(user.username) : ''})`
+    : 'Пользователь удалён';
+
   const text =
-    `💳 <b>Заявка на пополнение</b>\n` +
+    `💳 <b>Заявка на пополнение #${request._id.toString().slice(-6)}</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `👤 <b>Пользователь:</b> ${escapeHtml(user?.firstName || 'нет')} (@${escapeHtml(user?.username || 'нет')})\n` +
-    `🆔 <b>ID:</b> <code>${escapeHtml(user?.telegramId || '')}</code>\n` +
+    `👤 <b>Пользователь:</b> ${userMention}\n` +
     `💰 <b>Способ:</b> ${escapeHtml(method)}\n` +
     (network ? `🌐 <b>Сеть:</b> ${escapeHtml(network)}\n` : '') +
     `${amountLine}\n` +
     `📅 <b>Дата:</b> ${new Date(request.createdAt).toLocaleString('ru-RU')}\n` +
     `🔘 <b>Статус:</b> ${request.status === 'pending' ? '⏳ Ожидает' : request.status}\n\n` +
     (request.proofText
-      ? `💬 <b>Хэш / комментарий:</b>\n<code>${escapeHtml(request.proofText)}</code>`
+      ? `💬 <b>Хэш / Bybit UID / Комментарий:</b>\n<code>${escapeHtml(request.proofText)}</code>`
       : `📎 <i>Скриншот прикреплён отдельно</i>`);
 
   const buttons = [
     [
       Markup.button.callback('✅ Подтвердить', `admin:payment:confirm:${requestId}`),
-      Markup.button.callback('❌ Отклонить', `admin:payment:reject:${requestId}`),
+      Markup.button.callback('✏️ Изменить сумму', `admin:payment:edit_amount:${requestId}`),
     ],
-    [Markup.button.url(`✉️ Написать @${user?.username || user?.telegramId}`, `tg://user?id=${user?.telegramId}`)],
-    [Markup.button.callback('⬅️ К заявкам', 'admin:payments')],
+    [Markup.button.callback('❌ Отклонить', `admin:payment:reject:${requestId}`)],
   ];
+
+  if (user?.username) {
+    buttons.push([Markup.button.url(`✉️ Написать @${user.username}`, `https://t.me/${user.username}`)]);
+  }
+
+  buttons.push([Markup.button.callback('⬅️ К списку заявок', 'admin:payments')]);
 
   if (request.proofFileId) {
     try {
       await ctx.telegram.sendPhoto(ctx.from.id, request.proofFileId, {
-        caption: `📎 Чек от @${user?.username || user?.telegramId}`,
+        caption: `📎 Чек заявки #${request._id.toString().slice(-6)} от ${user?.username ? '@' + user.username : user?.telegramId}`,
       });
     } catch (_) {}
   }

@@ -89,10 +89,14 @@ const showWithdrawalDetail = async (ctx, withdrawalId) => {
     rejected: '❌ Отклонено',
   };
 
+  const sellerMention = seller?.telegramId
+    ? `<a href="tg://user?id=${seller.telegramId}">${escapeHtml(seller.username || 'Продавец')}</a> (ID: <code>${seller.telegramId}</code>)`
+    : '@' + escapeHtml(seller?.username || '?');
+
   const text =
     `💸 <b>Заявка на вывод</b>\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `👤 <b>Продавец:</b> @${escapeHtml(seller?.username || '?')}\n` +
+    `👤 <b>Продавец:</b> ${sellerMention}\n` +
     `💰 <b>Сумма:</b> <b>${withdrawal.amount.toFixed(2)} USDT</b>\n` +
     `💳 <b>Кошелёк:</b>\n<code>${escapeHtml(withdrawal.walletAddress)}</code>\n` +
     `🌐 <b>Сеть:</b> ${network}\n` +
@@ -107,8 +111,8 @@ const showWithdrawalDetail = async (ctx, withdrawalId) => {
       Markup.button.callback('✅ Подтвердить выплату', `admin:sellers:withdrawal:confirm:${withdrawalId}`),
       Markup.button.callback('❌ Отклонить', `admin:sellers:withdrawal:reject:${withdrawalId}`),
     ]);
-    if (seller?.telegramId) {
-      buttons.push([Markup.button.url(`✉️ Написать @${seller.username || seller.telegramId}`, `tg://user?id=${seller.telegramId}`)]);
+    if (seller?.username) {
+      buttons.push([Markup.button.url(`✉️ Написать @${seller.username}`, `https://t.me/${seller.username}`)]);
     }
   }
 
