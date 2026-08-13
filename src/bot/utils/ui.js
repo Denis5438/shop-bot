@@ -48,7 +48,15 @@ const safeEdit = async (ctx, text, extra = {}) => {
     } else {
       sent = await ctx.reply(text, opts);
     }
-  } catch (_) {
+  } catch (err) {
+    const errText = String(err?.description || err?.message || '');
+    if (errText.includes('message is not modified')) {
+      // Контент не изменился — подтверждаем нажатие и НЕ шлём дублирующее сообщение!
+      if (ctx.callbackQuery) {
+        ctx.answerCbQuery('🔄 Данные актуальны').catch(() => {});
+      }
+      return null;
+    }
     try { sent = await ctx.reply(text, opts); } catch (_) { /* ignore */ }
   }
   if (ctx.callbackQuery) {
