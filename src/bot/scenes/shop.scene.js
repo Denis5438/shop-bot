@@ -282,7 +282,9 @@ const showCategory = async (ctx, categoryId, page = 1) => {
       priceLabelStr = `̶$̶${product.price} ➔ $${effectivePrice}`;
     }
 
-    const label = `${product.icon || '📦'} ${displayName} | ${priceLabelStr} | 📦 ${stockBadge}`;
+    const maxNameLen = 18;
+    const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
+    const label = `${product.icon || '📦'} ${shortName} · ${priceLabelStr} · 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
     if (ctx.user?.btnStyle !== 'classic') {
       btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
@@ -380,6 +382,12 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   if (product.type === 'gpt_activation') {
     buttons.push([Markup.button.callback(t('shop_check_token'), `shop:check_token:${productId}`)]);
   }
+
+  const promoBtnLabel = activePromo
+    ? (lang === 'en' ? `🎟 Promo: ${activePromo.code} (${activePromo.type === 'percent' ? '-' + activePromo.value + '%' : '-' + activePromo.value + ' USDT'})` : `🎟 Промокод: ${activePromo.code} (${activePromo.type === 'percent' ? '-' + activePromo.value + '%' : '-' + activePromo.value + ' USDT'})`)
+    : (lang === 'en' ? '🎟 Enter Promo Code' : '🎟 Ввести промокод');
+  buttons.push([Markup.button.callback(promoBtnLabel, `shop:promo_prompt:${productId}:${fromPage}:1`)]);
+
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
   const backAction = product.categoryId
     ? `shop:category:${product.categoryId}:${safePage}`
@@ -452,7 +460,7 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
   await safeEdit(ctx, text, opts);
 };
 
-const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
+const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked = false) => {
   qty = parseInt(qty, 10);
   if (isNaN(qty) || qty < 1) qty = 1;
   const user = ctx.user;
@@ -472,63 +480,163 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
   const productName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
 
-  const effectivePrice = await getEffectivePrice(product, stock);
+  const activePromo = await getActivePromoFromCtx(ctx);
+  const effectivePrice = await getEffectivePrice(product, stock, activePromo);
   const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
-  
-  if (user.balance < totalCost) {
-    const diff = parseFloat((totalCost - user.balance).toFixed(2));
-    const topupLabel = lang === 'en' ? `💰 Top up ${diff} USDT` : `💰 Пополнить на ${diff} USDT`;
-    const otherLabel = lang === 'en' ? '💳 Other amount' : '💳 Другая сумма';
-    const backLabel = t('btn_back');
-    const text = t('product_not_enough', {
-      price: totalCost,
-      balance: user.balance.toFixed(2),
-      diff
-    });
-    return safeEdit(ctx, text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(topupLabel, `topup:quick:${diff}`)],
-        [Markup.button.callback(otherLabel, 'menu:topup')],
-        [Markup.button.callback(backLabel, `shop:product:${productId}:${safePage}`)],
-      ]),
-    });
+  const totalCostRub = toRub(totalCost);
+
+  const promoInfoLine = activePromo
+    ? `\n🏷 <b>Скидка по промокоду:</b> <code>${activePromo.code}</code> (${activePromo.type === 'percent' ? '-' + activePromo.value + '%' : '-' + activePromo.value + ' USDT'})`
+    : '';
+
+  const tariffLine = qty > 1
+    ? `${qty} шт.`
+    : (product.warrantyDays ? `${product.warrantyDays} дн. гарантии` : '1 шт.');
+
+  const text =
+    `<b>Перед оплатой</b>\n` +
+    `Проверьте условия заказа — это займёт меньше минуты.\n\n` +
+    `📦 <b>Товар:</b> ${escapeHtml(productName)}\n` +
+    `📊 <b>Тариф / Количество:</b> ${tariffLine}\n` +
+    `💰 <b>Цена:</b> <b>${totalCost} USDT</b> (~${totalCostRub} ₽)${promoInfoLine}\n\n` +
+    `<b>Поставьте галочку, только если вы:</b>\n` +
+    `• Прочитали описание товара и проверили состав заказа, срок и способ выдачи.\n` +
+    `• Поняли правила использования товара и последствия их нарушения, включая запрет менять данные общего аккаунта, если он указан в описании.\n` +
+    `• Прочитали политику возврата и гарантии и принимаете её условия.\n\n` +
+    `<i>Цена и способ списания будут подтверждены на следующем шаге.</i>`;
+
+  const promoBtnLabel = activePromo
+    ? (lang === 'en' ? `🎟 Promo: ${activePromo.code}` : `🎟 Промокод: ${activePromo.code}`)
+    : (lang === 'en' ? '🎟 Ввести промокод' : '🎟 Ввести промокод');
+
+  const checkmarkIcon = tosChecked ? '☑️' : '◻️';
+  const toggleNext = tosChecked ? '0' : '1';
+  const checkBtnLabel = lang === 'en'
+    ? `${checkmarkIcon} I have read and agree to all terms`
+    : `${checkmarkIcon} Я ознакомился со всем и принимаю условия`;
+
+  const buttons = [
+    [Markup.button.callback('📜 Условия покупки и возврата', `shop:terms_info:${productId}:${safePage}:${qty}`)],
+    [Markup.button.callback(checkBtnLabel, `shop:tos_toggle:${productId}:${safePage}:${qty}:${toggleNext}`)],
+  ];
+
+  if (tosChecked) {
+    const payBtnLabel = lang === 'en' ? '💰 Accept and Proceed to Payment' : '💰 Принять и перейти к оплате';
+    buttons.push([Markup.button.callback(payBtnLabel, `shop:pay_step:${productId}:${safePage}:${qty}`)]);
   }
 
-  const newBalance = (user.balance - totalCost).toFixed(2);
-  const confirmBtnLabel = lang === 'en'
-    ? `✅ Yes, buy for ${totalCost} USDT`
-    : `✅ Да, купить за ${totalCost} USDT`;
-  const backToProductLabel = lang === 'en' ? '⬅️ Back to product' : '⬅️ Вернуться к товару';
+  buttons.push([Markup.button.callback(promoBtnLabel, `shop:promo_prompt:${productId}:${safePage}:${qty}`)]);
+  buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)]);
 
-  let text;
-  if (qty > 1) {
-    text = t('product_buy_confirm_qty', {
-      name: escapeHtml(productName),
-      qty,
-      price: totalCost,
-      priceRub: toRub(totalCost),
-      balance: user.balance.toFixed(2),
-      newBalance
-    });
-  } else {
-    text = t('product_buy_confirm', {
-      name: escapeHtml(productName),
-      price: effectivePrice,
-      priceRub: toRub(effectivePrice),
-      balance: user.balance.toFixed(2),
-      newBalance
-    });
-  }
-
-  const opts = {
-    parse_mode: 'HTML',
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback(confirmBtnLabel, `shop:confirm:${productId}:${safePage}:${qty}`)],
-      [Markup.button.callback(backToProductLabel, `shop:product:${productId}:${safePage}`)],
-    ]),
-  };
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+const handlePayStep = async (ctx, productId, fromPage = 1, qty = 1) => {
+  qty = parseInt(qty, 10);
+  if (isNaN(qty) || qty < 1) qty = 1;
+  const user = ctx.user;
+  const product = await Product.findById(productId);
+  const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
+
+  if (!product || !product.isActive) {
+    return ctx.answerCbQuery(t('err_not_found'), { show_alert: true });
+  }
+
+  const stock = await getStock(product);
+  if (stock !== '∞' && stock < qty) {
+    return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
+  }
+
+  const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const productName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+
+  const activePromo = await getActivePromoFromCtx(ctx);
+  const effectivePrice = await getEffectivePrice(product, stock, activePromo);
+  const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
+  const totalCostRub = toRub(totalCost);
+
+  // Хватает ли баланса пользователя
+  if (user.balance >= totalCost) {
+    // Баланса хватает - выполняем списание и выдачу
+    await processPurchase(ctx, productId, fromPage, qty);
+    return;
+  }
+
+  // Баланса не хватает - экран "Чем платим?"
+  const diff = parseFloat((totalCost - user.balance).toFixed(2));
+  const diffRub = toRub(diff);
+
+  const text =
+    `<b>${escapeHtml(productName)}</b>\n` +
+    `Сумма заказа: <b>${totalCost} USDT</b> (~${totalCostRub} ₽)\n` +
+    `Ваш текущий баланс: <b>${user.balance.toFixed(2)} USDT</b>\n` +
+    `Необходимо доплатить: <b>${diff} USDT</b> (~${diffRub} ₽)\n\n` +
+    `<b>Чем платим?</b>\n\n` +
+    `<i>Условия подтверждены для этой попытки оплаты.</i>`;
+
+  const promoBtnLabel = activePromo
+    ? (lang === 'en' ? `🎟 Promo: ${activePromo.code}` : `🎟 Промокод: ${activePromo.code}`)
+    : (lang === 'en' ? '🎟 Ввести промокод' : '🎟 Ввести промокод');
+
+  const buttons = [
+    [
+      Markup.button.callback(`💳 Картой ₽ / СБП · ${diffRub} ₽`, `topup:quick:${diff}`),
+      Markup.button.callback(`💰 Криптой · USDT/TON`, `topup:quick:${diff}`),
+    ],
+    [
+      Markup.button.callback(`📊 Bybit · UID · ${diff} USDT`, `topup:quick:${diff}`),
+      Markup.button.callback(`⭐ Telegram Stars`, `topup:quick:${diff}`),
+    ],
+    [Markup.button.callback(promoBtnLabel, `shop:promo_prompt:${productId}:${safePage}:${qty}`)],
+    [Markup.button.callback('⬅️ К товару', `shop:product:${productId}:${safePage}`)],
+  ];
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+const showTermsInfo = async (ctx, productId, fromPage = 1, qty = 1) => {
+  const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const text =
+    `📜 <b>Условия покупки, гарантии и возврата</b>\n\n` +
+    `1️⃣ <b>Моментальная выдача:</b>\n` +
+    `Все цифровые товары (ключи, аккаунты, подписки) доставляются ботом сразу после оплаты в раздел «👤 Профиль» ➔ «📦 Мои покупки».\n\n` +
+    `2️⃣ <b>Гарантийные обязательства:</b>\n` +
+    `На купленный товар действует срок гарантии, указанный в карточке. Если товар не подошёл или перестал работать в гарантийный период — вы можете в 1 клик запросить авто-замену в карточке заказа.\n\n` +
+    `3️⃣ <b>Правила использования:</b>\n` +
+    `Запрещено передавать аккаунты третьим лицам или менять привязанные данные (пароли/почты), если в описании указан общий доступ.\n\n` +
+    `4️⃣ <b>Возврат средств:</b>\n` +
+    `В случае отсутствия замен средства возвращаются на ваш баланс в боте.`;
+
+  const buttons = [
+    [Markup.button.callback('⬅️ Назад к соглашению', `shop:buy:${productId}:${safePage}:${qty}`)],
+  ];
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+const startCheckoutPromo = async (ctx, productId, fromPage = 1, qty = 1) => {
+  ctx.session = ctx.session || {};
+  ctx.session.userAction = 'enter_promo';
+  ctx.session.promoReturnTo = 'checkout';
+  ctx.session.promoCheckoutProductId = productId;
+  ctx.session.promoCheckoutPage = fromPage;
+  ctx.session.promoCheckoutQty = qty;
+  ctx.session.promoMsgId = ctx.callbackQuery?.message?.message_id;
+
+  const text =
+    `🎟 <b>Ввод промокода</b>\n\n` +
+    `Отправьте промокод в чат сообщением, чтобы получить скидку на ваш заказ:`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('❌ Отмена', `shop:buy:${productId}:${fromPage}:${qty}`)],
+  ]);
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery().catch(() => {});
 };
 
@@ -1221,4 +1329,20 @@ const toggleShopMainOutOfStock = async (ctx) => {
   await showShopPage(ctx);
 };
 
-module.exports = { showShopPage, showCategory, showProduct, confirmPurchase, processPurchase, showQuantitySelect, handleWaitlist, confirmPreorder, processPreorder, showPreorderQuantitySelect, toggleOutOfStock, toggleShopMainOutOfStock };
+module.exports = {
+  showShopPage,
+  showCategory,
+  showProduct,
+  confirmPurchase,
+  processPurchase,
+  showQuantitySelect,
+  handleWaitlist,
+  confirmPreorder,
+  processPreorder,
+  showPreorderQuantitySelect,
+  toggleOutOfStock,
+  toggleShopMainOutOfStock,
+  handlePayStep,
+  showTermsInfo,
+  startCheckoutPromo,
+};

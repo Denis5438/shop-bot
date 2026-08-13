@@ -118,7 +118,36 @@ module.exports = (bot) => {
     const productId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
     const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
-    await shopScene.confirmPurchase(ctx, productId, page, qty);
+    await shopScene.confirmPurchase(ctx, productId, page, qty, false);
+  });
+
+  bot.action(/^shop:tos_toggle:([^:]+)(?::(\d+))?(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    const checked = ctx.match[4] === '1';
+    await shopScene.confirmPurchase(ctx, productId, page, qty, checked);
+  });
+
+  bot.action(/^shop:pay_step:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.handlePayStep(ctx, productId, page, qty);
+  });
+
+  bot.action(/^shop:terms_info:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showTermsInfo(ctx, productId, page, qty);
+  });
+
+  bot.action(/^shop:promo_prompt:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.startCheckoutPromo(ctx, productId, page, qty);
   });
 
   bot.action(/^shop:confirm:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {

@@ -73,7 +73,11 @@ module.exports = (bot) => {
           `🎟 <b>Активация промокода</b>\n` +
           `Введите корректный промокод в ответном сообщении:`;
 
-        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('⬅️ В профиль', 'menu:profile')]]);
+        const cancelCallback = session.promoReturnTo === 'checkout' && session.promoCheckoutProductId
+          ? `shop:buy:${session.promoCheckoutProductId}:${session.promoCheckoutPage || 1}:${session.promoCheckoutQty || 1}`
+          : 'menu:profile';
+
+        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', cancelCallback)]]);
 
         if (targetMsgId) {
           try {
@@ -88,13 +92,23 @@ module.exports = (bot) => {
       }
 
       ctx.session.userAction = null;
+      const isFromCheckout = session.promoReturnTo === 'checkout';
+      const checkoutProductId = session.promoCheckoutProductId;
+      const checkoutPage = session.promoCheckoutPage || 1;
+      const checkoutQty = session.promoCheckoutQty || 1;
 
       if (res.type === 'balance') {
         const text = `🎁 <b>Промокод <code>${res.code}</code> успешно активирован!</b>\n\n` +
           `💰 Вам зачислено: <b>+${res.bonusAmount.toFixed(2)} USDT</b> на баланс!\n` +
           `💳 Ваш текущий баланс: <b>${res.newBalance.toFixed(2)} USDT</b>`;
 
-        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('👤 В профиль', 'menu:profile')]]);
+        const buttons = [];
+        if (isFromCheckout && checkoutProductId) {
+          buttons.push([Markup.button.callback('⬅️ К оформлению заказа', `shop:buy:${checkoutProductId}:${checkoutPage}:${checkoutQty}`)]);
+        }
+        buttons.push([Markup.button.callback('👤 В профиль', 'menu:profile')]);
+
+        const keyboard = Markup.inlineKeyboard(buttons);
 
         if (targetMsgId) {
           try {
@@ -116,12 +130,17 @@ module.exports = (bot) => {
         const isFromCart = session.promoReturnTo === 'cart';
         session.promoReturnTo = null;
 
-        const keyboard = Markup.inlineKeyboard([
-          isFromCart
-            ? [Markup.button.callback('🛒 Вернуться в корзину', 'menu:cart')]
-            : [Markup.button.callback('🛍 В магазин', 'menu:shop')],
-          [Markup.button.callback('👤 В профиль', 'menu:profile')],
-        ]);
+        const buttons = [];
+        if (isFromCheckout && checkoutProductId) {
+          buttons.push([Markup.button.callback('🛍 Продолжить покупку со скидкой', `shop:buy:${checkoutProductId}:${checkoutPage}:${checkoutQty}`)]);
+        } else if (isFromCart) {
+          buttons.push([Markup.button.callback('🛒 Вернуться в корзину', 'menu:cart')]);
+        } else {
+          buttons.push([Markup.button.callback('🛍 В магазин', 'menu:shop')]);
+        }
+        buttons.push([Markup.button.callback('👤 В профиль', 'menu:profile')]);
+
+        const keyboard = Markup.inlineKeyboard(buttons);
 
         if (targetMsgId) {
           try {
