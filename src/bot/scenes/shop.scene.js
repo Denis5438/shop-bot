@@ -526,7 +526,6 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
   }
 
   buttons.push([Markup.button.callback(lang === 'en' ? '📝 Open Product Description' : '📝 Открыть описание товара', `shop:desc_info:${productId}:${safePage}:${qty}`)]);
-  buttons.push([Markup.button.callback(promoBtnLabel, `shop:promo_prompt:${productId}:${safePage}:${qty}`)]);
   buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
