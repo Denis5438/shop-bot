@@ -86,11 +86,11 @@ const showGlobalSearch = async (ctx) => {
       `• <code>Telegram ID</code> пользователя`,
       {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:main')]]),
+        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:users')]]),
       }
     );
   } catch (_) {
-    await ctx.reply('🔍 Введите ID заказа, Telegram ID или @username:', Markup.inlineKeyboard([[Markup.button.callback('⬅️', 'admin:main')]]));
+    await ctx.reply('🔍 Введите ID заказа, Telegram ID или @username:', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад', 'admin:users')]]));
   }
 };
 
@@ -160,7 +160,12 @@ const handleGlobalSearch = async (ctx) => {
 
   if (!user) {
     await ctx.reply('❌ Ничего не найдено по этому запросу (проверьте ID, @username или номер заказа).', {
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔍 Искать снова', 'admin:search')]]),
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback('🔍 Искать снова', 'admin:search'),
+          Markup.button.callback('👥 К пользователям', 'admin:users'),
+        ],
+      ]),
     });
     return true;
   }

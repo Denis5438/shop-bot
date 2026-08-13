@@ -381,7 +381,10 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     buttons.push([Markup.button.callback(t('shop_check_token'), `shop:check_token:${productId}`)]);
   }
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
-  buttons.push([Markup.button.callback(t('shop_back_to_list'), `shop:page:${safePage}`)]);
+  const backAction = product.categoryId
+    ? `shop:category:${product.categoryId}:${safePage}`
+    : `shop:page:${safePage}`;
+  buttons.push([Markup.button.callback(t('shop_back_to_list'), backAction)]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);

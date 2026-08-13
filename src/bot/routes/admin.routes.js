@@ -676,8 +676,12 @@ module.exports = (bot) => {
   });
   bot.action(/^admin:warranty:manual_start:(.+)$/, adminMiddleware, async (ctx) => {
     ctx.session.adminAction = 'manual_warranty_replace';
-    ctx.session.warrantyOrderId = ctx.match[1];
-    await ctx.reply('Отправьте новые данные (например: <code>login:pass:2fa</code> или ссылку) для этого заказа:', { parse_mode: 'HTML' });
+    const warrantyId = ctx.match[1];
+    ctx.session.warrantyOrderId = warrantyId;
+    await ctx.reply('Отправьте новые данные (например: <code>login:pass:2fa</code> или ссылку) для этого заказа:', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:warranty:view:${warrantyId}`)]]),
+    });
   });
 
   // ─── ADMIN: Статистика ───
@@ -739,10 +743,14 @@ module.exports = (bot) => {
   bot.action(/^admin:msg:user:(\d+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     ctx.session.adminAction = 'send_message';
-    ctx.session.targetTelegramId = parseInt(ctx.match[1]);
+    const targetTgId = parseInt(ctx.match[1], 10);
+    ctx.session.targetTelegramId = targetTgId;
+    const User = require('../../models/User');
+    const targetUser = await User.findOne({ telegramId: targetTgId });
+    const backCallback = targetUser ? `admin:user:view:${targetUser._id}` : 'admin:users';
     await ctx.reply(`📨 Введите сообщение для пользователя <code>${ctx.match[1]}</code>:`, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:main')]]),
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', backCallback)]]),
     });
   });
 };

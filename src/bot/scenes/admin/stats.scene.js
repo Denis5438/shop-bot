@@ -256,7 +256,7 @@ const showLogistics = async (ctx, period = 'month', currency = 'USDT') => {
       ...Markup.inlineKeyboard([
         periodButtons,
         currencyButtons,
-        [Markup.button.callback('⬅️ Назад', 'admin:main')],
+        [Markup.button.callback('⬅️ К статистике', 'admin:stats')],
       ]),
     });
   } catch (_) {
@@ -265,7 +265,7 @@ const showLogistics = async (ctx, period = 'month', currency = 'USDT') => {
       ...Markup.inlineKeyboard([
         periodButtons,
         currencyButtons,
-        [Markup.button.callback('⬅️ Назад', 'admin:main')],
+        [Markup.button.callback('⬅️ К статистике', 'admin:stats')],
       ]),
     });
   }
