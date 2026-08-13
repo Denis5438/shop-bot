@@ -166,6 +166,7 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     [Markup.button.callback('📦 Задать остаток вручную', `admin:product:set_stock:${productId}:${page}`)],
     [Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}:${page}`)],
     [Markup.button.callback('🔑 Загрузить ключи (TXT)', `admin:keys:add:${productId}`)],
+    [Markup.button.callback('📣 Сделать рассылку товара', `admin:product:broadcast:${productId}`)],
     [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
   ];
 

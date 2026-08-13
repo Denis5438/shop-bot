@@ -337,7 +337,7 @@ module.exports = (bot) => {
         `admin:p_broadcast:${productId}:${s.key}`
       ),
     ]);
-    rows.push([Markup.button.callback('❌ Отмена', 'admin:products')]);
+    rows.push([Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]);
 
     const text =
       `📢 <b>Рассылка товара</b>\n\n` +
@@ -414,7 +414,12 @@ module.exports = (bot) => {
       `❌ Ошибок: <b>${failed}</b>`,
       {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('📦 К товарам', 'admin:products')]]),
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('⬅️ К товару', `admin:product:edit:${productId}`),
+            Markup.button.callback('📦 К товарам', 'admin:products'),
+          ],
+        ]),
       }
     );
   });
