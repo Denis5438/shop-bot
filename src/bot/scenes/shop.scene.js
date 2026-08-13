@@ -432,17 +432,28 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
 
   const stock = await getStock(product);
   if (stock !== '∞' && qty > stock) {
-    return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
+    qty = stock;
   }
 
-  const effectivePrice = await getEffectivePrice(product, stock);
+  const activePromo = await getActivePromoFromCtx(ctx);
+  const effectivePrice = await getEffectivePrice(product, stock, activePromo);
   const total = parseFloat((effectivePrice * qty).toFixed(2));
-
-  const text = t('shop_qty_title') + '\n\n' + t('shop_qty_total', { qty, total });
+  const totalRub = toRub(total);
 
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
   const lang = ctx.user?.language || 'ru';
-  const unit = lang === 'en' ? 'pcs' : 'шт';
+  const unit = lang === 'en' ? 'pcs' : 'шт.';
+  const productName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+  const stockText = stock === '∞' ? '∞ (неограниченно)' : `${stock} шт.`;
+
+  const text =
+    `📦 <b>${escapeHtml(productName)}</b>\n\n` +
+    `📊 <b>Выбор количества:</b>\n` +
+    `📦 В наличии на складе: <b>${stockText}</b>\n` +
+    `💰 Цена за 1 шт: <b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)\n\n` +
+    `🛒 Выбрано: <b>${qty} ${unit}</b>\n` +
+    `💵 Итого к оплате: <b>${total} USDT</b> (~${totalRub} ₽)`;
+
   const buttons = [
     [
       Markup.button.callback('➖', `shop:qty_dec:${productId}:${safePage}:${qty}`),
@@ -454,12 +465,44 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
       Markup.button.callback(`10 ${unit}`, `shop:qty_set:${productId}:${safePage}:10`),
       Markup.button.callback(`20 ${unit}`, `shop:qty_set:${productId}:${safePage}:20`),
     ],
-    [Markup.button.callback(t('shop_qty_confirm_btn'), `shop:buy:${productId}:${safePage}:${qty}`)],
-    [Markup.button.callback(t('btn_back'), `shop:product:${productId}:${safePage}`)]
+    [Markup.button.callback(lang === 'en' ? '🔢 Enter Custom Quantity' : '🔢 Ввести точное число', `shop:qty_custom:${productId}:${safePage}`)],
+    [Markup.button.callback(lang === 'en' ? '✅ Continue' : '✅ Продолжить', `shop:buy:${productId}:${safePage}:${qty}`)],
+    [Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)]
   ];
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);
+};
+
+const startCustomQuantity = async (ctx, productId, fromPage = 1) => {
+  const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const product = await Product.findById(productId);
+  if (!product || !product.isActive) {
+    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+  }
+
+  const stock = await getStock(product);
+  const lang = ctx.user?.language || 'ru';
+  const stockText = stock === '∞' ? '∞' : `${stock}`;
+
+  ctx.session = ctx.session || {};
+  ctx.session.userAction = 'enter_shop_quantity';
+  ctx.session.qtyCustomProductId = productId;
+  ctx.session.qtyCustomPage = safePage;
+  ctx.session.qtyCustomMaxStock = stock === '∞' ? 99999 : stock;
+  ctx.session.qtyCustomMsgId = ctx.callbackQuery?.message?.message_id;
+
+  const text =
+    `🔢 <b>Ввод количества товара</b>\n\n` +
+    `Введите необходимое количество сообщением в чат:\n` +
+    `<i>(Доступно для заказа: от 1 до ${stockText} шт.)</i>`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', `shop:qty:${productId}:${safePage}:1`)],
+  ]);
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
+  await ctx.answerCbQuery().catch(() => {});
 };
 
 const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked = false) => {
@@ -507,10 +550,6 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
     `• Прочитали политику возврата и гарантии и принимаете её условия.\n\n` +
     `<i>Цена и способ списания будут подтверждены на следующем шаге.</i>`;
 
-  const promoBtnLabel = activePromo
-    ? (lang === 'en' ? `🎟 Promo: ${activePromo.code}` : `🎟 Промокод: ${activePromo.code}`)
-    : (lang === 'en' ? '🎟 Ввести промокод' : '🎟 Ввести промокод');
-
   const checkmarkIcon = tosChecked ? '☑️' : '◻️';
   const toggleNext = tosChecked ? '0' : '1';
   const checkBtnLabel = lang === 'en'
@@ -528,7 +567,16 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
   }
 
   buttons.push([Markup.button.callback(lang === 'en' ? '📝 Open Product Description' : '📝 Открыть описание товара', `shop:desc_info:${productId}:${safePage}:${qty}`)]);
-  buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)]);
+
+  const isMultiQtyProduct = product.type !== 'gpt_activation';
+  const backAction = isMultiQtyProduct
+    ? `shop:qty:${productId}:${safePage}:${qty}`
+    : `shop:product:${productId}:${safePage}`;
+  const backLabel = isMultiQtyProduct
+    ? (lang === 'en' ? '⬅️ Back to quantity' : '⬅️ К выбору количества')
+    : (lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару');
+
+  buttons.push([Markup.button.callback(backLabel, backAction)]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);
@@ -579,10 +627,6 @@ const handlePayStep = async (ctx, productId, fromPage = 1, qty = 1) => {
     `<b>Чем платим?</b>\n\n` +
     `<i>Условия подтверждены для этой попытки оплаты.</i>`;
 
-  const promoBtnLabel = activePromo
-    ? (lang === 'en' ? `🎟 Promo: ${activePromo.code}` : `🎟 Промокод: ${activePromo.code}`)
-    : (lang === 'en' ? '🎟 Ввести промокод' : '🎟 Ввести промокод');
-
   const buttons = [
     [
       Markup.button.callback(`💳 Картой ₽ / СБП · ${diffRub} ₽`, `topup:quick:${diff}`),
@@ -592,8 +636,7 @@ const handlePayStep = async (ctx, productId, fromPage = 1, qty = 1) => {
       Markup.button.callback(`📊 Bybit · UID · ${diff} USDT`, `topup:quick:${diff}`),
       Markup.button.callback(`⭐ Telegram Stars`, `topup:quick:${diff}`),
     ],
-    [Markup.button.callback(promoBtnLabel, `shop:promo_prompt:${productId}:${safePage}:${qty}`)],
-    [Markup.button.callback('⬅️ К товару', `shop:product:${productId}:${safePage}`)],
+    [Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад к условиям', `shop:buy:${productId}:${safePage}:${qty}`)],
   ];
 
   await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
@@ -1373,6 +1416,7 @@ module.exports = {
   confirmPurchase,
   processPurchase,
   showQuantitySelect,
+  startCustomQuantity,
   handleWaitlist,
   confirmPreorder,
   processPreorder,

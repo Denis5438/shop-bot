@@ -114,6 +114,12 @@ module.exports = (bot) => {
     await shopScene.showQuantitySelect(ctx, productId, page, qty);
   });
 
+  bot.action(/^shop:qty_custom:([^:]+)(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await shopScene.startCustomQuantity(ctx, productId, page);
+  });
+
   bot.action(/^shop:buy:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;

@@ -155,6 +155,46 @@ module.exports = (bot) => {
       }
     }
 
+    // ─── ВВОД ТОЧНОГО КОЛИЧЕСТВА ТОВАРА ПОЛЬЗОВАТЕЛЕМ ───
+    if (session.userAction === 'enter_shop_quantity') {
+      const userText = (ctx.message?.text || '').trim();
+      const targetMsgId = session.qtyCustomMsgId;
+      const productId = session.qtyCustomProductId;
+      const page = session.qtyCustomPage || 1;
+      const maxStock = session.qtyCustomMaxStock || 99999;
+
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
+      let parsedQty = parseInt(userText, 10);
+      if (isNaN(parsedQty) || parsedQty < 1) {
+        const text =
+          `⚠️ <b>Некорректное число!</b>\n\n` +
+          `Пожалуйста, отправьте только число (например: <code>5</code> или <code>15</code>):\n` +
+          `<i>(Максимум: ${maxStock} шт.)</i>`;
+        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `shop:qty:${productId}:${page}:1`)]]);
+        if (targetMsgId) {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+            return;
+          } catch (_) {}
+        }
+        const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+        if (sent?.message_id) ctx.session.qtyCustomMsgId = sent.message_id;
+        return;
+      }
+
+      if (parsedQty > maxStock) {
+        parsedQty = maxStock;
+      }
+
+      session.userAction = null;
+      const shopScene = require('../scenes/shop.scene');
+      await shopScene.showQuantitySelect(ctx, productId, page, parsedQty);
+      return;
+    }
+
     // ─── СОЗДАНИЕ ПРОМОКОДА АДМИНОМ ───
     if (session.userAction === 'promo_create_code' && ctx.user.role === 'admin') {
       const code = ctx.message.text.trim().toUpperCase();
