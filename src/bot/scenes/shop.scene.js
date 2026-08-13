@@ -15,8 +15,10 @@ const {
 } = require('../../services/provider.service');
 const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
-const { mainKeyboard } = require('../keyboards/main.keyboard');
-const { balanceHeader, errorScreen, escapeHtml, formatDigitalItem, safeEdit } = require('../utils/ui');
+const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, safeEdit } = require('../utils/ui');
+
+const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-01-83';
+const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-01-39';
 
 const getEffectivePrice = async (product, stockCount, activePromo = null) => {
   const settings = await getSettings();
@@ -600,22 +602,30 @@ const handlePayStep = async (ctx, productId, fromPage = 1, qty = 1) => {
 
 const showTermsInfo = async (ctx, productId, fromPage = 1, qty = 1) => {
   const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
-  const text =
-    `📜 <b>Условия покупки, гарантии и возврата</b>\n\n` +
-    `1️⃣ <b>Моментальная выдача:</b>\n` +
-    `Все цифровые товары (ключи, аккаунты, подписки) доставляются ботом сразу после оплаты в раздел «👤 Профиль» ➔ «📦 Мои покупки».\n\n` +
-    `2️⃣ <b>Гарантийные обязательства:</b>\n` +
-    `На купленный товар действует срок гарантии, указанный в карточке. Если товар не подошёл или перестал работать в гарантийный период — вы можете в 1 клик запросить авто-замену в карточке заказа.\n\n` +
-    `3️⃣ <b>Правила использования:</b>\n` +
-    `Запрещено передавать аккаунты третьим лицам или менять привязанные данные (пароли/почты), если в описании указан общий доступ.\n\n` +
-    `4️⃣ <b>Возврат средств:</b>\n` +
-    `В случае отсутствия замен средства возвращаются на ваш баланс в боте.`;
+  const lang = ctx.user?.language || 'ru';
 
-  const buttons = [
-    [Markup.button.callback('⬅️ Назад к соглашению', `shop:buy:${productId}:${safePage}:${qty}`)],
+  const lines = [
+    lang === 'en' ? '📄 <b>Rules & Terms of Service</b>' : '📄 <b>Правила и оферта</b>',
+    '',
+    lang === 'en' ? 'Official service documents:' : 'Официальные документы сервиса:',
   ];
 
-  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  if (ctx.user?.acceptedToSAt) {
+    lines.push('');
+    lines.push(
+      lang === 'en'
+        ? `✅ Terms accepted: ${formatDateTimeMSK(ctx.user.acceptedToSAt)}`
+        : `✅ Условия приняты: ${formatDateTimeMSK(ctx.user.acceptedToSAt)}`
+    );
+  }
+
+  const buttons = [
+    [Markup.button.url(lang === 'en' ? '📄 Privacy Policy' : '📄 Политика конфиденциальности', PRIVACY_URL)],
+    [Markup.button.url(lang === 'en' ? '📋 Terms of Service' : '📋 Пользовательское соглашение', AGREEMENT_URL)],
+    [Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', `shop:buy:${productId}:${safePage}:${qty}`)],
+  ];
+
+  await safeEdit(ctx, lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
   await ctx.answerCbQuery().catch(() => {});
 };
 
