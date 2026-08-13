@@ -525,6 +525,7 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
     buttons.push([Markup.button.callback(payBtnLabel, `shop:pay_step:${productId}:${safePage}:${qty}`)]);
   }
 
+  buttons.push([Markup.button.callback(lang === 'en' ? '📝 Open Product Description' : '📝 Открыть описание товара', `shop:desc_info:${productId}:${safePage}:${qty}`)]);
   buttons.push([Markup.button.callback(promoBtnLabel, `shop:promo_prompt:${productId}:${safePage}:${qty}`)]);
   buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)]);
 
@@ -610,6 +611,33 @@ const showTermsInfo = async (ctx, productId, fromPage = 1, qty = 1) => {
     `Запрещено передавать аккаунты третьим лицам или менять привязанные данные (пароли/почты), если в описании указан общий доступ.\n\n` +
     `4️⃣ <b>Возврат средств:</b>\n` +
     `В случае отсутствия замен средства возвращаются на ваш баланс в боте.`;
+
+  const buttons = [
+    [Markup.button.callback('⬅️ Назад к соглашению', `shop:buy:${productId}:${safePage}:${qty}`)],
+  ];
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+const showProductDescInfo = async (ctx, productId, fromPage = 1, qty = 1) => {
+  const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const product = await Product.findById(productId);
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  const lang = ctx.user?.language || 'ru';
+  const name = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+  const description = lang === 'en' && product.descriptionEn ? product.descriptionEn : (product.description || 'Описание отсутствует.');
+  const deliveryLabel = product.deliveryMethod === 'activation'
+    ? (lang === 'en' ? '🔑 Activation on your account' : '🔑 Активация на вашем аккаунте')
+    : (lang === 'en' ? '📦 Ready account / key' : '📦 Готовый аккаунт / ключ');
+
+  const text =
+    `📝 <b>Описание товара: ${escapeHtml(name)}</b>\n\n` +
+    `🚚 <b>Способ выдачи:</b> ${deliveryLabel}\n` +
+    `🛡 <b>Срок гарантии:</b> ${product.warrantyDays ?? 5} дн.\n\n` +
+    `<b>Подробная информация:</b>\n` +
+    `<blockquote>${escapeHtml(description)}</blockquote>`;
 
   const buttons = [
     [Markup.button.callback('⬅️ Назад к соглашению', `shop:buy:${productId}:${safePage}:${qty}`)],
@@ -1344,5 +1372,6 @@ module.exports = {
   toggleShopMainOutOfStock,
   handlePayStep,
   showTermsInfo,
+  showProductDescInfo,
   startCheckoutPromo,
 };

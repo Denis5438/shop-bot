@@ -143,6 +143,13 @@ module.exports = (bot) => {
     await shopScene.showTermsInfo(ctx, productId, page, qty);
   });
 
+  bot.action(/^shop:desc_info:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showProductDescInfo(ctx, productId, page, qty);
+  });
+
   bot.action(/^shop:promo_prompt:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
