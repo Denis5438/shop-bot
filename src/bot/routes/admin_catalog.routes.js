@@ -35,11 +35,10 @@ module.exports = (bot) => {
     await categoriesScene.showAttachProductsToCategory(ctx, catId, page);
   });
 
-  bot.action(/^admin:category:toggle_prod:([^:]+):([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+  bot.action(/^adm:c_add:([^:]+):([^:]+)$/, adminMiddleware, async (ctx) => {
     const catId = ctx.match[1];
     const productId = ctx.match[2];
-    const page = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
-    await categoriesScene.toggleProductCategory(ctx, catId, productId, page);
+    await categoriesScene.toggleProductCategory(ctx, catId, productId);
   });
 
   bot.action(/^admin:product:add_to_cat:([^:]+)$/, adminMiddleware, async (ctx) => {
@@ -97,6 +96,21 @@ module.exports = (bot) => {
   });
 
   // ─────────────────── ТОВАРЫ: СМЕНА КАТЕГОРИИ ───────────────────
+  bot.action(/^adm:p_cat:([^:]+):([^:]+)$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery('✅ Категория обновлена!').catch(() => {});
+    const catId = ctx.match[1] === 'none' ? null : ctx.match[1];
+    const productId = ctx.match[2];
+    const Product = require('../../models/Product');
+    await Product.updateOne({ _id: productId }, { $set: { categoryId: catId } });
+    if (ctx.session) {
+      ctx.session.adminAction = null;
+      ctx.session.productId = null;
+      ctx.session.field = null;
+      ctx.session.productPage = null;
+    }
+    await productsScene.showProductEdit(ctx, productId);
+  });
+
   bot.action(/^admin:product:set_cat:([^:]+)(?::([^:]+))?(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const session = ctx.session || {};
@@ -106,13 +120,12 @@ module.exports = (bot) => {
 
     const Product = require('../../models/Product');
 
-    // Если передан directProductId или session.adminAction === 'edit_product_field'
     if (directProductId || session.adminAction === 'edit_product_field') {
       const rawId = directProductId || session.productId;
       if (!rawId) {
         return ctx.answerCbQuery('❌ Ошибка: товар не найден', { show_alert: true });
       }
-      const productId = String(rawId).split(':')[0]; // Защита от суффикса :page
+      const productId = String(rawId).split(':')[0];
       const page = directPage || session.productPage || 1;
 
       await Product.updateOne({ _id: productId }, { $set: { categoryId: catId } });
@@ -180,9 +193,9 @@ module.exports = (bot) => {
     const Category = require('../../models/Category');
     const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
     const buttons = categories.map(cat => [
-      Markup.button.callback(`${cat.icon} ${cat.name}`, `admin:product:set_cat:${cat._id}:${productId}:${page}`)
+      Markup.button.callback(`${cat.icon} ${cat.name}`, `adm:p_cat:${cat._id}:${productId}`)
     ]);
-    buttons.push([Markup.button.callback('Без категории', `admin:product:set_cat:none:${productId}:${page}`)]);
+    buttons.push([Markup.button.callback('Без категории', `adm:p_cat:none:${productId}`)]);
     buttons.push([Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}:${page}`)]);
 
     const { safeEdit } = require('../utils/ui');

@@ -269,9 +269,9 @@ module.exports = (bot) => {
     const Category = require('../../models/Category');
     const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
     const buttons = categories.map(cat => [
-      Markup.button.callback(`${cat.icon} ${cat.name}`, `admin:product:set_cat:${cat._id}:${productId}:${page}`)
+      Markup.button.callback(`${cat.icon} ${cat.name}`, `adm:p_cat:${cat._id}:${productId}`)
     ]);
-    buttons.push([Markup.button.callback('Без категории', `admin:product:set_cat:none:${productId}:${page}`)]);
+    buttons.push([Markup.button.callback('Без категории', `adm:p_cat:none:${productId}`)]);
     buttons.push([Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}:${page}`)]);
 
     const { safeEdit } = require('../utils/ui');
@@ -281,27 +281,19 @@ module.exports = (bot) => {
     });
   });
 
-  bot.action(/^admin:product:set_cat:([^:]+)(?::([^:]+))?(?::(\d+))?$/, adminMiddleware, async (ctx) => {
-    await ctx.answerCbQuery().catch(() => {});
+  bot.action(/^adm:p_cat:([^:]+):([^:]+)$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery('✅ Категория обновлена!').catch(() => {});
     const catId = ctx.match[1] === 'none' ? null : ctx.match[1];
-    const directProductId = ctx.match[2];
-    const directPage = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
-
+    const productId = ctx.match[2];
     const Product = require('../../models/Product');
-    const rawId = directProductId || ctx.session?.productId;
-    if (rawId) {
-      const productId = String(rawId).split(':')[0];
-      const page = directPage || ctx.session?.productPage || 1;
-      await Product.updateOne({ _id: productId }, { $set: { categoryId: catId } });
-      if (ctx.session) {
-        ctx.session.adminAction = null;
-        ctx.session.productId = null;
-        ctx.session.field = null;
-        ctx.session.productPage = null;
-      }
-      await productsScene.showProductEdit(ctx, productId, page);
-      return;
+    await Product.updateOne({ _id: productId }, { $set: { categoryId: catId } });
+    if (ctx.session) {
+      ctx.session.adminAction = null;
+      ctx.session.productId = null;
+      ctx.session.field = null;
+      ctx.session.productPage = null;
     }
+    await productsScene.showProductEdit(ctx, productId);
   });
 
   bot.action(/^admin:product:field:(\w+):(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {

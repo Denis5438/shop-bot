@@ -140,7 +140,7 @@ const showAttachProductsToCategory = async (ctx, catId, page = 1) => {
     const label = isThisCat
       ? `✅ ${p.name} (В этой)`
       : (!p.categoryId ? `➕ ${p.name} (Без кат.)` : `🔄 ${p.name}${otherCat}`);
-    return [Markup.button.callback(label, `admin:category:toggle_prod:${catId}:${p._id}:${page}`)];
+    return [Markup.button.callback(label, `adm:c_add:${catId}:${p._id}`)];
   });
 
   const nav = [];
