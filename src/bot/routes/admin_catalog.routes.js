@@ -29,6 +29,19 @@ module.exports = (bot) => {
     await categoriesScene.showCategoryProducts(ctx, catId, page);
   });
 
+  bot.action(/^admin:category:attach:([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const catId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await categoriesScene.showAttachProductsToCategory(ctx, catId, page);
+  });
+
+  bot.action(/^admin:category:toggle_prod:([^:]+):([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const catId = ctx.match[1];
+    const productId = ctx.match[2];
+    const page = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await categoriesScene.toggleProductCategory(ctx, catId, productId, page);
+  });
+
   bot.action(/^admin:product:add_to_cat:([^:]+)$/, adminMiddleware, async (ctx) => {
     const catId = ctx.match[1];
     ctx.session = ctx.session || {};
