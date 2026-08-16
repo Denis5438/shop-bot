@@ -256,6 +256,54 @@ module.exports = (bot) => {
     await productsScene.toggleProduct(ctx, ctx.match[1]);
   });
 
+  bot.action(/^admin:product:field:category:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    ctx.session = ctx.session || {};
+    ctx.session.adminAction = 'edit_product_field';
+    ctx.session.productId = productId;
+    ctx.session.productPage = page;
+    ctx.session.field = 'category';
+
+    const Category = require('../../models/Category');
+    const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
+    const buttons = categories.map(cat => [
+      Markup.button.callback(`${cat.icon} ${cat.name}`, `admin:product:set_cat:${cat._id}:${productId}:${page}`)
+    ]);
+    buttons.push([Markup.button.callback('Без категории', `admin:product:set_cat:none:${productId}:${page}`)]);
+    buttons.push([Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}:${page}`)]);
+
+    const { safeEdit } = require('../utils/ui');
+    await safeEdit(ctx, 'Выберите новую категорию:', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard(buttons)
+    });
+  });
+
+  bot.action(/^admin:product:set_cat:([^:]+)(?::([^:]+))?(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    const catId = ctx.match[1] === 'none' ? null : ctx.match[1];
+    const directProductId = ctx.match[2];
+    const directPage = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+
+    const Product = require('../../models/Product');
+    const rawId = directProductId || ctx.session?.productId;
+    if (rawId) {
+      const productId = String(rawId).split(':')[0];
+      const page = directPage || ctx.session?.productPage || 1;
+      await Product.updateOne({ _id: productId }, { $set: { categoryId: catId } });
+      if (ctx.session) {
+        ctx.session.adminAction = null;
+        ctx.session.productId = null;
+        ctx.session.field = null;
+        ctx.session.productPage = null;
+      }
+      await productsScene.showProductEdit(ctx, productId, page);
+      return;
+    }
+  });
+
   bot.action(/^admin:product:field:(\w+):(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const field = ctx.match[1];
     if (field === 'category') return;

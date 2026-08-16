@@ -7,30 +7,29 @@
 const categoriesScene = require('../scenes/admin/categories.scene');
 const productsScene = require('../scenes/admin/products.scene');
 const { Markup } = require('telegraf');
+const { adminMiddleware } = require('../middlewares/auth');
 
 module.exports = (bot) => {
   // ─────────────────── КАТЕГОРИИ (АДМИН) ───────────────────
-  const isAdmin = (ctx, next) => (ctx.user?.role === 'admin' ? next() : null);
-
-  bot.action('admin:categories', isAdmin, async (ctx) => {
+  bot.action('admin:categories', adminMiddleware, async (ctx) => {
     await categoriesScene.showCategories(ctx);
   });
 
-  bot.action('admin:category:add', isAdmin, async (ctx) => {
+  bot.action('admin:category:add', adminMiddleware, async (ctx) => {
     await categoriesScene.startAddCategory(ctx);
   });
 
-  bot.action(/^admin:category:edit:([^:]+)$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:category:edit:([^:]+)$/, adminMiddleware, async (ctx) => {
     await categoriesScene.showCategoryEdit(ctx, ctx.match[1]);
   });
 
-  bot.action(/^admin:category:products:([^:]+)(?::(\d+))?$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:category:products:([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const catId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
     await categoriesScene.showCategoryProducts(ctx, catId, page);
   });
 
-  bot.action(/^admin:product:add_to_cat:([^:]+)$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:product:add_to_cat:([^:]+)$/, adminMiddleware, async (ctx) => {
     const catId = ctx.match[1];
     ctx.session = ctx.session || {};
     ctx.session.adminAction = 'add_product';
@@ -62,7 +61,7 @@ module.exports = (bot) => {
     await ctx.answerCbQuery().catch(() => {});
   });
 
-  bot.action(/^admin:category:toggle:([^:]+)$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:category:toggle:([^:]+)$/, adminMiddleware, async (ctx) => {
     const Category = require('../../models/Category');
     const cat = await Category.findById(ctx.match[1]);
     if (cat) {
@@ -72,7 +71,7 @@ module.exports = (bot) => {
     await categoriesScene.showCategoryEdit(ctx, ctx.match[1]);
   });
 
-  bot.action(/^admin:category:del:([^:]+)$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:category:del:([^:]+)$/, adminMiddleware, async (ctx) => {
     const Category = require('../../models/Category');
     const Product = require('../../models/Product');
     const hasProducts = await Product.exists({ categoryId: ctx.match[1] });
@@ -85,7 +84,7 @@ module.exports = (bot) => {
   });
 
   // ─────────────────── ТОВАРЫ: СМЕНА КАТЕГОРИИ ───────────────────
-  bot.action(/^admin:product:set_cat:([^:]+)(?::([^:]+))?(?::(\d+))?$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:product:set_cat:([^:]+)(?::([^:]+))?(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const session = ctx.session || {};
     const catId = ctx.match[1] === 'none' ? null : ctx.match[1];
@@ -156,7 +155,7 @@ module.exports = (bot) => {
     }
   });
 
-  bot.action(/^admin:product:field:category:(.+?)(?::(\d+))?$/, isAdmin, async (ctx) => {
+  bot.action(/^admin:product:field:category:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const productId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
     ctx.session = ctx.session || {};
