@@ -258,6 +258,7 @@ module.exports = (bot) => {
 
   bot.action(/^admin:product:field:(\w+):(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     const field = ctx.match[1];
+    if (field === 'category') return;
     const productId = ctx.match[2];
     const page = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
     ctx.session = ctx.session || {};

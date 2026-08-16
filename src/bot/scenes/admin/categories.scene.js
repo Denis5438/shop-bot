@@ -90,16 +90,64 @@ const showCategoryEdit = async (ctx, catId) => {
   const cat = await Category.findById(catId);
   if (!cat) return ctx.answerCbQuery('❌ Не найдена', { show_alert: true });
 
-  const text = `🗂 Категория: <b>${escapeHtml(cat.icon)} ${escapeHtml(cat.name)}</b>\n\nВыберите действие:`;
+  const productsCount = await Product.countDocuments({ categoryId: catId });
+
+  const text =
+    `🗂 Категория: <b>${escapeHtml(cat.icon)} ${escapeHtml(cat.name)}</b>\n` +
+    `📦 Товаров в категории: <b>${productsCount} шт.</b>\n` +
+    `🔘 Статус: ${cat.isActive ? '✅ Активна' : '🔴 Скрыта'}\n\n` +
+    `Выберите действие:`;
+
   const buttons = [
-    [
-      cat.isActive
-        ? Markup.button.callback('🔴 Скрыть', `admin:category:toggle:${cat._id}`)
-        : Markup.button.callback('🟢 Показать', `admin:category:toggle:${cat._id}`),
-      Markup.button.callback('🗑 Удалить', `admin:category:del:${cat._id}`)
-    ],
-    [Markup.button.callback('⬅️ Назад', 'admin:categories')]
+    [Markup.button.callback('➕ Добавить товар в эту категорию', `admin:product:add_to_cat:${cat._id}`)],
   ];
+
+  if (productsCount > 0) {
+    buttons.push([Markup.button.callback(`📦 Товары категории (${productsCount} шт.)`, `admin:category:products:${cat._id}:1`)]);
+  }
+
+  buttons.push([
+    cat.isActive
+      ? Markup.button.callback('🔴 Скрыть', `admin:category:toggle:${cat._id}`)
+      : Markup.button.callback('🟢 Показать', `admin:category:toggle:${cat._id}`),
+    Markup.button.callback('🗑 Удалить', `admin:category:del:${cat._id}`)
+  ]);
+  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:categories')]);
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+};
+
+const showCategoryProducts = async (ctx, catId, page = 1) => {
+  page = Math.max(1, parseInt(page, 10) || 1);
+  const cat = await Category.findById(catId);
+  if (!cat) return ctx.answerCbQuery('❌ Категория не найдена', { show_alert: true });
+
+  const limit = 8;
+  const skip = (page - 1) * limit;
+  const [products, totalCount] = await Promise.all([
+    Product.find({ categoryId: catId }).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Product.countDocuments({ categoryId: catId }),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+
+  const buttons = products.map(p => [
+    Markup.button.callback(`${p.icon || '📦'} ${p.name} ($${p.price}) ${p.isActive ? '' : '🔴'}`, `admin:product:edit:${p._id}:${page}`)
+  ]);
+
+  const nav = [];
+  if (page > 1) nav.push(Markup.button.callback('⬅️', `admin:category:products:${catId}:${page - 1}`));
+  nav.push(Markup.button.callback(`${page}/${totalPages}`, 'admin:noop'));
+  if (page < totalPages) nav.push(Markup.button.callback('➡️', `admin:category:products:${catId}:${page + 1}`));
+  if (nav.length > 1) buttons.push(nav);
+
+  buttons.push([Markup.button.callback('➕ Добавить товар сюда', `admin:product:add_to_cat:${catId}`)]);
+  buttons.push([Markup.button.callback('⬅️ К категории', `admin:category:edit:${catId}`)]);
+
+  const text =
+    `🗂 Категория: <b>${escapeHtml(cat.icon)} ${escapeHtml(cat.name)}</b>\n` +
+    `📦 Список товаров (Всего: ${totalCount} шт.):\n\n` +
+    `Выберите товар для редактирования:`;
 
   await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
 };
@@ -108,5 +156,6 @@ module.exports = {
   showCategories,
   startAddCategory,
   handleCategoryInput,
-  showCategoryEdit
+  showCategoryEdit,
+  showCategoryProducts
 };

@@ -475,8 +475,8 @@ const handleProductInput = async (ctx) => {
       const Category = require('../../../models/Category');
       const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 });
       
-      if (categories.length === 0) {
-        // No categories yet, save directly
+      if (np.categoryId || categories.length === 0) {
+        // Категория уже выбрана или категорий нет - сохраняем сразу
         const provider = normalizeProviderForType(np.type, 'local');
         const product = new Product({
           name: np.name,
@@ -489,6 +489,7 @@ const handleProductInput = async (ctx) => {
           description: np.description,
           descriptionEn: np.descriptionEn,
           icon: np.icon,
+          categoryId: np.categoryId || null,
         });
         await product.save();
         ctx.session.adminAction = null;
