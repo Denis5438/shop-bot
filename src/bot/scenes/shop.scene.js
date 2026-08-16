@@ -270,11 +270,26 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const stockMap = await getStockMap(paginated);
   const buttons = [];
   const lang = ctx.user?.language || 'ru';
+  const isClassicTheme = ctx.user?.btnStyle === 'classic';
 
   const activePromo = await getActivePromoFromCtx(ctx);
 
+  const inStock = [];
+  const outOfStock = [];
+
   for (const product of paginated) {
     const stock = stockMap.get(String(product._id));
+    if (stock === '∞' || (typeof stock === 'number' && stock > 0)) {
+      inStock.push({ product, stock });
+    } else {
+      outOfStock.push({ product, stock: 0 });
+    }
+  }
+
+  const isCollapsed = ctx.session?.outOfStockCollapsed ?? true;
+
+  // 1. Товары в наличии (зелёные)
+  for (const { product, stock } of inStock) {
     const effectivePrice = await getEffectivePrice(product, stock, activePromo);
     const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
     const stockBadge = stock === '∞' ? '∞' : stock;
@@ -288,11 +303,28 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
     const label = `${product.icon || '📦'} ${shortName} · ${priceLabelStr} · 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
-    if (ctx.user?.btnStyle !== 'classic') {
-      btn.style = (stock === '∞' || stock > 0) ? 'success' : 'danger';
-    }
-
+    if (!isClassicTheme) btn.style = 'success';
     buttons.push([btn]);
+  }
+
+  // 2. Сворачиваемый блок "Нет в наличии" (красные)
+  if (outOfStock.length > 0) {
+    const toggleIcon = isCollapsed ? '▼' : '▲';
+    const toggleLabel = `Нет в наличии · ${outOfStock.length} ${toggleIcon}`;
+    buttons.push([Markup.button.callback(toggleLabel, `shop:toggle_out:${categoryId}:${safePage}`)]);
+
+    if (!isCollapsed) {
+      for (const { product } of outOfStock) {
+        const effectivePrice = await getEffectivePrice(product, 0, activePromo);
+        const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+        const maxNameLen = 18;
+        const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
+        const label = `${product.icon || '📦'} ${shortName} · $${effectivePrice} · 📦 0`;
+        const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
+        if (!isClassicTheme) btn.style = 'danger';
+        buttons.push([btn]);
+      }
+    }
   }
 
   const navButtons = [];
