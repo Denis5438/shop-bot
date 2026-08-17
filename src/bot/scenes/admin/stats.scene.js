@@ -368,22 +368,55 @@ const showSalesChart = async (ctx) => {
   // Удаляем старое меню панели, чтобы картинка встала красиво
   await ctx.deleteMessage().catch(() => {});
 
+  const logger = require('../../../config/logger');
+
   try {
-    const imgRes = await axios.get(chartUrl, { responseType: 'arraybuffer', timeout: 7000 });
+    const imgRes = await axios.post(
+      'https://quickchart.io/chart',
+      {
+        chart: chartConfig,
+        width: 650,
+        height: 330,
+        backgroundColor: '#0f172a',
+        format: 'png',
+      },
+      {
+        responseType: 'arraybuffer',
+        timeout: 12000,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        },
+      }
+    );
+
+    const imgBuffer = Buffer.from(imgRes.data);
     await ctx.replyWithPhoto(
-      { source: Buffer.from(imgRes.data), filename: 'sales_chart.png' },
+      { source: imgBuffer },
       {
         caption: text,
         parse_mode: 'HTML',
-        ...keyboard
+        ...keyboard,
       }
     );
   } catch (err) {
-    // Если QuickChart недоступен - отправляем красивую текстовую сводку
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      ...keyboard
-    }).catch(() => {});
+    logger.warn(`[showSalesChart] Не удалось скачать график по POST: ${err.message}, пробую прямой URL...`);
+    try {
+      await ctx.replyWithPhoto(
+        { url: chartUrl },
+        {
+          caption: text,
+          parse_mode: 'HTML',
+          ...keyboard,
+        }
+      );
+    } catch (urlErr) {
+      logger.error(`[showSalesChart] Ошибка отправки графика: ${urlErr.message}`);
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        ...keyboard,
+      }).catch(() => {});
+    }
   }
 };
 
