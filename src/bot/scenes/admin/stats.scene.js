@@ -1,4 +1,5 @@
 const { Markup } = require('telegraf');
+const axios = require('axios');
 const Order = require('../../../models/Order');
 const User = require('../../../models/User');
 const Key = require('../../../models/Key');
@@ -273,7 +274,7 @@ const showLogistics = async (ctx, period = 'month', currency = 'USDT') => {
 
 // График продаж через QuickChart
 const showSalesChart = async (ctx) => {
-  await ctx.answerCbQuery('📊 Генерирую график...');
+  await ctx.answerCbQuery('📊 Генерирую график...').catch(() => {});
 
   // 1. Даты за последние 7 дней
   const labels = [];
@@ -281,16 +282,14 @@ const showSalesChart = async (ctx) => {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    d.setHours(0,0,0,0);
+    d.setHours(0, 0, 0, 0);
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     labels.push(`${day}.${month}`);
     startOfDays.push(d);
   }
 
-  // 2. Одна агрегация с группировкой по дню (раньше - 7 запросов в цикле).
-  // Группируем по локальной дате сервера, чтобы границы дней совпадали
-  // с setHours(0,0,0,0) из формирования labels.
+  // 2. Одна агрегация с группировкой по дню.
   const tzOffsetMin = -new Date().getTimezoneOffset();
   const weekAgg = await Transaction.aggregate([
     { $match: { type: 'purchase', createdAt: { $gte: startOfDays[0] } } },
@@ -318,7 +317,7 @@ const showSalesChart = async (ctx) => {
     totalWeek += volume;
   }
 
-  // 3. Формируем URL quickchart.io
+  // 3. Формируем конфиг QuickChart (стильный тёмный дизайн)
   const chartConfig = {
     type: 'bar',
     data: {
@@ -326,49 +325,64 @@ const showSalesChart = async (ctx) => {
       datasets: [{
         label: 'Выручка (USDT)',
         data: data,
-        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-        borderColor: 'rgb(54, 162, 235)',
+        backgroundColor: 'rgba(56, 189, 248, 0.75)',
+        borderColor: 'rgb(56, 189, 248)',
         borderWidth: 2,
-        borderRadius: 5,
+        borderRadius: 6,
       }]
     },
     options: {
       title: {
         display: true,
         text: 'Выручка за последние 7 дней (USDT)',
-        fontColor: '#333',
-        fontSize: 16
+        fontSize: 16,
+        fontColor: '#ffffff'
       },
-      legend: { display: false }
+      legend: { display: false },
+      scales: {
+        yAxes: [{ ticks: { beginAtZero: true, fontColor: '#94a3b8' } }],
+        xAxes: [{ ticks: { fontColor: '#94a3b8' } }]
+      }
     }
   };
 
-  const chartUrl = `https://quickchart.io/chart?w=600&h=300&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
+  const chartUrl = `https://quickchart.io/chart?w=650&h=330&backgroundColor=%230f172a&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
+
+  // Текстовая разбивка по дням
+  let chartRowsText = '';
+  const maxVal = Math.max(...data.map(Number), 1);
+  for (let i = 0; i < 7; i++) {
+    const val = parseFloat(data[i]);
+    const barLen = Math.round((val / maxVal) * 8);
+    const bar = val > 0 ? '█'.repeat(barLen) + '░'.repeat(8 - barLen) : '░'.repeat(8);
+    chartRowsText += `📅 <code>${labels[i]}</code>: <b>${val.toFixed(2)} USDT</b>  [<code>${bar}</code>]\n`;
+  }
 
   const text =
-    `📈 <b>Визуальный график продаж</b>\n\n` +
-    `Суммарная выручка за 7 дней: <b>${totalWeek.toFixed(2)} USDT</b>`;
+    `📈 <b>График выручки (последние 7 дней)</b>\n\n` +
+    `${chartRowsText}\n` +
+    `💰 Итого за неделю: <b>${totalWeek.toFixed(2)} USDT</b>`;
+
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('⬅️ В панель', 'admin:main')]]);
+
+  // Удаляем старое меню панели, чтобы картинка встала красиво
+  await ctx.deleteMessage().catch(() => {});
 
   try {
+    const imgRes = await axios.get(chartUrl, { responseType: 'arraybuffer', timeout: 7000 });
     await ctx.replyWithPhoto(
-      { url: chartUrl },
+      { source: Buffer.from(imgRes.data), filename: 'sales_chart.png' },
       {
         caption: text,
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В панель', 'admin:main')]])
+        ...keyboard
       }
     );
   } catch (err) {
-    // quickchart.io или Telegram не смогли принять картинку -
-    // шлём текстовую сводку с прямой ссылкой, чтобы админ мог открыть её.
-    const fallbackText =
-      `${text}\n\n` +
-      `⚠️ Не удалось сгенерировать изображение графика.\n` +
-      `Можно открыть его вручную: <a href="${chartUrl}">ссылка на QuickChart</a>`;
-    await ctx.reply(fallbackText, {
+    // Если QuickChart недоступен - отправляем красивую текстовую сводку
+    await ctx.reply(text, {
       parse_mode: 'HTML',
-      disable_web_page_preview: true,
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В панель', 'admin:main')]])
+      ...keyboard
     }).catch(() => {});
   }
 };
