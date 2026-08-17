@@ -382,7 +382,7 @@ const showSalesChart = async (ctx) => {
       },
       {
         responseType: 'arraybuffer',
-        timeout: 12000,
+        timeout: 6000,
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
@@ -400,23 +400,11 @@ const showSalesChart = async (ctx) => {
       }
     );
   } catch (err) {
-    logger.warn(`[showSalesChart] Не удалось скачать график по POST: ${err.message}, пробую прямой URL...`);
-    try {
-      await ctx.replyWithPhoto(
-        { url: chartUrl },
-        {
-          caption: text,
-          parse_mode: 'HTML',
-          ...keyboard,
-        }
-      );
-    } catch (urlErr) {
-      logger.error(`[showSalesChart] Ошибка отправки графика: ${urlErr.message}`);
-      await ctx.reply(text, {
-        parse_mode: 'HTML',
-        ...keyboard,
-      }).catch(() => {});
-    }
+    logger.warn(`[showSalesChart] Ошибка генерации фото графика: ${err.message}. Отправляю текстовый график.`);
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      ...keyboard,
+    }).catch(() => {});
   }
 };
 
