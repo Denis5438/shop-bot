@@ -155,7 +155,6 @@ const showBybitOptions = async (ctx) => {
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔴 TRC-20 (Tron)', 'topup:network:trc20')],
         [Markup.button.callback('🟡 BEP-20 (BSC)', 'topup:network:bep20')],
-        [Markup.button.callback(lang === 'en' ? '🆔 Bybit UID (Internal)' : '🆔 Bybit UID (Внутренний перевод)', 'topup:network:uid')],
         [Markup.button.callback(backLabel, 'topup:method:direct')],
       ]),
     }
