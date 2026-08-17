@@ -19,8 +19,8 @@ const Seller = require('../../models/Seller');
 const promoService = require('../../services/promo.service');
 const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, safeEdit } = require('../utils/ui');
 
-const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-01-83';
-const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-01-39';
+const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-17-78';
+const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-17-44';
 
 const clearActivePromo = async (ctx) => {
   // Очищаем применённый промокод из сессии и профиля пользователя после успешной покупки
