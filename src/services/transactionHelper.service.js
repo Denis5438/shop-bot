@@ -1,9 +1,9 @@
 /**
  * transactionHelper.service.js
  *
- * Обёртка для MongoDB-транзакций с graceful fallback.
- * Если БД - standalone (не replica set), транзакции недоступны -
- * выполняем операции без транзакции, логируя предупреждение.
+ * Обёртка для MongoDB-транзакций.
+ * Денежные операции не имеют безопасного fallback без транзакции: если БД
+ * standalone, операция отклоняется до выполнения callback.
  */
 
 const mongoose = require('mongoose');
@@ -13,15 +13,16 @@ let transactionsAvailable = null; // unknown until first attempt
 
 /**
  * Выполняет callback внутри MongoDB-транзакции.
- * Если транзакции недоступны (standalone MongoDB) - выполняет без транзакции.
  *
  * @param {Function} fn - async функция, принимающая (session)
  * @returns {Promise<*>} результат fn
  */
 const withTransaction = async (fn) => {
-  // Если уже знаем, что транзакции не работают - сразу без сессии
+  // Не разрешаем незаметно выполнять финансовый callback без транзакции.
   if (transactionsAvailable === false) {
-    return await fn(null);
+    const error = new Error('TRANSACTIONS_REQUIRED');
+    error.code = 'TRANSACTIONS_REQUIRED';
+    throw error;
   }
 
   const session = await mongoose.startSession();
@@ -40,7 +41,7 @@ const withTransaction = async (fn) => {
       err.code === 20
     ) {
       if (transactionsAvailable !== false) {
-        logger.warn('[TransactionHelper] Транзакции недоступны (standalone MongoDB). Операции выполняются без транзакций.');
+        logger.error('[TransactionHelper] MongoDB не поддерживает транзакции. Денежные операции заблокированы.');
         transactionsAvailable = false;
         // Это серьёзное снижение гарантий для ВСЕХ денежных операций - молчать
         // об этом нельзя. Шлём алерт админам (лениво, чтобы избежать циклического
@@ -48,17 +49,17 @@ const withTransaction = async (fn) => {
         try {
           const notif = require('./notification.service');
           notif.sendToAdmins(
-            '🚨 <b>ВНИМАНИЕ: MongoDB-транзакции недоступны</b>\n\n' +
-            'БД работает как standalone (не replica set). Все денежные операции ' +
-            'выполняются БЕЗ транзакций - при сбоях возможны рассогласования балансов.\n\n' +
-            'Рекомендуется перевести MongoDB в режим replica set (для одного сервера достаточно rs.initiate()).'
+            '🚨 <b>Денежные операции заблокированы</b>\n\n' +
+            'MongoDB работает без replica set, поэтому финансовые транзакции недоступны.\n\n' +
+            'Переведите базу в режим replica set или MongoDB Atlas и перезапустите бота.'
           ).catch(() => {});
         } catch (_) { /* notification service ещё не инициализирован */ }
       }
       try { await session.endSession(); } catch (_) {}
       sessionEnded = true;
-      // Выполняем без сессии
-      return await fn(null);
+      const transactionError = new Error('TRANSACTIONS_REQUIRED');
+      transactionError.code = 'TRANSACTIONS_REQUIRED';
+      throw transactionError;
     }
     throw err;
   } finally {

@@ -140,12 +140,21 @@ const checkAndGrantAchievements = async (userId, opts = {}) => {
     try {
       const ok = await ach.check(user, stats);
       if (ok) {
-        user.achievements.push({ code: ach.code, unlockedAt: new Date() });
+        const updateDoc = {
+          $push: { achievements: { code: ach.code, unlockedAt: new Date() } },
+        };
         if (ach.bonus > 0) {
-          user.balance = parseFloat((user.balance + ach.bonus).toFixed(8));
+          updateDoc.$inc = { balance: ach.bonus };
         }
-        newlyUnlocked.push({ achievement: ach, bonusGranted: ach.bonus > 0 });
-        logger.info(`[Achievements] unlock user=${user.telegramId} code=${ach.code} bonus=${ach.bonus}`);
+        const updated = await User.findOneAndUpdate(
+          { _id: userId, 'achievements.code': { $ne: ach.code } },
+          updateDoc,
+          { new: true }
+        );
+        if (updated) {
+          newlyUnlocked.push({ achievement: ach, bonusGranted: ach.bonus > 0 });
+          logger.info(`[Achievements] unlock user=${user.telegramId} code=${ach.code} bonus=${ach.bonus}`);
+        }
       }
     } catch (err) {
       logger.error(`[Achievements] check error for ${ach.code}: ${err.message}`);
@@ -154,8 +163,6 @@ const checkAndGrantAchievements = async (userId, opts = {}) => {
 
   if (newlyUnlocked.length === 0) return [];
 
-  await user.save();
-
   // Пишем transactions для бонусов
   if (newlyUnlocked.some((n) => n.bonusGranted)) {
     const Transaction = require('../models/Transaction');
@@ -163,7 +170,7 @@ const checkAndGrantAchievements = async (userId, opts = {}) => {
       if (!bonusGranted) continue;
       await new Transaction({
         userId: user._id,
-        type: 'topup', // используем существующий enum
+        type: 'manual_credit',
         amount: achievement.bonus,
         description: `🏆 Ачивка: ${achievement.title}`,
       }).save().catch((err) => logger.error(`[Achievements] tx save failed: ${err.message}`));

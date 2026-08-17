@@ -8,6 +8,7 @@ const Waitlist = require('../../models/Waitlist');
 const { ITEMS_PER_PAGE } = require('../../config');
 const { toRub } = require('../../services/currency.service');
 const { getSettings } = require('../../services/settingsCache.service');
+const { getEffectivePrice } = require('../../services/orderPricing.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../../services/referral.service');
 const {
   buildKeyQueryForProduct,
@@ -15,46 +16,11 @@ const {
 } = require('../../services/provider.service');
 const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
+const promoService = require('../../services/promo.service');
 const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, safeEdit } = require('../utils/ui');
 
 const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-01-83';
 const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-01-39';
-
-const getEffectivePrice = async (product, stockCount, activePromo = null) => {
-  const settings = await getSettings();
-  let price = product.price;
-
-  if (settings?.smartPricing && product.type !== 'manual') {
-    const rawStock = parseFloat(stockCount);
-    if (!Number.isNaN(rawStock) && rawStock > 0 && rawStock < 10) {
-      price = parseFloat((price * 1.2).toFixed(2));
-    }
-  }
-
-  if (settings?.autoMarkdownEnabled && settings?.autoMarkdownPercent > 0 && settings?.autoMarkdownDays > 0) {
-    const lastSaleBase = product.lastSoldAt || product.createdAt;
-    const lastSaleAt = lastSaleBase instanceof Date ? lastSaleBase.getTime() : Date.now();
-    const daysSinceLastSale = (Date.now() - lastSaleAt) / (1000 * 60 * 60 * 24);
-    const periods = Math.floor(daysSinceLastSale / settings.autoMarkdownDays);
-
-    if (periods > 0) {
-      const discountMult = Math.pow(1 - (settings.autoMarkdownPercent / 100), periods);
-      const discountedPrice = price * discountMult;
-      const costLimit = product.costPrice || 0;
-      price = parseFloat(Math.max(discountedPrice, costLimit).toFixed(2));
-    }
-  }
-
-  if (activePromo) {
-    const promoService = require('../../services/promo.service');
-    const discountRes = promoService.calculateDiscount(activePromo, price, product._id);
-    if (discountRes.valid) {
-      price = discountRes.finalPrice;
-    }
-  }
-
-  return price;
-};
 
 const clearActivePromo = async (ctx) => {
   // Очищаем применённый промокод из сессии и профиля пользователя после успешной покупки
@@ -70,7 +36,7 @@ const getActivePromoFromCtx = async (ctx) => {
   if (ctx.user?.activePromoCode) {
     const PromoCode = require('../../models/PromoCode');
     const promo = await PromoCode.findById(ctx.user.activePromoCode).lean();
-    if (promo && promo.isActive) {
+    if (promo && promo.isActive && (!promo.expiresAt || new Date() <= new Date(promo.expiresAt))) {
       const activeObj = {
         success: true,
         type: promo.type,
@@ -558,8 +524,14 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
   const productName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
 
   const activePromo = await getActivePromoFromCtx(ctx);
-  const effectivePrice = await getEffectivePrice(product, stock, activePromo);
-  const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
+  const baseEffectivePrice = await getEffectivePrice(product, stock, null);
+  const promoDiscount = activePromo
+    ? promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id)
+    : { valid: false, discountAmount: 0 };
+  const totalCost = promoDiscount.valid
+    ? promoDiscount.finalPrice
+    : parseFloat((baseEffectivePrice * qty).toFixed(2));
+  const effectivePrice = Number((totalCost / qty).toFixed(2));
   const totalCostRub = toRub(totalCost);
 
   const promoInfoLine = activePromo
@@ -806,6 +778,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
 
   let orders = [];
   let allocatedKeys = [];
+  let supplierItems = [];
   let usedSession = null;      // была ли реальная MongoDB-транзакция
   let balanceDebited = false;  // дошли ли до списания (для компенсации без транзакции)
   let manualStockDebited = false;
@@ -818,6 +791,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       // сбрасываем накопленное состояние.
       orders = [];
       allocatedKeys = [];
+      supplierItems = [];
       balanceDebited = false;
       manualStockDebited = false;
 
@@ -853,6 +827,10 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       balanceDebited = true;
       ctx.user = debitedUser;
 
+      const hasSeller = Boolean(product.sellerId && product.sellerPrice > 0);
+      const payoutPerItem = hasSeller ? parseFloat(product.sellerPrice.toFixed(8)) : 0;
+      const sellerTotalPayout = hasSeller ? parseFloat((payoutPerItem * qty).toFixed(8)) : 0;
+
       if (!isAutoKeyProduct && (product.type === 'manual' || ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider))) {
         if (product.manualStock !== -1) {
           // Атомарное уменьшение остатка с условием manualStock >= qty (защита от оверселла)
@@ -873,24 +851,40 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           price: totalCost,
           qty: qty,
           costPrice: (product.costPrice || 0) * qty,
+          sellerId: hasSeller ? product.sellerId : null,
+          sellerPayout: hasSeller ? sellerTotalPayout : 0,
           status: 'pending',
           keyId: null,
           confirmedAt: null,
           activationResult: null,
           warrantyDays: product.warrantyDays ?? 5,
         });
+        if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
+          order.supplierIdempotencyKey = `ord-${order._id}`;
+        }
         await order.save(sessionOptions);
         orders.push(order);
+        if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
+          supplierItems.push({ order, product, qty });
+        }
       } else {
+        let remainingOrderPrice = totalCost;
         for (let i = 0; i < qty; i++) {
           const allocatedKey = allocatedKeys[i] || null;
+          const isLastOrder = i === qty - 1;
+          const orderPrice = isLastOrder
+            ? Number(remainingOrderPrice.toFixed(8))
+            : Number((totalCost / qty).toFixed(8));
+          remainingOrderPrice = Number((remainingOrderPrice - orderPrice).toFixed(8));
           const order = new Order({
             userId: user._id,
             productId: product._id,
             provider,
-            price: effectivePrice,
+            price: orderPrice,
             qty: 1,
             costPrice: product.costPrice || 0,
+            sellerId: hasSeller ? product.sellerId : null,
+            sellerPayout: hasSeller ? payoutPerItem : 0,
             status: product.type === 'gpt_activation' ? 'awaiting_token' : isAutoKeyProduct ? 'completed' : 'pending',
             keyId: allocatedKey ? allocatedKey._id : null,
             confirmedAt: isAutoKeyProduct ? new Date() : null,
@@ -917,6 +911,18 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
         { $set: { lastSoldAt: new Date() } },
         sessionOptions
       );
+
+      if (activePromo?.promoId) {
+        if (promoDiscount.valid && promoDiscount.discountAmount > 0) {
+          await promoService.consumeDiscountPromo({
+            promoId: activePromo.promoId,
+            userId: user._id,
+            orderId: orders[0]?._id || null,
+            discountAmount: promoDiscount.discountAmount,
+            session,
+          });
+        }
+      }
 
       await new Transaction({
         userId: user._id,
@@ -973,11 +979,25 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       }
     }
 
+    if (err.code === 'TRANSACTIONS_REQUIRED' || err.message === 'TRANSACTIONS_REQUIRED') {
+      return ctx.answerCbQuery(
+        lang === 'en'
+          ? 'Payment is temporarily unavailable because the database does not support financial transactions.'
+          : 'Оплата временно недоступна: база данных не поддерживает финансовые транзакции.',
+        { show_alert: true }
+      );
+    }
     if (err.message === 'INSUFFICIENT_BALANCE') {
       return ctx.answerCbQuery(t('err_insufficient_balance'), { show_alert: true });
     }
     if (err.message === 'OUT_OF_STOCK') {
       return ctx.answerCbQuery(t('err_out_of_stock'), { show_alert: true });
+    }
+    if (String(err.message || '').startsWith('PROMO_')) {
+      return ctx.answerCbQuery(
+        lang === 'en' ? 'The promo code is no longer available. No funds were charged.' : 'Промокод больше нельзя применить. Деньги не списаны.',
+        { show_alert: true }
+      );
     }
 
     await ctx.answerCbQuery('❌').catch(() => {});
@@ -992,40 +1012,22 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     throw err;
   }
 
-  // Начисление продавцу (sellerPayout холдируется) и уведомления
-  const productDisplayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
-  let sellerTotalPayout = 0;
+  if (ctx.session) ctx.session.activePromo = null;
+  if (ctx.user) ctx.user.activePromoCode = null;
 
+  // Уведомление продавца (sellerId и sellerPayout уже сохранены в заказе атомарно)
   if (product.sellerId && product.sellerPrice > 0) {
     try {
       const seller = await Seller.findById(product.sellerId);
       if (seller && seller.isActive) {
         const payoutPerItem = parseFloat(product.sellerPrice.toFixed(8));
-        sellerTotalPayout = parseFloat((payoutPerItem * qty).toFixed(8));
-        
-        const orderIds = orders.map(o => o._id);
-        
-        if (product.type === 'manual') {
-          // Для manual у нас всего 1 заказ с qty = N
-          await Order.updateMany(
-            { _id: { $in: orderIds } },
-            { $set: { sellerId: seller._id, sellerPayout: sellerTotalPayout } }
-          );
-        } else {
-          // Для key у нас N заказов с qty = 1
-          await Order.updateMany(
-            { _id: { $in: orderIds } },
-            { $set: { sellerId: seller._id, sellerPayout: payoutPerItem } }
-          );
-        }
-        
-        // Отправляем одно сводное уведомление продавцу
+        const sellerTotalPayout = parseFloat((payoutPerItem * qty).toFixed(8));
         const summaryOrder = { ...orders[0].toObject(), sellerPayout: sellerTotalPayout, qty };
         await notif.notifySellerNewOrder(seller, summaryOrder, product, ctx.user);
       }
     } catch (sellerErr) {
       const logger = require('../../config/logger');
-      logger.error(`[Seller payout] Ошибка начисления продавцу: ${sellerErr.message}`);
+      logger.error(`[Seller notification] Ошибка отправки уведомления продавцу: ${sellerErr.message}`);
     }
   }
 
@@ -1090,10 +1092,21 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       await ctx.reply(text, opts).catch(() => {});
     }
     await ctx.answerCbQuery().catch(() => {});
-  } else if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider)) {
+  } else if (supplierItems.length > 0) {
     // ─── Автоматический выкуп у внешнего поставщика через API (On-Demand) ───
     const supplierManager = require('../../services/supplierManager.service');
-    const suppRes = await supplierManager.fulfillSupplierOrder(product, qty, ctx.user);
+    const supplierItem = supplierItems[0];
+    let suppRes;
+    try {
+      suppRes = await supplierManager.fulfillSupplierOrder(
+        supplierItem.product,
+        supplierItem.qty,
+        ctx.user,
+        { orderId: supplierItem.order._id, idempotencyKey: supplierItem.order.supplierIdempotencyKey }
+      );
+    } catch (supplierErr) {
+      suppRes = { success: false, error: supplierErr.message };
+    }
 
     const productLbl = lang === 'en' ? 'Product' : 'Товар';
     const qtyLbl = lang === 'en' ? 'Quantity' : 'Количество';
@@ -1107,6 +1120,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
             status: 'completed',
             confirmedAt: new Date(),
             deliveryData: String(suppRes.deliveryData),
+            supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
             activationResult: 'Автовыдача через API поставщика ⚡',
           },
         }

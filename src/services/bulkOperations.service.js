@@ -30,15 +30,17 @@ const grantBalanceToAll = async (amount) => {
   // Создаем записи транзакций для каждого
   const txs = users.map((u) => ({
     userId: u._id,
-    type: 'deposit',
+    type: 'manual_credit',
     amount: numAmount,
-    status: 'completed',
-    details: 'Массовое начисление администратором',
+    description: 'Массовое начисление администратором',
     createdAt: new Date(),
   }));
 
   if (txs.length > 0) {
-    await Transaction.insertMany(txs).catch(() => {});
+    const logger = require('../config/logger');
+    await Transaction.insertMany(txs).catch((err) => {
+      logger.error(`[bulkOperations] Ошибка записи транзакций массового начисления: ${err.message}`);
+    });
   }
 
   return users.length;

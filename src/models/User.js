@@ -22,6 +22,9 @@ const userSchema = new mongoose.Schema({
   acceptedToSAt: { type: Date, default: null },
   btnStyle: { type: String, enum: ['colored', 'classic'], default: 'colored' },
   activePromoCode: { type: mongoose.Schema.Types.ObjectId, ref: 'PromoCode', default: null },
+  // Changes on every cart mutation. Checkout uses it to reject a stale or
+  // double-clicked cart snapshot inside the same MongoDB transaction.
+  cartVersion: { type: Number, default: 0 },
   cart: [{
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
     qty: { type: Number, default: 1, min: 1 },

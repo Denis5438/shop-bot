@@ -24,6 +24,7 @@ const {
   resolveOrderProvider,
 } = require('../../services/provider.service');
 const { confirmScreen, escapeHtml } = require('../utils/ui');
+const { encryptSecret } = require('../../services/secretBox.service');
 
 const SCENE_ID = 'token_collection';
 const DONE_ACTION = 'token:done';
@@ -255,7 +256,7 @@ const runActivation = async (ctx, token) => {
       { _id: order._id, status: 'awaiting_token' },
       {
         $set: {
-          tokenRaw: token,
+          tokenRaw: encryptSecret(token),
           status: 'failed',
           provider,
           activationResult: 'Системная ошибка: потерян ключ',
@@ -290,7 +291,7 @@ const runActivation = async (ctx, token) => {
     { _id: order._id, status: 'awaiting_token' },
     {
       $set: {
-        tokenRaw: token,
+        tokenRaw: encryptSecret(token),
         keyId: key._id,
         provider,
         status: 'activating',

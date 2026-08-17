@@ -28,11 +28,24 @@ const checkUserSubscriptions = async (telegram, userId) => {
     let isSubscribed = false;
     try {
       const member = await telegram.getChatMember(ch.chatId, userId);
-      isSubscribed = ['creator', 'administrator', 'member', 'restricted'].includes(member.status);
+      isSubscribed = Boolean(member && ['creator', 'administrator', 'member', 'restricted'].includes(member.status));
     } catch (err) {
-      console.warn(`[ChannelCheck] Failed to check status for chat ${ch.chatId} user ${userId}:`, err.message);
-      // Если у бота нет доступа или ID канала неверный — не блокируем наглухо, считаем временно подписанным
-      isSubscribed = true;
+      const msg = String(err.message || '').toLowerCase();
+      // Если пользователь явно не состоит в канале или не найден в чате
+      if (
+        msg.includes('user not found') ||
+        msg.includes('participant_id_invalid') ||
+        msg.includes('user_not_participant')
+      ) {
+        isSubscribed = false;
+      } else if (msg.includes('chat not found') || msg.includes('bot was kicked') || msg.includes('not enough rights') || msg.includes('forbidden')) {
+        // Если у самого бота нет прав на канал - не блокируем пользователя наглухо
+        console.warn(`[ChannelCheck] Bot lacks access to channel ${ch.chatId}: ${err.message}`);
+        isSubscribed = true;
+      } else {
+        console.warn(`[ChannelCheck] Error checking subscription for chat ${ch.chatId} user ${userId}: ${err.message}`);
+        isSubscribed = false;
+      }
     }
 
     if (isSubscribed) {

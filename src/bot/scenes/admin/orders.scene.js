@@ -8,6 +8,7 @@ const notif = require('../../../services/notification.service');
 const { toRub } = require('../../../services/currency.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../../../services/referral.service');
 const { withTransaction } = require('../../../services/transactionHelper.service');
+const { decryptSecret } = require('../../../services/secretBox.service');
 const {
   buildKeyQueryForProduct,
   getProviderLabel,
@@ -165,10 +166,6 @@ const showOrderDetail = async (ctx, orderId) => {
     `🔘 Статус: ${STATUS_LABELS[order.status]}\n` +
     `📅 Дата: ${new Date(order.createdAt).toLocaleString('ru-RU')}\n`;
 
-  if (order.tokenRaw) {
-    text += `\n🔑 <b>Токен пользователя:</b>\n<code>${escapeHtml(order.tokenRaw.substring(0, 200))}${order.tokenRaw.length > 200 ? '...' : ''}</code>\n`;
-  }
-
   if (order.notes) {
     text += `\n💬 Заметки: ${escapeHtml(order.notes)}`;
   }
@@ -216,7 +213,7 @@ const showOrderDetail = async (ctx, orderId) => {
 };
 
 const confirmAndActivate = async (ctx, orderId) => {
-  const order = await Order.findById(orderId).populate('productId').populate('userId');
+  const order = await Order.findById(orderId).select('+tokenRaw').populate('productId').populate('userId');
   if (!order) return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
 
   const provider = resolveOrderProvider(order, order.productId);
@@ -321,7 +318,9 @@ const confirmAndActivate = async (ctx, orderId) => {
       return;
     }
 
-    const step2 = await activationService.finishActivation(provider, step1.order_id, order.tokenRaw);
+    const userToken = decryptSecret(order.tokenRaw);
+    if (!userToken) throw new Error('Токен пользователя отсутствует');
+    const step2 = await activationService.finishActivation(provider, step1.order_id, userToken);
 
     if (step2.success) {
       // Атомарное завершение только из activating - иначе save() «воскресил» бы
@@ -468,6 +467,17 @@ const completeOrderManually = async (ctx, orderId) => {
     await grantReferralBonusForFirstCompletedOrder(user._id);
   }
 
+  // Если заказ от стороннего продавца - начисляем выплату продавцу
+  if (order.sellerId && order.sellerPayout > 0) {
+    const Seller = require('../../../models/Seller');
+    await Seller.findByIdAndUpdate(order.sellerId, {
+      $inc: { balance: order.sellerPayout, totalEarned: order.sellerPayout },
+    }).catch((err) => {
+      const logger = require('../../../config/logger');
+      logger.error(`[completeOrderManually] Ошибка начисления продавцу: ${err.message}`);
+    });
+  }
+
   await showOrderDetail(ctx, orderId);
 };
 
@@ -485,7 +495,14 @@ const retryApiOrder = async (ctx, orderId) => {
 
   const supplierManager = require('../../services/supplierManager.service');
   const qty = order.qty || 1;
-  const suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId);
+  if (!order.supplierIdempotencyKey) {
+    order.supplierIdempotencyKey = `ord-${order._id}`;
+    await order.save();
+  }
+  const suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId, {
+    orderId: order._id,
+    idempotencyKey: order.supplierIdempotencyKey,
+  });
 
   if (suppRes.success && suppRes.deliveryData) {
     await Order.updateOne(
@@ -495,6 +512,7 @@ const retryApiOrder = async (ctx, orderId) => {
           status: 'completed',
           confirmedAt: new Date(),
           deliveryData: String(suppRes.deliveryData),
+          supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
           activationResult: 'Повторный выкуп администратором ⚡',
         },
       }

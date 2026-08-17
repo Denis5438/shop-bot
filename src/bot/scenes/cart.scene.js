@@ -36,7 +36,7 @@ const showCart = async (ctx) => {
     const stockWarning = !item.isAvailable ? (lang === 'en' ? ' ⚠️ <i>(out of stock)</i>' : ' ⚠️ <i>(недостаточно на складе)</i>') : '';
 
     text += `${index + 1}. <b>${escapeHtml(p.name)}</b>${stockWarning}\n` +
-      `   └ <b>${item.qty} шт.</b> × $${p.price.toFixed(2)} = <b>$${item.itemTotal.toFixed(2)}</b>\n\n`;
+      `   └ <b>${item.qty} шт.</b> × $${item.unitPrice.toFixed(2)} = <b>$${item.itemTotal.toFixed(2)}</b>\n\n`;
 
     // Кнопки управления количеством для каждой позиции
     buttons.push([

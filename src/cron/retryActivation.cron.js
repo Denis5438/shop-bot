@@ -14,6 +14,7 @@ const { retryActivation } = require('../services/activation.service');
 const { resolveOrderProvider } = require('../services/provider.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../services/referral.service');
 const { failOrderWithRefund } = require('../services/refund.service');
+const { decryptSecret } = require('../services/secretBox.service');
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 5 * 60 * 1000;
@@ -49,7 +50,7 @@ const start = (bot) => {
           { _id: candidate._id, status: 'retry', nextRetryAt: { $lte: now } },
           { $set: { nextRetryAt: new Date(Date.now() + RETRY_DELAY_MS) } },
           { new: true }
-        ).populate('productId');
+        ).select('+tokenRaw').populate('productId');
         if (!fresh) continue;
         const provider = resolveOrderProvider(fresh, fresh.productId);
 
@@ -85,7 +86,7 @@ const start = (bot) => {
         const apiOrderId = fresh.apiOrderId;
 
         try {
-          const result = await retryActivation(provider, apiOrderId, fresh.tokenRaw);
+          const result = await retryActivation(provider, apiOrderId, decryptSecret(fresh.tokenRaw));
 
           if (result.success) {
             // Атомарное завершение ТОЛЬКО если заказ всё ещё retry. Если админ

@@ -65,6 +65,11 @@ const connectDB = async () => {
     const Category = require('../models/Category');
     const Seller = require('../models/Seller');
     const SellerWithdrawal = require('../models/SellerWithdrawal');
+    const PromoCode = require('../models/PromoCode');
+    const SupplierConfig = require('../models/SupplierConfig');
+    const PromoUsage = require('../models/PromoUsage');
+    const RequiredChannel = require('../models/RequiredChannel');
+    const ExchangeRate = require('../models/ExchangeRate');
     // Ошибка построения индекса (например, дубликаты в данных под unique)
     // НЕ должна валить старт бота - логируем и продолжаем.
     try {
@@ -79,6 +84,12 @@ const connectDB = async () => {
         Category.syncIndexes(),
         Seller.syncIndexes(),
         SellerWithdrawal.syncIndexes(),
+        Settings.syncIndexes(),
+        PromoCode.syncIndexes(),
+        SupplierConfig.syncIndexes(),
+        PromoUsage.syncIndexes(),
+        RequiredChannel.syncIndexes(),
+        ExchangeRate.syncIndexes(),
       ]);
       logger.info('Индексы моделей синхронизированы');
     } catch (idxErr) {

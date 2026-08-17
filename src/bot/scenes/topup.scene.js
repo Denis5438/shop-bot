@@ -155,6 +155,7 @@ const showBybitOptions = async (ctx) => {
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔴 TRC-20 (Tron)', 'topup:network:trc20')],
         [Markup.button.callback('🟡 BEP-20 (BSC)', 'topup:network:bep20')],
+        [Markup.button.callback(lang === 'en' ? '🆔 Bybit UID (Internal)' : '🆔 Bybit UID (Внутренний перевод)', 'topup:network:uid')],
         [Markup.button.callback(backLabel, 'topup:method:direct')],
       ]),
     }
@@ -164,6 +165,7 @@ const showBybitOptions = async (ctx) => {
 const BYBIT_NETWORKS = {
   trc20: { icon: '🔴', label: 'TRC-20 (Tron)' },
   bep20: { icon: '🟡', label: 'BEP-20 (BSC)' },
+  uid: { icon: '🆔', label: 'Bybit UID (Внутренний)' },
 };
 
 // Получаем адреса из Settings (БД через кеш). Реквизиты должны быть заданы админом.
@@ -173,6 +175,7 @@ const getBybitAddresses = async () => {
   return {
     trc20: { ...BYBIT_NETWORKS.trc20, address: settings?.bybitTrc20Address || '' },
     bep20: { ...BYBIT_NETWORKS.bep20, address: settings?.bybitBep20Address || '' },
+    uid: { ...BYBIT_NETWORKS.uid, address: settings?.bybitUid || '' },
   };
 };
 
@@ -745,7 +748,7 @@ const handleTopupProof = async (ctx) => {
           userId: user._id,
           type: 'topup',
           amount: finalAmountUSDT,
-          orderId: request._id,
+          topupRequestId: request._id,
           description: lang === 'en' ? `Auto-topup ${network.toUpperCase()}` : `Авто-пополнение ${network.toUpperCase()}`
         }).save(sessionOpt);
       });

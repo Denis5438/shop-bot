@@ -125,6 +125,7 @@ const createOrder = async (apiKey, { productCode, quantity = 1, idempotencyKey, 
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'Idempotency-Key': String(idempotencyKey),
       },
       timeout: 30000,
     });

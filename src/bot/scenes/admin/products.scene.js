@@ -581,9 +581,18 @@ const handleProductInput = async (ctx) => {
       return true;
     }
 
-    await Product.findByIdAndUpdate(productId, { $set: { manualStock: stock } });
+    const updatedProduct = await Product.findByIdAndUpdate(
+      productId,
+      { $set: { manualStock: stock } },
+      { new: true }
+    );
     ctx.session.adminAction = null;
     ctx.session.productId = null;
+
+    if (updatedProduct && (stock > 0 || stock === -1)) {
+      const notif = require('../../../services/notification.service');
+      notif.broadcastRestock(updatedProduct).catch(() => {});
+    }
 
     await ctx.reply(`✅ Остаток установлен: <b>${stock === -1 ? '∞' : stock}</b> шт.!`, { parse_mode: 'HTML' });
     await showProductEdit(ctx, productId, page);

@@ -207,7 +207,7 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
 /**
  * Моментальный выкуп и доставка товара у поставщика при заказе
  */
-const fulfillSupplierOrder = async (product, quantity, user) => {
+const fulfillSupplierOrder = async (product, quantity, user, options = {}) => {
   const supplierId = product.provider;
   const config = await SupplierConfig.findOne({ supplierId, isEnabled: true });
 
@@ -220,13 +220,18 @@ const fulfillSupplierOrder = async (product, quantity, user) => {
     return { success: false, error: 'Адаптер поставщика не найден' };
   }
 
-  const idempotencyKey = `ord-${product._id}-${user._id}-${Date.now()}`;
+  // The key must survive timeouts and manual/cron retries. Callers create it
+  // from the persisted local order id; never derive it from the current time.
+  const idempotencyKey = options.idempotencyKey || (options.orderId ? `ord-${options.orderId}` : null);
+  if (!idempotencyKey) {
+    return { success: false, error: 'Не задан постоянный idempotency key заказа' };
+  }
   const res = await adapter.createOrder(config.apiKey, {
     productCode: product.supplierProductCode,
     quantity: quantity,
     maxUnitPrice: (product.costPrice || product.price) * 1.5,
     idempotencyKey,
-    externalOrderId: idempotencyKey,
+    externalOrderId: options.externalOrderId || idempotencyKey,
   });
 
   return res;

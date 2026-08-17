@@ -563,6 +563,50 @@ const fulfillPreorders = async (product) => {
   for (const preorder of pendingPreorders) {
     if (!preorder.userId || !preorder.userId.telegramId) continue;
 
+    if (product.type === 'manual') {
+      const orderQty = preorder.qty || 1;
+      if (product.manualStock !== -1) {
+        const Product = require('../models/Product');
+        const stockRes = await Product.updateOne(
+          { _id: product._id, manualStock: { $gte: orderQty } },
+          { $inc: { manualStock: -orderQty } }
+        );
+        if (!stockRes.modifiedCount) break;
+      }
+
+      const claimedPreorder = await Order.findOneAndUpdate(
+        { _id: preorder._id, status: 'preorder_pending' },
+        { $set: { status: 'pending' } },
+        { new: true }
+      );
+      if (!claimedPreorder) continue;
+
+      const Waitlist = require('../models/Waitlist');
+      await Waitlist.findOneAndDelete({ userId: preorder.userId._id, productId: product._id }).catch(() => {});
+
+      try {
+        const userLang = preorder.userId.language || 'ru';
+        const msgText = userLang === 'en'
+          ? `🎉 <b>Your Pre-order #${preorder._id} is now being processed!</b>\n\n` +
+            `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n\n` +
+            `<i>Operator will deliver the goods shortly!</i>`
+          : `🎉 <b>Ваш предзаказ #${preorder._id} передан на выдачу!</b>\n\n` +
+            `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n\n` +
+            `<i>Оператор скоро передаст вам данные.</i>`;
+
+        await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]],
+          },
+        });
+      } catch (e) {
+        logger.warn(`❌ Не удалось отправить уведомление о ручном предзаказе: ${e.message}`);
+      }
+      await new Promise((r) => setTimeout(r, 40));
+      continue;
+    }
+
     // Атомарный захват свободного ключа (isUsed:false в фильтре) - как при
     // обычной покупке. И ВАЖНО: поле называется usedByOrder, а не orderId -
     // раньше присвоение key.orderId молча отбрасывалось Mongoose (strict mode),

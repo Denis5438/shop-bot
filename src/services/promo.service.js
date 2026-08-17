@@ -1,9 +1,62 @@
 const PromoCode = require('../models/PromoCode');
 const PromoUsage = require('../models/PromoUsage');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction');
+const { withTransaction } = require('./transactionHelper.service');
+
+const sessionOptions = (session) => (session ? { session } : {});
+
+const isPromoCurrentlyValid = (promo) => {
+  if (!promo || promo.isActive === false) return false;
+  return !promo.expiresAt || new Date() <= new Date(promo.expiresAt);
+};
+
+const getUserUsageCount = async (promoId, userId, session) => (
+  PromoUsage.countDocuments({ promoId, userId }, sessionOptions(session))
+);
 
 /**
- * Активация промокода пользователем (для пополнения баланса или привязки скидки)
+ * Atomically consumes one activation slot and records a successful use.
+ * It is called from the purchase transaction, not from the promo input step.
+ */
+const consumePromoUsage = async ({ promo, userId, orderId = null, discountAmount = 0, session = null }) => {
+  const opts = sessionOptions(session);
+  const usageCount = await getUserUsageCount(promo._id, userId, session);
+
+  if (promo.maxPerUser !== -1 && usageCount >= promo.maxPerUser) {
+    throw new Error('PROMO_USER_LIMIT');
+  }
+
+  const activationFilter = {
+    _id: promo._id,
+    isActive: true,
+    ...(promo.maxActivations === -1 ? {} : { currentActivations: { $lt: promo.maxActivations } }),
+  };
+  const claimedPromo = await PromoCode.findOneAndUpdate(
+    activationFilter,
+    { $inc: { currentActivations: 1 } },
+    { new: true, ...opts }
+  );
+  if (!claimedPromo) throw new Error('PROMO_GLOBAL_LIMIT');
+
+  const usage = new PromoUsage({
+    promoId: promo._id,
+    userId,
+    orderId,
+    usageNumber: usageCount + 1,
+    code: promo.code,
+    type: promo.type,
+    discountAmount: Number(discountAmount) || 0,
+  });
+  await usage.save(opts);
+  return usage;
+};
+
+/**
+ * Activates a promo for the next purchase. Discount promos are only reserved
+ * here; their global/per-user counters are consumed after a successful order.
+ * Balance promos are immediate credit operations and therefore consume usage
+ * and write a ledger entry in one transaction.
  */
 const activatePromoCode = async (user, codeStr) => {
   if (!codeStr || typeof codeStr !== 'string') {
@@ -13,58 +66,54 @@ const activatePromoCode = async (user, codeStr) => {
   const cleanCode = codeStr.trim().toUpperCase();
   const promo = await PromoCode.findOne({ code: cleanCode, isActive: true });
 
-  if (!promo) {
-    return { success: false, reason: '❌ Промокод не найден или неактивен' };
+  if (!isPromoCurrentlyValid(promo)) {
+    return { success: false, reason: '❌ Промокод не найден, неактивен или истёк' };
   }
 
-  // Проверка срока годности
-  if (promo.expiresAt && new Date() > new Date(promo.expiresAt)) {
-    return { success: false, reason: '❌ Срок действия промокода истёк' };
-  }
-
-  // Проверка общих активаций
-  if (promo.maxActivations !== -1 && promo.currentActivations >= promo.maxActivations) {
-    return { success: false, reason: '❌ Превышен лимит активаций промокода' };
-  }
-
-  // Проверка активаций конкретным юзером
-  const userUsageCount = await PromoUsage.countDocuments({ promoId: promo._id, userId: user._id });
+  const userUsageCount = await getUserUsageCount(promo._id, user._id);
   if (promo.maxPerUser !== -1 && userUsageCount >= promo.maxPerUser) {
-    return { success: false, reason: '❌ Вы уже активировали этот промокод' };
+    return { success: false, reason: '❌ Вы уже использовали этот промокод максимальное число раз' };
   }
 
-  // Увеличиваем счётчик активаций и сохраняем лог использования в БД для ЛЮБОГО типа промокода
-  promo.currentActivations += 1;
-  await promo.save();
+  if (promo.maxActivations !== -1 && promo.currentActivations >= promo.maxActivations) {
+    return { success: false, reason: '❌ Превышен лимит использований промокода' };
+  }
 
-  await PromoUsage.create({
-    promoId: promo._id,
-    userId: user._id,
-    code: promo.code,
-    type: promo.type,
-    discountAmount: promo.type === 'balance' ? promo.value : 0,
-  });
-
-  // 1. Если это промокод на ПОПОЛНЕНИЕ БАЛАНСА
   if (promo.type === 'balance') {
-    const bonusAmount = promo.value;
+    let updatedUser = null;
+    await withTransaction(async (session) => {
+      const opts = sessionOptions(session);
+      updatedUser = await User.findOneAndUpdate(
+        { _id: user._id },
+        { $inc: { balance: promo.value } },
+        { new: true, ...opts }
+      );
+      if (!updatedUser) throw new Error('USER_NOT_FOUND');
 
-    const updatedUser = await User.findByIdAndUpdate(
-      user._id,
-      { $inc: { balance: bonusAmount } },
-      { new: true }
-    );
+      await consumePromoUsage({
+        promo,
+        userId: user._id,
+        discountAmount: promo.value,
+        session,
+      });
+
+      await new Transaction({
+        userId: user._id,
+        type: 'manual_credit',
+        amount: promo.value,
+        description: `Промокод на баланс: ${promo.code}`,
+      }).save(opts);
+    });
 
     return {
       success: true,
       type: 'balance',
       code: promo.code,
-      bonusAmount,
+      bonusAmount: promo.value,
       newBalance: updatedUser.balance,
     };
   }
 
-  // 2. Если это промокод на СКИДКУ (% или фиксированная) - сохраняем в модель юзера для 100% персистентности
   await User.updateOne({ _id: user._id }, { $set: { activePromoCode: promo._id } });
 
   return {
@@ -79,12 +128,10 @@ const activatePromoCode = async (user, codeStr) => {
   };
 };
 
-/**
- * Валидация и расчёт скидки для корзины/заказа
- */
+/** Validates a promo and calculates its discount without mutating the ledger. */
 const calculateDiscount = (promo, orderAmount, productId = null) => {
-  if (!promo) return { valid: false, reason: '❌ Промокод не найден' };
-  if (promo.isActive === false) return { valid: false, reason: '❌ Промокод неактивен' };
+  if (!isPromoCurrentlyValid(promo)) return { valid: false, reason: '❌ Промокод не найден или истёк' };
+  if (!['percent', 'fixed'].includes(promo.type)) return { valid: false, reason: '❌ Это не скидочный промокод' };
 
   if (promo.minOrderAmount && orderAmount < promo.minOrderAmount) {
     return { valid: false, reason: `❌ Промокод действует только от ${promo.minOrderAmount} USDT` };
@@ -104,14 +151,28 @@ const calculateDiscount = (promo, orderAmount, productId = null) => {
   discountAmount = Math.round(discountAmount * 100) / 100;
   const finalPrice = Math.max(0, Math.round((orderAmount - discountAmount) * 100) / 100);
 
-  return {
-    valid: true,
+  return { valid: true, discountAmount, finalPrice };
+};
+
+const consumeDiscountPromo = async ({ promoId, userId, orderId, discountAmount, session = null }) => {
+  const query = PromoCode.findById(promoId);
+  if (session) query.session(session);
+  const promo = await query;
+  if (!isPromoCurrentlyValid(promo) || !['percent', 'fixed'].includes(promo.type)) {
+    throw new Error('PROMO_UNAVAILABLE');
+  }
+
+  return consumePromoUsage({
+    promo,
+    userId,
+    orderId,
     discountAmount,
-    finalPrice,
-  };
+    session,
+  });
 };
 
 module.exports = {
   activatePromoCode,
   calculateDiscount,
+  consumeDiscountPromo,
 };

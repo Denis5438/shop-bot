@@ -7,7 +7,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "lint": "eslint src index.js",
-    "lint:fix": "eslint src index.js --fix"
+    "lint:fix": "eslint src index.js --fix",
+    "migrate:token-raw": "node scripts/migrate-token-raw.js"
   },
   "dependencies": {
     "axios": "^1.7.2",

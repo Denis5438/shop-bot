@@ -13,8 +13,12 @@ const orderSchema = new mongoose.Schema({
   qty: { type: Number, default: 1 },
   costPrice: { type: Number, default: 0 },
   keyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Key', default: null },
-  tokenRaw: { type: String, default: null },
+  // Sensitive session data is excluded from ordinary queries. Activation and
+  // retry flows explicitly opt in with select('+tokenRaw').
+  tokenRaw: { type: String, default: null, select: false },
   apiOrderId: { type: String, default: null },
+  supplierOrderId: { type: String, default: null },
+  supplierIdempotencyKey: { type: String, default: null },
   activationResult: { type: String, default: null },
   adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   confirmedAt: { type: Date, default: null },
@@ -58,5 +62,9 @@ orderSchema.index(
 );
 // Крон авто-подтверждения: {status:'awaiting_confirmation', deliveredAt < cutoff}
 orderSchema.index({ status: 1, deliveredAt: 1 });
+orderSchema.index(
+  { supplierIdempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { supplierIdempotencyKey: { $type: 'string' } } }
+);
 
 module.exports = mongoose.model('Order', orderSchema);
