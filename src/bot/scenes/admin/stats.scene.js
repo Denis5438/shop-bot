@@ -317,37 +317,6 @@ const showSalesChart = async (ctx) => {
     totalWeek += volume;
   }
 
-  // 3. Формируем конфиг QuickChart (стильный тёмный дизайн)
-  const chartConfig = {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Выручка (USDT)',
-        data: data,
-        backgroundColor: 'rgba(56, 189, 248, 0.75)',
-        borderColor: 'rgb(56, 189, 248)',
-        borderWidth: 2,
-        borderRadius: 6,
-      }]
-    },
-    options: {
-      title: {
-        display: true,
-        text: 'Выручка за последние 7 дней (USDT)',
-        fontSize: 16,
-        fontColor: '#ffffff'
-      },
-      legend: { display: false },
-      scales: {
-        yAxes: [{ ticks: { beginAtZero: true, fontColor: '#94a3b8' } }],
-        xAxes: [{ ticks: { fontColor: '#94a3b8' } }]
-      }
-    }
-  };
-
-  const chartUrl = `https://quickchart.io/chart?w=650&h=330&backgroundColor=%230f172a&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
-
   // Текстовая разбивка по дням
   let chartRowsText = '';
   const maxVal = Math.max(...data.map(Number), 1);
@@ -369,28 +338,10 @@ const showSalesChart = async (ctx) => {
   await ctx.deleteMessage().catch(() => {});
 
   const logger = require('../../../config/logger');
+  const { renderSalesChartPng } = require('../../../services/chart.service');
 
   try {
-    const imgRes = await axios.post(
-      'https://quickchart.io/chart',
-      {
-        chart: chartConfig,
-        width: 650,
-        height: 330,
-        backgroundColor: '#0f172a',
-        format: 'png',
-      },
-      {
-        responseType: 'arraybuffer',
-        timeout: 6000,
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        },
-      }
-    );
-
-    const imgBuffer = Buffer.from(imgRes.data);
+    const imgBuffer = await renderSalesChartPng(labels, data, totalWeek);
     await ctx.replyWithPhoto(
       { source: imgBuffer },
       {
@@ -400,7 +351,7 @@ const showSalesChart = async (ctx) => {
       }
     );
   } catch (err) {
-    logger.warn(`[showSalesChart] Ошибка генерации фото графика: ${err.message}. Отправляю текстовый график.`);
+    logger.error(`[showSalesChart] Ошибка генерации фото графика: ${err.message}`);
     await ctx.reply(text, {
       parse_mode: 'HTML',
       ...keyboard,
