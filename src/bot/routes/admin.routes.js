@@ -256,6 +256,12 @@ module.exports = (bot) => {
     await productsScene.toggleProduct(ctx, ctx.match[1]);
   });
 
+  bot.action(/^adm:p_orig:([^:]+)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await productsScene.toggleProductOrigin(ctx, productId, page);
+  });
+
   bot.action(/^admin:product:field:category:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const productId = ctx.match[1];

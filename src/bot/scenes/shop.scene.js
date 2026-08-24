@@ -343,6 +343,18 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
 
   const priceLabel = lang === 'en' ? '💰 Price' : '💰 Цена';
   const stockLabel = lang === 'en' ? '📦 Stock' : '📦 Наличие';
+  const statusLabel = t('product_status_label') || (lang === 'en' ? 'Status' : 'Статус');
+  const isSupplier = product.itemOrigin === 'supplier' || (product.sellerId && product.itemOrigin !== 'verified');
+  const originBadge = isSupplier
+    ? (t('product_origin_supplier') || (lang === 'en' ? '👤 Supplier Product' : '👤 Товар от поставщика'))
+    : (t('product_origin_verified') || (lang === 'en' ? '🛡 Верифицированный ✅' : '🛡 Верифицированный ✅'));
+
+  let warrantyLine = '';
+  if (product.warrantyDays && product.warrantyDays > 0) {
+    const warrantyLabel = t('product_warranty_label') || (lang === 'en' ? '⏳ Warranty' : '⏳ Гарантия');
+    const warrantyVal = t('product_warranty_days', { days: product.warrantyDays }) || (lang === 'en' ? `${product.warrantyDays} days` : `${product.warrantyDays} дн.`);
+    warrantyLine = `\n${warrantyLabel}: <b>${warrantyVal}</b>`;
+  }
 
   let priceDisplay = `<b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)`;
   if (effectivePrice < product.price) {
@@ -354,7 +366,8 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     balanceHeader(ctx.user) +
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
     `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
-    `${stockLabel}: ${stockIndicator(stock, t)}</blockquote>\n\n` +
+    `${stockLabel}: ${stockIndicator(stock, t)}\n` +
+    `🛡 ${statusLabel}: <b>${originBadge}</b>${warrantyLine}</blockquote>\n\n` +
     `${description ? `<blockquote expandable>📝 ${escapeHtml(description)}</blockquote>\n` : ''}`;
 
   const buttons = [];
@@ -688,10 +701,16 @@ const showProductDescInfo = async (ctx, productId, fromPage = 1, qty = 1) => {
     ? (lang === 'en' ? '🔑 Activation on your account' : '🔑 Активация на вашем аккаунте')
     : (lang === 'en' ? '📦 Ready account / key' : '📦 Готовый аккаунт / ключ');
 
+  const isSupplier = product.itemOrigin === 'supplier' || (product.sellerId && product.itemOrigin !== 'verified');
+  const originBadge = isSupplier
+    ? (lang === 'en' ? '👤 Supplier Product' : '👤 Товар от поставщика')
+    : (lang === 'en' ? '🛡 Verified ✅' : '🛡 Верифицированный ✅');
+
   const text =
     `📝 <b>Описание товара: ${escapeHtml(name)}</b>\n\n` +
+    `🛡 <b>Статус:</b> ${originBadge}\n` +
     `🚚 <b>Способ выдачи:</b> ${deliveryLabel}\n` +
-    `🛡 <b>Срок гарантии:</b> ${product.warrantyDays ?? 5} дн.\n\n` +
+    `⏳ <b>Срок гарантии:</b> ${product.warrantyDays ?? 5} дн.\n\n` +
     `<b>Подробная информация:</b>\n` +
     `<blockquote>${escapeHtml(description)}</blockquote>`;
 

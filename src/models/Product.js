@@ -36,6 +36,9 @@ const productSchema = new mongoose.Schema({
   lowStockNotifiedAt: { type: Date, default: null },
   warrantyDays: { type: Number, default: 5 },
 
+  // ─── Происхождение / Статус товара ──────────────────────────────────────
+  itemOrigin: { type: String, enum: ['verified', 'supplier'], default: 'verified' },
+
   // ─── Seller-система ───────────────────────────────────────────────────────
   // Привязанный продавец (только для товаров типа manual)
   sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },

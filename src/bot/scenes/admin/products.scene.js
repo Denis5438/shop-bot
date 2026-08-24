@@ -136,6 +136,8 @@ const showProductEdit = async (ctx, productId, page = 1) => {
   const nameEnStr = product.nameEn ? `<b>${escapeHtml(product.nameEn)}</b>` : '<i>не задано</i>';
   const descStatus = `${product.description ? 'RU ✅' : 'RU ⚪'} | ${product.descriptionEn ? 'EN ✅' : 'EN ⚪'}`;
 
+  const originLabel = product.itemOrigin === 'supplier' ? '👤 От поставщика' : '🛡 Верифицированный ✅';
+
   const text =
     `✏️ <b>Редактирование товара</b>\n\n` +
     `📦 Название (RU): <b>${escapeHtml(product.name)}</b>\n` +
@@ -148,6 +150,7 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     `📦 Остаток: <b>${stock}</b>\n` +
     `📝 Описания: ${descStatus}\n` +
     `🛡 Гарантия: ${product.warrantyDays ?? 5} дн.\n` +
+    `📍 Происхождение: <b>${originLabel}</b>\n` +
     `${sellerLine}\n` +
     `🔘 Статус: ${product.isActive ? '✅ Активен (виден в магазине)' : '🔴 Скрыт'}`;
 
@@ -164,7 +167,13 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     ],
     [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}:${page}`)],
     [Markup.button.callback('📦 Задать остаток вручную', `admin:product:set_stock:${productId}:${page}`)],
-    [Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}:${page}`)],
+    [
+      Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}:${page}`),
+      Markup.button.callback(
+        product.itemOrigin === 'supplier' ? '👤 Тип: Поставщик' : '🛡 Тип: Верифицирован',
+        `adm:p_orig:${productId}:${page}`
+      ),
+    ],
     [Markup.button.callback('🔑 Загрузить ключи (TXT)', `admin:keys:add:${productId}`)],
     [Markup.button.callback('📣 Сделать рассылку товара', `admin:product:broadcast:${productId}`)],
     [Markup.button.callback('👯 Клонировать товар', `admin:product:clone:${productId}`)],
@@ -713,6 +722,19 @@ const removeSellerFromProduct = async (ctx, productId) => {
   await showProductEdit(ctx, productId);
 };
 
+// ─── Переключение типа/происхождения товара ──────────────────────────────────
+const toggleProductOrigin = async (ctx, productId, page = 1) => {
+  const product = await Product.findById(productId);
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  product.itemOrigin = product.itemOrigin === 'supplier' ? 'verified' : 'supplier';
+  await product.save();
+
+  const label = product.itemOrigin === 'supplier' ? '👤 От поставщика' : '🛡 Верифицированный';
+  await ctx.answerCbQuery(`Статус: ${label}`).catch(() => {});
+  await showProductEdit(ctx, productId, page);
+};
+
 module.exports = {
   showProductsList,
   showProductEdit,
@@ -727,4 +749,5 @@ module.exports = {
   pickSellerForProduct,
   askManualSellerInput,
   removeSellerFromProduct,
+  toggleProductOrigin,
 };
