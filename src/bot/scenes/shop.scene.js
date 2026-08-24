@@ -345,9 +345,10 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const stockLabel = lang === 'en' ? '📦 Stock' : '📦 Наличие';
   const statusLabel = t('product_status_label') || (lang === 'en' ? 'Status' : 'Статус');
   const isSupplier = product.itemOrigin === 'supplier' || (product.sellerId && product.itemOrigin !== 'verified');
-  const originBadge = isSupplier
-    ? (t('product_origin_supplier') || (lang === 'en' ? '👤 Supplier Product' : '👤 Товар от поставщика'))
-    : (t('product_origin_verified') || (lang === 'en' ? '🛡 Верифицированный ✅' : '🛡 Верифицированный ✅'));
+  const statusIcon = isSupplier ? '👤' : '🛡';
+  const originText = isSupplier
+    ? (t('product_origin_supplier') || (lang === 'en' ? 'Supplier Product' : 'Товар от поставщика'))
+    : (t('product_origin_verified') || (lang === 'en' ? 'Verified' : 'Верифицированный'));
 
   let warrantyLine = '';
   if (product.warrantyDays && product.warrantyDays > 0) {
@@ -367,7 +368,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
     `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
     `${stockLabel}: ${stockIndicator(stock, t)}\n` +
-    `🛡 ${statusLabel}: <b>${originBadge}</b>${warrantyLine}</blockquote>\n\n` +
+    `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}</blockquote>\n\n` +
     `${description ? `<blockquote expandable>📝 ${escapeHtml(description)}</blockquote>\n` : ''}`;
 
   const buttons = [];
@@ -702,13 +703,14 @@ const showProductDescInfo = async (ctx, productId, fromPage = 1, qty = 1) => {
     : (lang === 'en' ? '📦 Ready account / key' : '📦 Готовый аккаунт / ключ');
 
   const isSupplier = product.itemOrigin === 'supplier' || (product.sellerId && product.itemOrigin !== 'verified');
-  const originBadge = isSupplier
-    ? (lang === 'en' ? '👤 Supplier Product' : '👤 Товар от поставщика')
-    : (lang === 'en' ? '🛡 Verified ✅' : '🛡 Верифицированный ✅');
+  const statusIcon = isSupplier ? '👤' : '🛡';
+  const originText = isSupplier
+    ? (lang === 'en' ? 'Supplier Product' : 'Товар от поставщика')
+    : (lang === 'en' ? 'Verified' : 'Верифицированный');
 
   const text =
     `📝 <b>Описание товара: ${escapeHtml(name)}</b>\n\n` +
-    `🛡 <b>Статус:</b> ${originBadge}\n` +
+    `${statusIcon} <b>Статус:</b> ${originText}\n` +
     `🚚 <b>Способ выдачи:</b> ${deliveryLabel}\n` +
     `⏳ <b>Срок гарантии:</b> ${product.warrantyDays ?? 5} дн.\n\n` +
     `<b>Подробная информация:</b>\n` +
