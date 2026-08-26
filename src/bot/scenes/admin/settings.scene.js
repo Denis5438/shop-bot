@@ -48,10 +48,18 @@ const showSettings = async (ctx) => {
 
   const smartPriceText = settings.smartPricing ? '🔴 Вкл' : '🟢 Выкл';
   const smartBtnStr = settings.smartPricing ? '🚕 Smart-Цены: Выкл' : '🚕 Smart-Цены: Вкл';
+  const plategaStatusText = settings.plategaEnabled !== false ? '🟢 Вкл' : '🔴 Выкл';
+  const plategaBtnStr = settings.plategaEnabled !== false ? '⚡ Platega (СБП): Выкл' : '⚡ Platega (СБП): Вкл';
+  const webhookDomain = process.env.RENDER_EXTERNAL_HOSTNAME || process.env.DOMAIN || 'ваш-домен.onrender.com';
+  const plategaWebhookUrl = `https://${webhookDomain}/webhook/platega`;
   const fmt = (value, fallback = 'не задан') => escapeHtml(value || fallback);
 
   const text =
     `⚙️ <b>Настройки бота</b>\n\n` +
+    `⚡ <b>СБП (Platega.io):</b> <b>${plategaStatusText}</b>\n` +
+    `🆔 Merchant ID: <code>${fmt(settings.plategaMerchantId)}</code>\n` +
+    `🔑 Secret Key: <code>${settings.plategaSecret ? '••••••••' + String(settings.plategaSecret).slice(-4) : 'не задан'}</code>\n` +
+    `🔗 <b>Webhook для ЛК Platega:</b>\n<code>${plategaWebhookUrl}</code>\n\n` +
     `💳 Кошелёк для пополнений:\n<code>${fmt(settings.topupWallet)}</code>\n` +
     `🌐 Сеть: <b>${fmt(settings.topupNetwork)}</b>\n\n` +
     `🏦 Карта: <code>${fmt(settings.cardNumber, 'не задана')}</code>\n` +
@@ -70,6 +78,9 @@ const showSettings = async (ctx) => {
     `🛡 Тех. обслуживание: <b>${modeText}</b>`;
 
   const buttons = [
+    [Markup.button.callback(plategaBtnStr, 'admin:settings:toggle_platega')],
+    [Markup.button.callback('✏️ Platega Merchant ID', 'admin:settings:edit:plategaMerchantId')],
+    [Markup.button.callback('✏️ Platega Secret Key', 'admin:settings:edit:plategaSecret')],
     [Markup.button.callback('✏️ Изменить кошелёк', 'admin:settings:edit:topupWallet')],
     [Markup.button.callback('✏️ Изменить сеть', 'admin:settings:edit:topupNetwork')],
     [Markup.button.callback('✏️ Номер карты', 'admin:settings:edit:cardNumber')],
@@ -161,9 +172,20 @@ const toggleDigest = async (ctx) => {
   await showSettings(ctx);
 };
 
+const togglePlatega = async (ctx) => {
+  const settings = await getLiveSettings();
+  settings.plategaEnabled = settings.plategaEnabled === false;
+  await settings.save();
+  invalidateCache();
+  await ctx.answerCbQuery(settings.plategaEnabled !== false ? '⚡ Platega (СБП) включена' : '⚡ Platega (СБП) выключена');
+  await showSettings(ctx);
+};
+
 // Запрос на редактирование поля
 const startEditSetting = async (ctx, field) => {
   const fieldNames = {
+    plategaMerchantId: 'Platega Merchant ID (из ЛК platega.io)',
+    plategaSecret: 'Platega Secret Key (API ключ из ЛК platega.io)',
     topupWallet: 'кошелёк для пополнения (TRC20)',
     topupNetwork: 'сеть для пополнения (TRC20 и т.д.)',
     minTopup: 'минимальную сумму пополнения (в USDT)',
@@ -256,6 +278,7 @@ module.exports = {
   toggleSmartPricing,
   toggleMarkdown,
   toggleDigest,
+  togglePlatega,
   startEditSetting,
   handleSettingsInput,
   resetAllUserToS,

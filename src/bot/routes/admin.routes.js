@@ -774,6 +774,10 @@ module.exports = (bot) => {
     await settingsScene.toggleDigest(ctx);
   });
 
+  bot.action('admin:settings:toggle_platega', adminMiddleware, async (ctx) => {
+    await settingsScene.togglePlatega(ctx);
+  });
+
   bot.action(/^admin:settings:edit:(\w+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     await settingsScene.startEditSetting(ctx, ctx.match[1]);

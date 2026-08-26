@@ -453,7 +453,22 @@ module.exports = (bot) => {
     await topupScene.showDirectOptions(ctx);
   });
 
-  // Карта
+  // СБП Автоматически (Platega)
+  bot.action('topup:pay:platega', async (ctx) => {
+    await topupScene.showPlategaDetails(ctx);
+  });
+
+  // Проверка статуса оплаты Platega
+  bot.action(/^topup:platega:check:(.+)$/, async (ctx) => {
+    await topupScene.handleCheckPlategaPayment(ctx, ctx.match[1]);
+  });
+
+  // Отмена оплаты Platega
+  bot.action(/^topup:platega:cancel:(.+)$/, async (ctx) => {
+    await topupScene.handleCancelPlategaPayment(ctx, ctx.match[1]);
+  });
+
+  // Карта IDBank (Вручную)
   bot.action('topup:pay:card', async (ctx) => {
     await topupScene.showCardDetails(ctx);
   });

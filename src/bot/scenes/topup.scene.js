@@ -33,7 +33,8 @@ const startTopup = async (ctx) => {
 
   const title = lang === 'en' ? 'Balance Top Up' : 'Пополнение баланса';
   const choose = lang === 'en' ? 'Select a payment method:' : 'Выберите удобный способ оплаты:';
-  const cardLabel = lang === 'en' ? '🏦 Bank Card (Russia / SBP)' : '🏦 Банковская карта (РФ / СБП)';
+  const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
+  const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
   const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
   const backLabel = t('btn_back');
 
@@ -42,7 +43,8 @@ const startTopup = async (ctx) => {
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback(cardLabel, 'topup:pay:card')],
+        [Markup.button.callback(sbpLabel, 'topup:pay:platega')],
+        [Markup.button.callback(idbankLabel, 'topup:pay:card')],
         [Markup.button.callback(bybitLabel, 'topup:pay:bybit')],
         [Markup.button.callback(backLabel, 'menu:main')],
       ]),
@@ -60,7 +62,8 @@ const startTopupWithAmount = async (ctx, amount) => {
   const title = lang === 'en' ? 'Quick Top Up' : 'Быстрое пополнение';
   const amountLbl = lang === 'en' ? 'Amount to pay' : 'Сумма к пополнению';
   const chooseLbl = lang === 'en' ? 'Select a payment method:' : 'Выберите способ оплаты:';
-  const cardLabel = lang === 'en' ? '🏦 Bank Card (Russia / SBP)' : '🏦 Банковская карта (РФ / СБП)';
+  const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
+  const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
   const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
   const backLabel = t('btn_back');
 
@@ -70,7 +73,8 @@ const startTopupWithAmount = async (ctx, amount) => {
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback(cardLabel, 'topup:pay:card')],
+        [Markup.button.callback(sbpLabel, 'topup:pay:platega')],
+        [Markup.button.callback(idbankLabel, 'topup:pay:card')],
         [Markup.button.callback(bybitLabel, 'topup:pay:bybit')],
         [Markup.button.callback(backLabel, 'menu:main')],
       ]),
@@ -122,7 +126,7 @@ const askTopupAmount = async (ctx, method, network = null) => {
     ...Markup.inlineKeyboard([
       presetRow1,
       presetRow2,
-      [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', method === 'card' ? 'topup:method:direct' : 'topup:pay:bybit')],
+      [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', (method === 'card' || method === 'platega') ? 'topup:method:direct' : 'topup:pay:bybit')],
     ]),
   };
 
@@ -132,7 +136,12 @@ const askTopupAmount = async (ctx, method, network = null) => {
   }
 };
 
-// ─── Шаг 3а: Карта ───────────────────────────────────────────────────────────
+// ─── Шаг 3а: СБП Автоматически (Platega) ──────────────────────────────────────
+const showPlategaDetails = async (ctx) => {
+  await askTopupAmount(ctx, 'platega', null);
+};
+
+// ─── Шаг 3б: Карта IDBank (Вручную) ──────────────────────────────────────────
 const showCardDetails = async (ctx) => {
   await askTopupAmount(ctx, 'card', null);
 };
@@ -259,6 +268,95 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 
   topup.amountUSDT = amountUSDT;
   topup.amountRUB = amountRUB;
+
+  // ─── Обработка пополнения через СБП (Platega) ──────────────────────────────
+  if (method === 'platega') {
+    const plategaService = require('../../services/platega.service');
+    const plategaConfig = await plategaService.getPlategaConfig();
+    if (!plategaConfig.isReady) {
+      await ctx.reply(lang === 'en' ? '❌ SBP payment is temporarily unavailable. Please choose another payment method.' : '❌ Оплата через СБП временно недоступна. Пожалуйста, выберите другой способ пополнения.', {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback(lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)', 'topup:pay:card')],
+          [Markup.button.callback(lang === 'en' ? '📊 Bybit / USDT' : '📊 Bybit / USDT', 'topup:pay:bybit')],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:method:direct')],
+        ]),
+      });
+      return true;
+    }
+
+    const roundedRub = Math.max(1, Math.round(amountRUB));
+    const request = new TopupRequest({
+      userId: ctx.user._id,
+      amount: amountUSDT,
+      amountRub: roundedRub,
+      method: 'platega',
+      status: 'pending',
+    });
+    await request.save();
+
+    let pRes;
+    try {
+      pRes = await plategaService.createPayment({
+        amountRub: roundedRub,
+        description: `Пополнение баланса @${ctx.user.username || ctx.user.telegramId} (${amountUSDT} USDT)`,
+        payload: String(request._id),
+        userId: ctx.user.telegramId,
+        userName: ctx.user.username,
+      });
+    } catch (err) {
+      await TopupRequest.deleteOne({ _id: request._id }).catch(() => {});
+      const logger = require('../../config/logger');
+      logger.error(`[Platega Topup Error]: ${err.message}`);
+      await ctx.reply(lang === 'en' ? '❌ Failed to create SBP payment invoice. Please try again later or use another method.' : '❌ Не удалось создать счёт для оплаты через СБП. Попробуйте позже или выберите другой способ.', {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:method:direct')],
+          [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
+        ]),
+      });
+      return true;
+    }
+
+    request.paymentId = pRes.transactionId;
+    request.payUrl = pRes.payUrl;
+    await request.save();
+
+    ctx.session.topup = null; // Завершаем FSM ввода суммы
+
+    const text = lang === 'en'
+      ? `⚡ <b>SBP Payment (Instant)</b>\n\n` +
+        `<blockquote>💰 Amount to pay: <b>${roundedRub} ₽</b> (≈ ${amountUSDT.toFixed(2)} USDT)\n` +
+        `💱 Rate: 1 USDT = ${rate.toFixed(2)} ₽\n` +
+        `⏱ Link expires in: 15 minutes</blockquote>\n\n` +
+        `1️⃣ Click <b>«Pay ${roundedRub} ₽ via SBP»</b> below.\n` +
+        `2️⃣ Select your bank and confirm payment in the bank app.\n` +
+        `3️⃣ Balance will be credited automatically upon payment, or tap <b>«Check payment»</b>!`
+      : `⚡ <b>Пополнение через СБП (Автоматически)</b>\n\n` +
+        `<blockquote>💰 Сумма к оплате: <b>${roundedRub} ₽</b> (≈ ${amountUSDT.toFixed(2)} USDT)\n` +
+        `💱 Курс: 1 USDT = ${rate.toFixed(2)} ₽\n` +
+        `⏱ Ссылка активна: 15 минут</blockquote>\n\n` +
+        `1️⃣ Нажмите кнопку <b>«Оплатить ${roundedRub} ₽ через СБП»</b> ниже.\n` +
+        `2️⃣ Выберите свой банк и подтвердите перевод в приложении банка.\n` +
+        `3️⃣ Баланс зачислится автоматически, либо нажмите <b>«Проверить оплату»</b>!`;
+
+    const buttons = [
+      [Markup.button.url(lang === 'en' ? `🔗 Pay ${roundedRub} ₽ via SBP` : `🔗 Оплатить ${roundedRub} ₽ через СБП`, pRes.payUrl)],
+      [Markup.button.callback(lang === 'en' ? '🔄 Check payment' : '🔄 Проверить оплату', `topup:platega:check:${request._id}`)],
+      [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', `topup:platega:cancel:${request._id}`)],
+    ];
+
+    if (topup.msgId) {
+      await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, text, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard(buttons),
+      }).catch(() => ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }));
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+    }
+    return true;
+  }
+
   const isAutoCrypto = method === 'bybit'; // И UID, и блокчейны теперь авто!
 
   // Строим реквизиты
@@ -841,10 +939,202 @@ const handleTopupProof = async (ctx) => {
   return true;
 };
 
+// ─── Подтверждение и зачисление платежа Platega (СБП) ─────────────────────────
+const confirmPlategaPayment = async (requestOrId, plategaData = {}) => {
+  const requestId = requestOrId?._id || requestOrId;
+  const logger = require('../../config/logger');
+
+  // Атомарно переводим заявку из pending в confirmed
+  const request = await TopupRequest.findOneAndUpdate(
+    { _id: requestId, status: 'pending' },
+    { $set: { status: 'confirmed', processedAt: new Date() } },
+    { new: true }
+  ).populate('userId');
+
+  if (!request) {
+    logger.warn(`[Platega] Заявка ${requestId} уже была подтверждена или не найдена`);
+    return false;
+  }
+
+  const user = request.userId;
+  if (!user) {
+    logger.error(`[Platega] Пользователь для заявки ${requestId} не найден`);
+    return false;
+  }
+
+  // Начисляем баланс пользователю атомарно
+  await User.updateOne(
+    { _id: user._id },
+    { $inc: { balance: request.amount } }
+  );
+
+  // Создаём запись в истории транзакций
+  const Transaction = require('../../models/Transaction');
+  await new Transaction({
+    userId: user._id,
+    type: 'topup',
+    amount: request.amount,
+    topupRequestId: request._id,
+    description: 'Пополнение через СБП (Platega)',
+  }).save().catch((err) => {
+    logger.error(`[Platega] Ошибка создания транзакции: ${err.message}`);
+  });
+
+  const rubStr = request.amountRub ? ` (~${request.amountRub} ₽)` : '';
+  const newBalance = ((user.balance || 0) + request.amount).toFixed(2);
+
+  // Уведомляем пользователя
+  const userMsg =
+    `✅ <b>Оплата получена! Баланс пополнен</b>\n\n` +
+    `💰 Зачислено: <b>${request.amount.toFixed(2)} USDT</b>${rubStr}\n` +
+    `⚡ Способ: <b>СБП (Система быстрых платежей)</b>\n` +
+    `💳 Текущий баланс: <b>${newBalance} USDT</b>\n\n` +
+    `<i>Приятных покупок!</i>`;
+
+  const userKeyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🛍 В магазин', 'menu:shop')],
+    [Markup.button.callback('👤 Профиль', 'menu:profile')],
+  ]);
+
+  await notif.sendToUser(user.telegramId, userMsg, {
+    parse_mode: 'HTML',
+    ...userKeyboard,
+  }).catch(() => {});
+
+  // Уведомляем админов
+  const adminMsg =
+    `⚡ <b>Авто-пополнение через СБП (Platega)</b>\n\n` +
+    `👤 Пользователь: @${escapeHtml(user.username || user.telegramId)} (ID: <code>${user.telegramId}</code>)\n` +
+    `💰 Сумма: <b>${request.amount.toFixed(2)} USDT</b>${rubStr}\n` +
+    `🆔 ID платежа: <code>${request.paymentId || plategaData.id || '-'}</code>\n` +
+    `📅 ${new Date().toLocaleString('ru-RU')}`;
+
+  await notif.sendToAdmins(adminMsg, { parse_mode: 'HTML' }).catch(() => {});
+
+  return true;
+};
+
+// ─── Ручная проверка статуса по кнопке пользователя ──────────────────────────
+const handleCheckPlategaPayment = async (ctx, requestId) => {
+  const lang = ctx.user?.language || 'ru';
+  const request = await TopupRequest.findById(requestId).populate('userId');
+  if (!request) {
+    return ctx.answerCbQuery(lang === 'en' ? 'Request not found' : 'Заявка не найдена', { show_alert: true });
+  }
+
+  if (request.status === 'confirmed') {
+    await ctx.answerCbQuery(lang === 'en' ? '✅ Payment already confirmed!' : '✅ Оплата уже подтверждена!');
+    const successText = lang === 'en'
+      ? `✅ <b>Payment successfully confirmed!</b>\n\nCredited: <b>${request.amount.toFixed(2)} USDT</b> (~${request.amountRub} ₽)\nBalance updated!`
+      : `✅ <b>Оплата успешно подтверждена!</b>\n\nЗачислено: <b>${request.amount.toFixed(2)} USDT</b> (~${request.amountRub} ₽)\nБаланс пополнен!`;
+    const buttons = [
+      [Markup.button.callback(lang === 'en' ? '🛍 Shop' : '🛍 В магазин', 'menu:shop')],
+      [Markup.button.callback(lang === 'en' ? '👤 Profile' : '👤 Профиль', 'menu:profile')],
+    ];
+    return editOrReply(ctx, successText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  }
+
+  if (!request.paymentId) {
+    return ctx.answerCbQuery(lang === 'en' ? 'Transaction ID missing' : 'ID платежа не найден', { show_alert: true });
+  }
+
+  await ctx.answerCbQuery(lang === 'en' ? '⏳ Checking payment status...' : '⏳ Проверяю статус платежа...');
+
+  const plategaService = require('../../services/platega.service');
+  const statusRes = await plategaService.checkStatus(request.paymentId);
+
+  if (statusRes.isConfirmed) {
+    const ok = await confirmPlategaPayment(request, statusRes.data);
+    if (ok) {
+      const successText = lang === 'en'
+        ? `✅ <b>Payment successfully confirmed!</b>\n\nCredited: <b>${request.amount.toFixed(2)} USDT</b> (~${request.amountRub} ₽)\nBalance updated!`
+        : `✅ <b>Оплата успешно подтверждена!</b>\n\nЗачислено: <b>${request.amount.toFixed(2)} USDT</b> (~${request.amountRub} ₽)\nБаланс пополнен!`;
+      const buttons = [
+        [Markup.button.callback(lang === 'en' ? '🛍 Shop' : '🛍 В магазин', 'menu:shop')],
+        [Markup.button.callback(lang === 'en' ? '👤 Profile' : '👤 Профиль', 'menu:profile')],
+      ];
+      return editOrReply(ctx, successText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+    }
+  } else if (statusRes.isPending) {
+    return ctx.answerCbQuery(
+      lang === 'en'
+        ? '⏳ Payment is not received yet. If you already paid, please wait 1-2 minutes and tap again.'
+        : '⏳ Оплата ещё не поступила. Если вы уже оплатили в приложении банка, подождите 1-2 минуты и нажмите кнопку снова.',
+      { show_alert: true }
+    );
+  } else if (statusRes.isCanceled) {
+    await TopupRequest.updateOne({ _id: request._id }, { $set: { status: 'rejected', notes: 'Отменено Platega' } });
+    const cancelText = lang === 'en'
+      ? '❌ <b>Payment expired or canceled.</b>\n\nYou can create a new top-up request.'
+      : '❌ <b>Время ожидания оплаты истекло или платёж был отменён.</b>\n\nВы можете создать новую заявку на пополнение.';
+    return editOrReply(ctx, cancelText, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '⬅️ Top Up again' : '⬅️ Пополнить снова', 'menu:topup')]]),
+    });
+  } else {
+    return ctx.answerCbQuery(
+      lang === 'en' ? '⚠️ Could not get status. Please try again in a few moments.' : '⚠️ Не удалось получить статус. Попробуйте ещё раз через минуту.',
+      { show_alert: true }
+    );
+  }
+};
+
+// ─── Отмена заявки Platega пользователем ──────────────────────────────────────
+const handleCancelPlategaPayment = async (ctx, requestId) => {
+  const lang = ctx.user?.language || 'ru';
+  await TopupRequest.updateOne(
+    { _id: requestId, status: 'pending' },
+    { $set: { status: 'rejected', notes: 'Отменено пользователем' } }
+  ).catch(() => {});
+
+  await ctx.answerCbQuery(lang === 'en' ? 'Payment canceled' : 'Оплата отменена');
+  return startTopup(ctx);
+};
+
+// ─── Обработка входящего Webhook от Platega ───────────────────────────────────
+const handlePlategaWebhook = async (payload = {}) => {
+  const logger = require('../../config/logger');
+  const transactionId = payload.id;
+  const requestId = payload.payload;
+  const status = (payload.status || '').toUpperCase();
+
+  if (status !== 'CONFIRMED') {
+    logger.info(`[Platega Webhook] Статус ${status} для транзакции ${transactionId}, пропускаем`);
+    return { status: 'ignored' };
+  }
+
+  let query = null;
+  if (requestId && String(requestId).length === 24) {
+    query = { _id: requestId };
+  } else if (transactionId) {
+    query = { paymentId: transactionId };
+  }
+
+  if (!query) {
+    logger.warn(`[Platega Webhook] Нет transactionId или requestId в payload: ${JSON.stringify(payload)}`);
+    return { status: 'missing_identifiers' };
+  }
+
+  const request = await TopupRequest.findOne(query);
+  if (!request) {
+    logger.warn(`[Platega Webhook] Заявка не найдена: ${JSON.stringify(query)}`);
+    return { status: 'not_found' };
+  }
+
+  if (request.status === 'confirmed') {
+    logger.info(`[Platega Webhook] Заявка ${request._id} уже подтверждена`);
+    return { status: 'already_confirmed' };
+  }
+
+  const confirmed = await confirmPlategaPayment(request, payload);
+  return { status: confirmed ? 'confirmed' : 'failed' };
+};
+
 module.exports = {
   startTopup,
   startTopupWithAmount,
   showDirectOptions,
+  showPlategaDetails,
   showBybitOptions,
   showBybitNetwork,
   showCardDetails,
@@ -852,4 +1142,8 @@ module.exports = {
   handleTopupProof,
   handleEnterTxid,
   handlePresetAmount,
+  handleCheckPlategaPayment,
+  handleCancelPlategaPayment,
+  confirmPlategaPayment,
+  handlePlategaWebhook,
 };

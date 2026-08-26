@@ -8,6 +8,7 @@ const { withTransaction } = require('../../../services/transactionHelper.service
 const { escapeHtml, safeEdit } = require('../../utils/ui');
 
 const METHOD_LABELS = {
+  platega: '⚡ СБП (Platega)',
   card: '🏦 Карта Idbank',
   bybit: '📊 Bybit (USDT)',
   unknown: '❓ Неизвестно',

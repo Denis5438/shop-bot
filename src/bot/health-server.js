@@ -44,14 +44,50 @@ function buildHealthPayload() {
  */
 function startHealthServer(port = 3000) {
   const server = http.createServer((req, res) => {
-    // Ответ на любые методы, кроме GET/HEAD → 405.
+    // Нормализация пути (обрезаем query-string, slash в конце).
+    const urlPath = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
+
+    // ─── Webhook Platega.io ───────────────────────────────────────────
+    if (req.method === 'POST' && (urlPath === '/webhook/platega' || urlPath === '/api/payments/platega/callback')) {
+      let bodyData = '';
+      req.on('data', (chunk) => {
+        bodyData += chunk;
+        if (bodyData.length > 1024 * 1024) { // защита от переполнения (1MB)
+          req.destroy();
+        }
+      });
+      req.on('end', async () => {
+        try {
+          const plategaService = require('../services/platega.service');
+          const isValid = await plategaService.verifyWebhookHeaders(req.headers);
+          if (!isValid) {
+            logger.warn('⚠️ [Platega Webhook] Неверные заголовки авторизации мерчанта');
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Unauthorized' }));
+          }
+
+          const payload = JSON.parse(bodyData || '{}');
+          logger.info(`[Platega Webhook] Получено уведомление: id=${payload.id}, status=${payload.status}, amount=${payload.amount}`);
+
+          const topupScene = require('./scenes/topup.scene');
+          await topupScene.handlePlategaWebhook(payload);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ status: 'ok' }));
+        } catch (err) {
+          logger.error(`❌ [Platega Webhook Error]: ${err.message}`);
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
+    // Ответ на любые другие методы, кроме GET/HEAD → 405.
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { 'Content-Type': 'text/plain' });
       return res.end('Method Not Allowed');
     }
-
-    // Нормализация пути (обрезаем query-string, slash в конце).
-    const urlPath = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
 
     // /ping - самый быстрый ответ, без проверок. Используется для keep-alive.
     if (urlPath === '/ping') {

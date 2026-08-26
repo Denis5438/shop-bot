@@ -28,6 +28,10 @@ const settingsSchema = new mongoose.Schema({
   autoConfirmHours: { type: Number, default: 24 },
   // Обязательная подписка на каналы
   requiredChannelsEnabled: { type: Boolean, default: false },
+  // Platega.io (СБП Автоматически)
+  plategaEnabled: { type: Boolean, default: true },
+  plategaMerchantId: { type: String, default: '' },
+  plategaSecret: { type: String, default: '' },
 }, {
   timestamps: true
 });

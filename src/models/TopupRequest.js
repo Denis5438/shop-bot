@@ -19,11 +19,17 @@ const topupRequestSchema = new mongoose.Schema({
   },
   // Адрес отправителя из блокчейна (для аудита и ручной проверки спорных заявок)
   fromAddress: { type: String, default: null },
+  // Platega.io платёж
+  paymentId: { type: String, default: null },
+  amountRub: { type: Number, default: null },
+  payUrl: { type: String, default: null },
   adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   notes: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
   processedAt: { type: Date, default: null },
 });
+
+topupRequestSchema.index({ paymentId: 1 }, { sparse: true });
 
 topupRequestSchema.index(
   { txid: 1 },
