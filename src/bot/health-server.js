@@ -48,39 +48,50 @@ function startHealthServer(port = 3000) {
     const urlPath = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
 
     // ─── Webhook Platega.io ───────────────────────────────────────────
-    if (req.method === 'POST' && (urlPath === '/webhook/platega' || urlPath === '/api/payments/platega/callback')) {
-      let bodyData = '';
-      req.on('data', (chunk) => {
-        bodyData += chunk;
-        if (bodyData.length > 1024 * 1024) { // защита от переполнения (1MB)
-          req.destroy();
-        }
-      });
-      req.on('end', async () => {
-        try {
-          const plategaService = require('../services/platega.service');
-          const isValid = await plategaService.verifyWebhookHeaders(req.headers);
-          if (!isValid) {
-            logger.warn('⚠️ [Platega Webhook] Неверные заголовки авторизации мерчанта');
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ error: 'Unauthorized' }));
+    if (urlPath === '/webhook/platega' || urlPath === '/api/payments/platega/callback') {
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+          status: 'ok',
+          service: 'Platega Webhook Endpoint',
+          message: 'This endpoint accepts POST notifications from Platega.io',
+        }));
+      }
+
+      if (req.method === 'POST') {
+        let bodyData = '';
+        req.on('data', (chunk) => {
+          bodyData += chunk;
+          if (bodyData.length > 1024 * 1024) { // защита от переполнения (1MB)
+            req.destroy();
           }
+        });
+        req.on('end', async () => {
+          try {
+            const plategaService = require('../services/platega.service');
+            const isValid = await plategaService.verifyWebhookHeaders(req.headers);
+            if (!isValid) {
+              logger.warn('⚠️ [Platega Webhook] Неверные заголовки авторизации мерчанта');
+              res.writeHead(401, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ error: 'Unauthorized' }));
+            }
 
-          const payload = JSON.parse(bodyData || '{}');
-          logger.info(`[Platega Webhook] Получено уведомление: id=${payload.id}, status=${payload.status}, amount=${payload.amount}`);
+            const payload = JSON.parse(bodyData || '{}');
+            logger.info(`[Platega Webhook] Получено уведомление: id=${payload.id}, status=${payload.status}, amount=${payload.amount}`);
 
-          const topupScene = require('./scenes/topup.scene');
-          await topupScene.handlePlategaWebhook(payload);
+            const topupScene = require('./scenes/topup.scene');
+            await topupScene.handlePlategaWebhook(payload);
 
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ status: 'ok' }));
-        } catch (err) {
-          logger.error(`❌ [Platega Webhook Error]: ${err.message}`);
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: err.message }));
-        }
-      });
-      return;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ status: 'ok' }));
+          } catch (err) {
+            logger.error(`❌ [Platega Webhook Error]: ${err.message}`);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
     }
 
     // Ответ на любые другие методы, кроме GET/HEAD → 405.
