@@ -50,7 +50,7 @@ const showSettings = async (ctx) => {
   const smartBtnStr = settings.smartPricing ? '🚕 Smart-Цены: Выкл' : '🚕 Smart-Цены: Вкл';
   const plategaStatusText = settings.plategaEnabled !== false ? '🟢 Вкл' : '🔴 Выкл';
   const plategaBtnStr = settings.plategaEnabled !== false ? '⚡ Platega (СБП): Выкл' : '⚡ Platega (СБП): Вкл';
-  const webhookDomain = process.env.RENDER_EXTERNAL_HOSTNAME || process.env.DOMAIN || 'ваш-домен.onrender.com';
+  const webhookDomain = process.env.RENDER_EXTERNAL_HOSTNAME || process.env.DOMAIN || 'shop-bot-62dd.onrender.com';
   const plategaWebhookUrl = `https://${webhookDomain}/webhook/platega`;
   const fmt = (value, fallback = 'не задан') => escapeHtml(value || fallback);
 
