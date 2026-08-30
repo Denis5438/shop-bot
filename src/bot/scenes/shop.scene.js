@@ -18,6 +18,7 @@ const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
 const promoService = require('../../services/promo.service');
 const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, safeEdit } = require('../utils/ui');
+const { mainKeyboard } = require('../keyboards/main.keyboard');
 
 const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-17-78';
 const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-17-44';
@@ -761,6 +762,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
 
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
+  const productDisplayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
 
   if (!product || !product.isActive) {
     return ctx.answerCbQuery(t('err_not_found'), { show_alert: true });

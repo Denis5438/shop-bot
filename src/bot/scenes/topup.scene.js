@@ -6,6 +6,7 @@ const notif = require('../../services/notification.service');
 const { parseAmount, copyHint, escapeHtml, fmtUSDT } = require('../utils/ui');
 const { SLA } = require('../constants/ux');
 const { startProgress } = require('../utils/progress');
+const { getSettings } = require('../../services/settingsCache.service');
 
 // ─── Вспомогательная функция ──────────────────────────────────────────────────
 const editOrReply = async (ctx, text, extra) => {
