@@ -38,8 +38,9 @@ const orderSchema = new mongoose.Schema({
   disputeOpenedAt: { type: Date, default: null },
   disputeStatus: { type: String, enum: ['open', 'resolved'], default: 'open' },
 
-  // ─── Замены по гарантии ──────────────────────────────────────────────────
+  // ─── Замены по гарантии и сроки подписки ──────────────────────────────────
   warrantyDays: { type: Number, default: 5 },
+  subscriptionDays: { type: Number, default: 30 },
   replacementStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
   replacementReason: { type: String, default: null },
   replacementRejectReason: { type: String, default: null },

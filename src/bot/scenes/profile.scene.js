@@ -217,13 +217,28 @@ const showOrderDetail = async (ctx, orderId) => {
   const isWarrantyActive = now < warrantyExpiresAt && order.status === 'completed';
 
   let warrantyStr = '';
-  if (order.status === 'completed') {
+  if (order.status === 'completed' && warrantyDays > 0) {
     if (isWarrantyActive) {
       const diffMs = warrantyExpiresAt.getTime() - now.getTime();
       const daysLeft = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-      warrantyStr = `🛡 <b>Гарантия:</b> 🟢 Активна (осталось ${daysLeft} дн. из ${warrantyDays})`;
+      warrantyStr = `🛡 <b>Гарантия:</b> ${lang === 'en' ? `Active (${daysLeft} of ${warrantyDays} days left)` : `Активна (осталось ${daysLeft} дн. из ${warrantyDays})`}`;
     } else {
-      warrantyStr = `🛡 <b>Гарантия:</b> 🔴 Истёкла (${warrantyDays} дн.)`;
+      warrantyStr = `🛡 <b>Гарантия:</b> ${lang === 'en' ? `Expired (${warrantyDays} days)` : `Истёкла (${warrantyDays} дн.)`}`;
+    }
+  }
+
+  const subscriptionDays = order.subscriptionDays ?? product?.subscriptionDays ?? 0;
+  let subscriptionStr = '';
+  if (order.status === 'completed' && subscriptionDays > 0) {
+    const subscriptionExpiresAt = new Date(confirmedBase.getTime() + subscriptionDays * 24 * 60 * 60 * 1000);
+    const isSubActive = now < subscriptionExpiresAt;
+    if (isSubActive) {
+      const subDiffMs = subscriptionExpiresAt.getTime() - now.getTime();
+      const subDaysLeft = Math.max(1, Math.ceil(subDiffMs / (1000 * 60 * 60 * 24)));
+      const untilDate = subscriptionExpiresAt.toLocaleDateString('ru-RU');
+      subscriptionStr = `⏳ <b>Подписка:</b> ${lang === 'en' ? `Active (${subDaysLeft} of ${subscriptionDays} days left, until ${untilDate})` : `Активна (осталось ${subDaysLeft} дн. из ${subscriptionDays}, до ${untilDate})`}`;
+    } else {
+      subscriptionStr = `⏳ <b>Подписка:</b> ${lang === 'en' ? `Expired (${subscriptionDays} days)` : `Истёкла (${subscriptionDays} дн.)`}`;
     }
   }
 
@@ -251,6 +266,7 @@ const showOrderDetail = async (ctx, orderId) => {
     `📅 <b>Дата:</b> ${date}\n` +
     `🔘 <b>Статус:</b> ${statusLbl}\n` +
     (warrantyStr ? `${warrantyStr}\n` : '') +
+    (subscriptionStr ? `${subscriptionStr}\n` : '') +
     replacementStr +
     issuedDataStr;
 

@@ -303,6 +303,7 @@ const checkoutCart = async (ctx) => {
               activationResult: product.type === 'gpt_activation' ? null : 'Ключ выдан автоматически',
               qty: 1,
               warrantyDays: product.warrantyDays ?? 5,
+              subscriptionDays: product.subscriptionDays ?? 30,
             });
             await order.save(opts);
             await Key.updateOne(
@@ -340,6 +341,7 @@ const checkoutCart = async (ctx) => {
             costPrice: roundMoney((product.costPrice || 0) * item.qty),
             qty: item.qty,
             warrantyDays: product.warrantyDays ?? 5,
+            subscriptionDays: product.subscriptionDays ?? 30,
           });
           if (SUPPLIER_PROVIDERS.has(provider)) order.supplierIdempotencyKey = `ord-${order._id}`;
           await order.save(opts);

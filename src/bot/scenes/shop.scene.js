@@ -357,6 +357,13 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     warrantyLine = `\n${warrantyLabel}: <b>${warrantyVal}</b>`;
   }
 
+  let durationLine = '';
+  if (product.subscriptionDays && product.subscriptionDays > 0) {
+    const durationLabel = lang === 'en' ? '⏳ Duration' : '⏳ Подписка';
+    const durationVal = lang === 'en' ? `${product.subscriptionDays} days` : `${product.subscriptionDays} дн.`;
+    durationLine = `\n${durationLabel}: <b>${durationVal}</b>`;
+  }
+
   let priceDisplay = `<b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)`;
   if (effectivePrice < product.price) {
     const promoNote = activePromo ? ` (Промокод ${activePromo.code})` : '';
@@ -368,7 +375,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
     `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
     `${stockLabel}: ${stockIndicator(stock, t)}\n` +
-    `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}</blockquote>\n\n` +
+    `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}${durationLine}</blockquote>\n\n` +
     `${description ? `<blockquote expandable>📝 ${escapeHtml(description)}</blockquote>\n` : ''}`;
 
   const buttons = [];
@@ -885,6 +892,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           confirmedAt: null,
           activationResult: null,
           warrantyDays: product.warrantyDays ?? 5,
+          subscriptionDays: product.subscriptionDays ?? 30,
         });
         if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
           order.supplierIdempotencyKey = `ord-${order._id}`;
@@ -917,6 +925,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
             confirmedAt: isAutoKeyProduct ? new Date() : null,
             activationResult: isAutoKeyProduct ? 'Ключ выдан автоматически' : null,
             warrantyDays: product.warrantyDays ?? 5,
+            subscriptionDays: product.subscriptionDays ?? 30,
           });
           await order.save(sessionOptions);
           orders.push(order);
@@ -1400,6 +1409,7 @@ const processPreorder = async (ctx, productId, qty = 1) => {
           qty: 1,
           status: 'preorder_pending',
           warrantyDays: product.warrantyDays ?? 5,
+          subscriptionDays: product.subscriptionDays ?? 30,
         });
         await order.save(sessionOptions);
         createdOrders.push(order);

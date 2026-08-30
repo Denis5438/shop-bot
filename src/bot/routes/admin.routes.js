@@ -320,6 +320,7 @@ module.exports = (bot) => {
       description: '📝 Описание товара на русском',
       descriptionEn: '📝 Описание товара на английском',
       warrantyDays: '🛡 Срок гарантии в днях (например: 30)',
+      subscriptionDays: '⏳ Срок подписки / действия в днях (например: 30 для 1 мес, 365 для года, 0 если бессрочно)',
     };
 
     const promptText = fieldLabels[field] || `новое значение для поля <b>${field}</b>`;

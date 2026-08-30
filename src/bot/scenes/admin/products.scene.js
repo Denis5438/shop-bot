@@ -150,6 +150,7 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     `📦 Остаток: <b>${stock}</b>\n` +
     `📝 Описания: ${descStatus}\n` +
     `🛡 Гарантия: ${product.warrantyDays ?? 5} дн.\n` +
+    `⏳ Срок подписки: ${product.subscriptionDays ? `${product.subscriptionDays} дн.` : 'Бессрочно'}\n` +
     `📍 Происхождение: <b>${originLabel}</b>\n` +
     `${sellerLine}\n` +
     `🔘 Статус: ${product.isActive ? '✅ Активен (виден в магазине)' : '🔴 Скрыт'}`;
@@ -168,7 +169,10 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     [Markup.button.callback('🗂 Изменить категорию', `admin:product:field:category:${productId}:${page}`)],
     [Markup.button.callback('📦 Задать остаток вручную', `admin:product:set_stock:${productId}:${page}`)],
     [
-      Markup.button.callback('🛡 Срок гарантии (дни)', `admin:product:field:warrantyDays:${productId}:${page}`),
+      Markup.button.callback('🛡 Срок гарантии', `admin:product:field:warrantyDays:${productId}:${page}`),
+      Markup.button.callback('⏳ Срок подписки', `admin:product:field:subscriptionDays:${productId}:${page}`),
+    ],
+    [
       Markup.button.callback(
         product.itemOrigin === 'supplier' ? '👤 Тип: Поставщик' : '🛡 Тип: Верифицирован',
         `adm:p_orig:${productId}:${page}`
@@ -557,10 +561,10 @@ const handleProductInput = async (ctx) => {
         return true;
       }
       update[field] = num;
-    } else if (field === 'warrantyDays') {
+    } else if (field === 'warrantyDays' || field === 'subscriptionDays') {
       const num = parseInt(value, 10);
       if (Number.isNaN(num) || num < 0) {
-        await ctx.reply('❌ Введите корректное число дней гарантии (например: 30):');
+        await ctx.reply('❌ Введите корректное число дней (например: 30 или 0 для бессрочного):');
         return true;
       }
       update[field] = num;
