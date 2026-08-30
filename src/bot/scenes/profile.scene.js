@@ -2,9 +2,10 @@ const { Markup } = require('telegraf');
 const Order = require('../../models/Order');
 const Transaction = require('../../models/Transaction');
 const User = require('../../models/User');
+const TopupRequest = require('../../models/TopupRequest');
 const { toRub } = require('../../services/currency.service');
 const { ORDER_STATUS_LABELS } = require('../constants/ux');
-const { escapeHtml, safeEdit } = require('../utils/ui');
+const { escapeHtml, formatDateTimeMSK, formatDateMSK, safeEdit } = require('../utils/ui');
 const { getAllWithProgress, renderAchievementsText } = require('../../services/achievements.service');
 
 const PER_PAGE = 5;
@@ -79,10 +80,13 @@ const showProfile = async (ctx) => {
   }
   buttons.push([
     Markup.button.callback(t('btn_orders'), 'profile:orders'),
-    Markup.button.callback(lang === 'en' ? '🎟 Promo Code' : '🎟 Промокод', 'user:activate_promo'),
+    Markup.button.callback(lang === 'en' ? '💳 Top-up History' : '💳 История пополнений', 'profile:topups'),
   ]);
   buttons.push([
+    Markup.button.callback(lang === 'en' ? '🎟 Promo Code' : '🎟 Промокод', 'user:activate_promo'),
     Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements'),
+  ]);
+  buttons.push([
     Markup.button.callback(btnStyleLabel, 'profile:toggle_btn_style'),
   ]);
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
@@ -340,11 +344,151 @@ const toggleBtnStyle = async (ctx) => {
   await showProfile(ctx);
 };
 
+const TOPUPS_PER_PAGE = 5;
+
+const getTopupMethodLabel = (method, network, lang = 'ru') => {
+  if (method === 'platega') return lang === 'en' ? '⚡ SBP (Platega)' : '⚡ СБП (Авто)';
+  if (method === 'card') return lang === 'en' ? '🏦 IDBank Card' : '🏦 Карта IDBank';
+  if (method === 'bybit') {
+    const netStr = network ? ` (${network.toUpperCase()})` : '';
+    return `📊 Bybit${netStr}`;
+  }
+  return lang === 'en' ? '💳 Top-up' : '💳 Пополнение';
+};
+
+const getTopupStatusBadge = (status, lang = 'ru') => {
+  if (status === 'confirmed') return lang === 'en' ? '✅ Confirmed' : '✅ Зачислено';
+  if (status === 'rejected') return lang === 'en' ? '❌ Rejected' : '❌ Отклонено';
+  return lang === 'en' ? '⏳ In progress' : '⏳ В обработке';
+};
+
+// История пополнений пользователя с пагинацией
+const showTopupHistory = async (ctx, page = 1) => {
+  const user = ctx.user;
+  const lang = user?.language || 'ru';
+  const t = ctx.t || ((k) => k);
+
+  const total = await TopupRequest.countDocuments({ userId: user._id });
+  const totalPages = Math.max(1, Math.ceil(total / TOPUPS_PER_PAGE));
+  page = Math.min(Math.max(1, parseInt(page, 10) || 1), totalPages);
+
+  const requests = await TopupRequest.find({ userId: user._id })
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * TOPUPS_PER_PAGE)
+    .limit(TOPUPS_PER_PAGE)
+    .lean();
+
+  const title = lang === 'en' ? '💳 <b>Top-up History</b>' : '💳 <b>История пополнений баланса</b>';
+
+  if (requests.length === 0) {
+    const emptyText = `${title}\n\n` +
+      `<blockquote>` +
+      (lang === 'en' ? 'ℹ️ You have no top-up history yet.' : 'ℹ️ У вас пока нет операций пополнения баланса.') +
+      `</blockquote>`;
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(lang === 'en' ? '➕ Top Up Balance' : '➕ Пополнить баланс', 'menu:topup')],
+      [Markup.button.callback(t('btn_back'), 'menu:profile')],
+    ]);
+    return safeEdit(ctx, emptyText, { parse_mode: 'HTML', ...keyboard });
+  }
+
+  let text = `${title}\n\n`;
+  const buttons = [];
+
+  requests.forEach((req, idx) => {
+    const num = (page - 1) * TOPUPS_PER_PAGE + idx + 1;
+    const methodStr = getTopupMethodLabel(req.method, req.network, lang);
+    const statusStr = getTopupStatusBadge(req.status, lang);
+    const dateStr = formatDateMSK(req.createdAt) || new Date(req.createdAt).toLocaleDateString('ru-RU');
+    const amountUSDT = req.amount ? req.amount.toFixed(2) : '0.00';
+    const amountRUB = req.amountRub ? ` (~${req.amountRub} ₽)` : '';
+
+    text += `<b>${num}.</b> ${methodStr} — <b>${amountUSDT} USDT</b>${amountRUB}\n` +
+      `   ${lang === 'en' ? 'Status' : 'Статус'}: ${statusStr} | 📅 ${dateStr}\n\n`;
+
+    buttons.push([Markup.button.callback(
+      `🔍 #${num} ${methodStr} (${amountUSDT} USDT)`,
+      `profile:topup:detail:${req._id}`
+    )]);
+  });
+
+  // Пагинация
+  const navRow = [];
+  if (page > 1) {
+    navRow.push(Markup.button.callback('⬅️ Назад', `profile:topups:page:${page - 1}`));
+  }
+  navRow.push(Markup.button.callback(`📄 ${page}/${totalPages}`, 'profile:noop'));
+  if (page < totalPages) {
+    navRow.push(Markup.button.callback('Вперёд ➡️', `profile:topups:page:${page + 1}`));
+  }
+  if (navRow.length > 0) buttons.push(navRow);
+
+  buttons.push([
+    Markup.button.callback(lang === 'en' ? '➕ Top Up Balance' : '➕ Пополнить баланс', 'menu:topup'),
+    Markup.button.callback(t('btn_back'), 'menu:profile'),
+  ]);
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+};
+
+// Детальный просмотр заявки на пополнение
+const showTopupDetail = async (ctx, requestId) => {
+  const user = ctx.user;
+  const lang = user?.language || 'ru';
+  const t = ctx.t || ((k) => k);
+
+  const request = await TopupRequest.findOne({ _id: requestId, userId: user._id }).lean();
+  if (!request) {
+    return ctx.answerCbQuery(lang === 'en' ? '❌ Top-up not found' : '❌ Заявка не найдена', { show_alert: true });
+  }
+
+  const methodStr = getTopupMethodLabel(request.method, request.network, lang);
+  const statusStr = getTopupStatusBadge(request.status, lang);
+  const createdStr = formatDateTimeMSK(request.createdAt) || new Date(request.createdAt).toLocaleString('ru-RU');
+  const processedStr = request.processedAt
+    ? (formatDateTimeMSK(request.processedAt) || new Date(request.processedAt).toLocaleString('ru-RU'))
+    : null;
+
+  const amountUSDT = request.amount ? request.amount.toFixed(2) : '0.00';
+  const amountRUB = request.amountRub ? `${request.amountRub} ₽` : (request.amount ? `~${toRub(request.amount)} ₽` : '-');
+
+  let text = `💳 <b>${lang === 'en' ? 'Top-up Request Details' : 'Детали заявки на пополнение'}</b>\n\n` +
+    `<blockquote>` +
+    `📋 ID: <code>${request._id}</code>\n` +
+    `💳 ${lang === 'en' ? 'Method' : 'Способ'}: <b>${methodStr}</b>\n` +
+    `💰 ${lang === 'en' ? 'Amount' : 'Сумма'}: <b>${amountUSDT} USDT</b> (${amountRUB})\n` +
+    `📊 ${lang === 'en' ? 'Status' : 'Статус'}: <b>${statusStr}</b>\n` +
+    `📅 ${lang === 'en' ? 'Created' : 'Создана'}: ${createdStr}\n`;
+
+  if (processedStr) {
+    text += `⏱ ${lang === 'en' ? 'Processed' : 'Обработана'}: ${processedStr}\n`;
+  }
+
+  if (request.txid) {
+    text += `🔗 TXID / Хэш: <code>${escapeHtml(request.txid)}</code>\n`;
+  }
+
+  if (request.notes) {
+    text += `💬 ${lang === 'en' ? 'Note' : 'Примечание'}: <i>${escapeHtml(request.notes)}</i>\n`;
+  }
+
+  text += `</blockquote>`;
+
+  const buttons = [
+    [Markup.button.callback(lang === 'en' ? '⬅️ Back to History' : '⬅️ К истории пополнений', 'profile:topups')],
+    [Markup.button.callback(t('btn_back'), 'menu:profile')],
+  ];
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+};
+
 module.exports = {
   showProfile,
   showLanguageSelect,
   showOrders,
   showOrderDetail,
+  showTopupHistory,
+  showTopupDetail,
   showAchievements,
   cancelPreorder,
   toggleBtnStyle,

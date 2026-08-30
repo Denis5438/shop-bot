@@ -7,6 +7,7 @@ const { escapeHtml } = require('../bot/utils/ui');
 const User = require('../models/User');
 const digest = require('./notification-digest.service');
 const i18n = require('../bot/middlewares/i18n');
+const { runBroadcastQueue } = require('./rateLimiter.service');
 
 let botInstance = null;
 
@@ -373,15 +374,14 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
   if (!botInstance) return { sent: 0, failed: 0 };
 
   const { query } = await buildSegmentQuery(segment);
-
-  let sent = 0;
-  let failed = 0;
   const cursor = User.find(query)
     .select('telegramId language')
     .lean()
     .cursor();
 
-  for await (const user of cursor) {
+  const result = await runBroadcastQueue({
+    items: cursor,
+    sendFn: async (user) => {
       const lang = user.language || 'ru';
       const stockLine = stock === '∞' || stock === null
         ? i18n.translate(lang, 'broadcast_stock_unlimited')
@@ -395,7 +395,7 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
         description: product.description ? `📝 ${h(product.description)}` : '',
         price: product.price,
         priceRub: toRub(product.price),
-        stockLine
+        stockLine,
       });
 
       const keyboard = {
@@ -404,19 +404,15 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
         ],
       };
 
-      try {
-        await botInstance.telegram.sendMessage(user.telegramId, text, {
-          parse_mode: 'HTML',
-          reply_markup: keyboard,
-        });
-        sent++;
-      } catch (_) {
-        failed++;
-      }
-      await new Promise(r => setTimeout(r, 50));
-    }
+      await botInstance.telegram.sendMessage(user.telegramId, text, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+    },
+    delayMs: 35,
+  });
 
-  return { sent, failed };
+  return { sent: result.sent, failed: result.failed + result.blocked };
 };
 
 // ─── Уведомление продавцу о новом заказе ─────────────────────────────────────
@@ -518,25 +514,24 @@ const notifyWaitlist = async (product) => {
     .lean();
   if (!usersWaiting.length) return;
 
-  for (const wait of usersWaiting) {
-    if (wait.userId && wait.userId.telegramId) {
-      try {
-        await botInstance.telegram.sendMessage(
-          wait.userId.telegramId,
-          `🎉 <b>Отличные новости!</b>\n\nТовар ${product.icon || '📦'} <b>${product.name}</b> снова в наличии!\n\nУспейте приобрести, пока не разобрали!`,
-          {
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [[{ text: '🛒 Перейти к товару', callback_data: `shop:product:${product._id}` }]],
-            },
-          }
-        );
-      } catch (e) {}
-      // Троттлинг ~40 мс между сообщениями (как в других рассылках) - иначе
-      // на популярном товаре упираемся в лимит Telegram 30 msg/sec
-      await new Promise((r) => setTimeout(r, 40));
-    }
-  }
+  const validRecipients = usersWaiting.filter((w) => w.userId && w.userId.telegramId);
+
+  await runBroadcastQueue({
+    items: validRecipients,
+    sendFn: async (wait) => {
+      await botInstance.telegram.sendMessage(
+        wait.userId.telegramId,
+        `🎉 <b>Отличные новости!</b>\n\nТовар ${product.icon || '📦'} <b>${product.name}</b> снова в наличии!\n\nУспейте приобрести, пока не разобрали!`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[{ text: '🛒 Перейти к товару', callback_data: `shop:product:${product._id}` }]],
+          },
+        }
+      );
+    },
+    delayMs: 35,
+  });
 
   // Автовыдача предзаказов
   await fulfillPreorders(product);

@@ -41,6 +41,24 @@ module.exports = (bot) => {
     );
   });
 
+  // ─── История пополнений ─────────────────────────────────────
+  bot.action('profile:topups', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await profileScene.showTopupHistory(ctx, 1);
+  });
+
+  bot.action(/^profile:topups:page:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await profileScene.showTopupHistory(ctx, parseInt(ctx.match[1], 10));
+  });
+
+  bot.action(/^profile:topup:detail:(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await profileScene.showTopupDetail(ctx, ctx.match[1]);
+  });
+
+  bot.action('profile:noop', (ctx) => ctx.answerCbQuery().catch(() => {}));
+
   // №20 Достижения
   bot.action('profile:achievements', async (ctx) => {
     await ctx.answerCbQuery();

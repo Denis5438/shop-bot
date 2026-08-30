@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const { escapeHtml, formatDateTimeMSK, formatDateMSK, fmtUSDT, safeEdit } = require('../../utils/ui');
 const i18n = require('../../middlewares/i18n');
 const logger = require('../../../config/logger');
+const { runBroadcastQueue } = require('../../../services/rateLimiter.service');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -607,11 +608,10 @@ const executeCustomBroadcast = async (ctx) => {
 
   // Курсор + lean: не грузим всю коллекцию пользователей в память разом
   const users = User.find({ isBanned: false }).select('telegramId language').lean().cursor();
-  let sent = 0;
-  let failed = 0;
 
-  for await (const u of users) {
-    try {
+  const result = await runBroadcastQueue({
+    items: users,
+    sendFn: async (u) => {
       const userLang = u.language || 'ru';
       const buttonText = userLang === 'en' ? '☑️ I accept the Terms & Offer' : '☑️ Я ознакомлен и принимаю условия Оферты';
 
@@ -630,17 +630,15 @@ const executeCustomBroadcast = async (ctx) => {
       } else {
         await ctx.telegram.sendMessage(u.telegramId, payload.text, { parse_mode: 'HTML', ...keyboard });
       }
-      sent++;
-    } catch (_) {
-      failed++;
-    }
-    await new Promise((r) => setTimeout(r, 40));
-  }
+    },
+    delayMs: 35,
+  });
 
   await ctx.reply(
     `✅ <b>Массовая рассылка завершена!</b>\n\n` +
-    `📨 Успешно доставлено: <b>${sent}</b>\n` +
-    `❌ Ошибок (заблокировали бота): <b>${failed}</b>`,
+    `📨 Успешно доставлено: <b>${result.sent}</b>\n` +
+    `🚫 Заблокировали бота: <b>${result.blocked}</b>\n` +
+    `❌ Ошибок доставки: <b>${result.failed}</b>`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ К пользователям', 'admin:users')]]),
