@@ -1038,12 +1038,11 @@ const handleCheckPlategaPayment = async (ctx, requestId) => {
     return ctx.answerCbQuery(lang === 'en' ? 'Transaction ID missing' : 'ID платежа не найден', { show_alert: true });
   }
 
-  await ctx.answerCbQuery(lang === 'en' ? '⏳ Checking payment status...' : '⏳ Проверяю статус платежа...');
-
   const plategaService = require('../../services/platega.service');
   const statusRes = await plategaService.checkStatus(request.paymentId);
 
   if (statusRes.isConfirmed) {
+    await ctx.answerCbQuery(lang === 'en' ? '✅ Payment confirmed!' : '✅ Оплата подтверждена!');
     const ok = await confirmPlategaPayment(request, statusRes.data);
     if (ok) {
       const successText = lang === 'en'
@@ -1058,11 +1057,12 @@ const handleCheckPlategaPayment = async (ctx, requestId) => {
   } else if (statusRes.isPending) {
     return ctx.answerCbQuery(
       lang === 'en'
-        ? '⏳ Payment is not received yet. If you already paid, please wait 1-2 minutes and tap again.'
-        : '⏳ Оплата ещё не поступила. Если вы уже оплатили в приложении банка, подождите 1-2 минуты и нажмите кнопку снова.',
+        ? '⏳ Payment is still being processed by the bank.\n\nIf you already approved the transfer in your bank app, please wait 15–30 seconds and check again (or wait for the automatic credit notification).'
+        : '⏳ Платёж ещё обрабатывается банком.\n\nЕсли вы уже подтвердили перевод в приложении банка, подождите 15–30 секунд и нажмите кнопку снова (или дождитесь автоматического зачисления).',
       { show_alert: true }
     );
   } else if (statusRes.isCanceled) {
+    await ctx.answerCbQuery();
     await TopupRequest.updateOne({ _id: request._id }, { $set: { status: 'rejected', notes: 'Отменено Platega' } });
     const cancelText = lang === 'en'
       ? '❌ <b>Payment expired or canceled.</b>\n\nYou can create a new top-up request.'
@@ -1073,7 +1073,7 @@ const handleCheckPlategaPayment = async (ctx, requestId) => {
     });
   } else {
     return ctx.answerCbQuery(
-      lang === 'en' ? '⚠️ Could not get status. Please try again in a few moments.' : '⚠️ Не удалось получить статус. Попробуйте ещё раз через минуту.',
+      lang === 'en' ? '⚠️ Could not get status from payment gateway. Please try again in a moment.' : '⚠️ Не удалось связаться с платёжным шлюзом. Попробуйте ещё раз через минуту.',
       { show_alert: true }
     );
   }

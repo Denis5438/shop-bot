@@ -141,7 +141,7 @@ const checkStatus = async (transactionId) => {
     logger.info(`[Platega] Проверка статуса транзакции ${transactionId}...`);
     const response = await axios.get(`${PLATEGA_BASE_URL}/transaction/${transactionId}`, {
       headers,
-      timeout: 10000,
+      timeout: 5000,
     });
 
     const data = response.data || {};

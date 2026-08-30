@@ -767,8 +767,14 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   }
 
   const activePromo = await getActivePromoFromCtx(ctx);
-  const effectivePrice = await getEffectivePrice(product, stock, activePromo);
-  const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
+  const baseEffectivePrice = await getEffectivePrice(product, stock, null);
+  const promoDiscount = activePromo
+    ? promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id)
+    : { valid: false, discountAmount: 0, finalPrice: parseFloat((baseEffectivePrice * qty).toFixed(2)) };
+  const totalCost = promoDiscount.valid
+    ? promoDiscount.finalPrice
+    : parseFloat((baseEffectivePrice * qty).toFixed(2));
+  const effectivePrice = Number((totalCost / qty).toFixed(2));
 
   if (user.balance < totalCost) {
     const deficit = parseFloat((totalCost - user.balance).toFixed(2));
@@ -933,16 +939,14 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
         sessionOptions
       );
 
-      if (activePromo?.promoId) {
-        if (promoDiscount.valid && promoDiscount.discountAmount > 0) {
-          await promoService.consumeDiscountPromo({
-            promoId: activePromo.promoId,
-            userId: user._id,
-            orderId: orders[0]?._id || null,
-            discountAmount: promoDiscount.discountAmount,
-            session,
-          });
-        }
+      if (activePromo?.promoId && promoDiscount?.valid && promoDiscount?.discountAmount > 0) {
+        await promoService.consumeDiscountPromo({
+          promoId: activePromo.promoId,
+          userId: user._id,
+          orderId: orders[0]?._id || null,
+          discountAmount: promoDiscount.discountAmount,
+          session,
+        });
       }
 
       await new Transaction({
