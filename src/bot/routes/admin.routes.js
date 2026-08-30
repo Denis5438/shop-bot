@@ -778,6 +778,12 @@ module.exports = (bot) => {
   bot.action('admin:settings:toggle_platega', adminMiddleware, async (ctx) => {
     await settingsScene.togglePlatega(ctx);
   });
+  bot.action('admin:settings:toggle_card', adminMiddleware, async (ctx) => {
+    await settingsScene.toggleCard(ctx);
+  });
+  bot.action('admin:settings:toggle_bybit', adminMiddleware, async (ctx) => {
+    await settingsScene.toggleBybit(ctx);
+  });
 
   bot.action(/^admin:settings:edit:(\w+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();

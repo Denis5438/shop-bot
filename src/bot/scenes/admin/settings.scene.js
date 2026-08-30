@@ -49,16 +49,25 @@ const showSettings = async (ctx) => {
   const smartPriceText = settings.smartPricing ? '🔴 Вкл' : '🟢 Выкл';
   const smartBtnStr = settings.smartPricing ? '🚕 Smart-Цены: Выкл' : '🚕 Smart-Цены: Вкл';
   const plategaStatusText = settings.plategaEnabled !== false ? '🟢 Вкл' : '🔴 Выкл';
-  const plategaBtnStr = settings.plategaEnabled !== false ? '⚡ Platega (СБП): Выкл' : '⚡ Platega (СБП): Вкл';
+  const cardStatusText = settings.cardEnabled !== false ? '🟢 Вкл' : '🔴 Выкл';
+  const bybitStatusText = settings.bybitEnabled !== false ? '🟢 Вкл' : '🔴 Выкл';
+
+  const plategaBtnStr = settings.plategaEnabled !== false ? '⚡ СБП: Выкл' : '⚡ СБП: Вкл';
+  const cardBtnStr = settings.cardEnabled !== false ? '🏦 IDBank: Выкл' : '🏦 IDBank: Вкл';
+  const bybitBtnStr = settings.bybitEnabled !== false ? '📊 Bybit: Выкл' : '📊 Bybit: Вкл';
+
   const webhookDomain = process.env.RENDER_EXTERNAL_HOSTNAME || process.env.DOMAIN || 'shop-bot-62dd.onrender.com';
   const plategaWebhookUrl = `https://${webhookDomain}/webhook/platega`;
   const fmt = (value, fallback = 'не задан') => escapeHtml(value || fallback);
 
   const text =
     `⚙️ <b>Настройки бота</b>\n\n` +
-    `⚡ <b>СБП (Platega.io):</b> <b>${plategaStatusText}</b>\n` +
-    `🆔 Merchant ID: <code>${fmt(settings.plategaMerchantId)}</code>\n` +
-    `🔑 Secret Key: <code>${settings.plategaSecret ? '••••••••' + String(settings.plategaSecret).slice(-4) : 'не задан'}</code>\n` +
+    `💳 <b>Способы пополнения баланса:</b>\n` +
+    `⚡ СБП (Platega.io): <b>${plategaStatusText}</b>\n` +
+    `🏦 Карта IDBank: <b>${cardStatusText}</b>\n` +
+    `📊 Bybit (USDT): <b>${bybitStatusText}</b>\n\n` +
+    `🆔 Platega Merchant ID: <code>${fmt(settings.plategaMerchantId)}</code>\n` +
+    `🔑 Platega Secret Key: <code>${settings.plategaSecret ? '••••••••' + String(settings.plategaSecret).slice(-4) : 'не задан'}</code>\n` +
     `🔗 <b>Webhook для ЛК Platega:</b>\n<code>${plategaWebhookUrl}</code>\n\n` +
     `💳 Кошелёк для пополнений:\n<code>${fmt(settings.topupWallet)}</code>\n` +
     `🌐 Сеть: <b>${fmt(settings.topupNetwork)}</b>\n\n` +
@@ -78,7 +87,11 @@ const showSettings = async (ctx) => {
     `🛡 Тех. обслуживание: <b>${modeText}</b>`;
 
   const buttons = [
-    [Markup.button.callback(plategaBtnStr, 'admin:settings:toggle_platega')],
+    [
+      Markup.button.callback(plategaBtnStr, 'admin:settings:toggle_platega'),
+      Markup.button.callback(cardBtnStr, 'admin:settings:toggle_card'),
+      Markup.button.callback(bybitBtnStr, 'admin:settings:toggle_bybit'),
+    ],
     [Markup.button.callback('✏️ Platega Merchant ID', 'admin:settings:edit:plategaMerchantId')],
     [Markup.button.callback('✏️ Platega Secret Key', 'admin:settings:edit:plategaSecret')],
     [Markup.button.callback('✏️ Изменить кошелёк', 'admin:settings:edit:topupWallet')],
@@ -181,6 +194,24 @@ const togglePlatega = async (ctx) => {
   await showSettings(ctx);
 };
 
+const toggleCard = async (ctx) => {
+  const settings = await getLiveSettings();
+  settings.cardEnabled = settings.cardEnabled === false;
+  await settings.save();
+  invalidateCache();
+  await ctx.answerCbQuery(settings.cardEnabled !== false ? '🏦 Оплата картой (IDBank) включена' : '🏦 Оплата картой (IDBank) выключена');
+  await showSettings(ctx);
+};
+
+const toggleBybit = async (ctx) => {
+  const settings = await getLiveSettings();
+  settings.bybitEnabled = settings.bybitEnabled === false;
+  await settings.save();
+  invalidateCache();
+  await ctx.answerCbQuery(settings.bybitEnabled !== false ? '📊 Bybit / USDT включен' : '📊 Bybit / USDT выключен');
+  await showSettings(ctx);
+};
+
 // Запрос на редактирование поля
 const startEditSetting = async (ctx, field) => {
   const fieldNames = {
@@ -279,6 +310,8 @@ module.exports = {
   toggleMarkdown,
   toggleDigest,
   togglePlatega,
+  toggleCard,
+  toggleBybit,
   startEditSetting,
   handleSettingsInput,
   resetAllUserToS,

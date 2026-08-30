@@ -31,23 +31,45 @@ const startTopup = async (ctx) => {
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
 
-  const title = lang === 'en' ? 'Balance Top Up' : 'Пополнение баланса';
-  const choose = lang === 'en' ? 'Select a payment method:' : 'Выберите удобный способ оплаты:';
+  const settings = await getSettings();
+  const buttons = [];
+
   const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
   const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
   const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
   const backLabel = t('btn_back');
 
+  if (settings?.plategaEnabled !== false) {
+    buttons.push([Markup.button.callback(sbpLabel, 'topup:pay:platega')]);
+  }
+  if (settings?.cardEnabled !== false) {
+    buttons.push([Markup.button.callback(idbankLabel, 'topup:pay:card')]);
+  }
+  if (settings?.bybitEnabled !== false) {
+    buttons.push([Markup.button.callback(bybitLabel, 'topup:pay:bybit')]);
+  }
+
+  if (buttons.length === 0) {
+    const closedText = lang === 'en'
+      ? '💳 <b>Balance top-up is temporarily unavailable.</b>\n\nPlease try again later or contact support.'
+      : '💳 <b>Пополнение баланса временно приостановлено.</b>\n\nПожалуйста, попробуйте позже или обратитесь в поддержку.';
+    const closedButtons = [
+      [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
+      [Markup.button.callback(backLabel, 'menu:main')],
+    ];
+    return editOrReply(ctx, closedText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(closedButtons) });
+  }
+
+  buttons.push([Markup.button.callback(backLabel, 'menu:main')]);
+
+  const title = lang === 'en' ? 'Balance Top Up' : 'Пополнение баланса';
+  const choose = lang === 'en' ? 'Select a payment method:' : 'Выберите удобный способ оплаты:';
+
   await editOrReply(ctx,
     `💳 <b>${title}</b>\n\n${choose}`,
     {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(sbpLabel, 'topup:pay:platega')],
-        [Markup.button.callback(idbankLabel, 'topup:pay:card')],
-        [Markup.button.callback(bybitLabel, 'topup:pay:bybit')],
-        [Markup.button.callback(backLabel, 'menu:main')],
-      ]),
+      ...Markup.inlineKeyboard(buttons),
     }
   );
 };
@@ -59,25 +81,47 @@ const startTopupWithAmount = async (ctx, amount) => {
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
 
-  const title = lang === 'en' ? 'Quick Top Up' : 'Быстрое пополнение';
-  const amountLbl = lang === 'en' ? 'Amount to pay' : 'Сумма к пополнению';
-  const chooseLbl = lang === 'en' ? 'Select a payment method:' : 'Выберите способ оплаты:';
+  const settings = await getSettings();
+  const buttons = [];
+
   const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
   const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
   const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
   const backLabel = t('btn_back');
+
+  if (settings?.plategaEnabled !== false) {
+    buttons.push([Markup.button.callback(sbpLabel, 'topup:pay:platega')]);
+  }
+  if (settings?.cardEnabled !== false) {
+    buttons.push([Markup.button.callback(idbankLabel, 'topup:pay:card')]);
+  }
+  if (settings?.bybitEnabled !== false) {
+    buttons.push([Markup.button.callback(bybitLabel, 'topup:pay:bybit')]);
+  }
+
+  if (buttons.length === 0) {
+    const closedText = lang === 'en'
+      ? '💳 <b>Balance top-up is temporarily unavailable.</b>\n\nPlease try again later or contact support.'
+      : '💳 <b>Пополнение баланса временно приостановлено.</b>\n\nПожалуйста, попробуйте позже или обратитесь в поддержку.';
+    const closedButtons = [
+      [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
+      [Markup.button.callback(backLabel, 'menu:main')],
+    ];
+    return editOrReply(ctx, closedText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(closedButtons) });
+  }
+
+  buttons.push([Markup.button.callback(backLabel, 'menu:main')]);
+
+  const title = lang === 'en' ? 'Quick Top Up' : 'Быстрое пополнение';
+  const amountLbl = lang === 'en' ? 'Amount to pay' : 'Сумма к пополнению';
+  const chooseLbl = lang === 'en' ? 'Select a payment method:' : 'Выберите способ оплаты:';
 
   await editOrReply(ctx,
     `💳 <b>${title}</b>\n\n` +
     `<blockquote>💰 ${amountLbl}: <b>${amount} USDT</b> (~${toRub(amount)} ₽)</blockquote>\n\n${chooseLbl}`,
     {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(sbpLabel, 'topup:pay:platega')],
-        [Markup.button.callback(idbankLabel, 'topup:pay:card')],
-        [Markup.button.callback(bybitLabel, 'topup:pay:bybit')],
-        [Markup.button.callback(backLabel, 'menu:main')],
-      ]),
+      ...Markup.inlineKeyboard(buttons),
     }
   );
 };
@@ -138,16 +182,34 @@ const askTopupAmount = async (ctx, method, network = null) => {
 
 // ─── Шаг 3а: СБП Автоматически (Platega) ──────────────────────────────────────
 const showPlategaDetails = async (ctx) => {
+  const settings = await getSettings();
+  if (settings?.plategaEnabled === false) {
+    const lang = ctx.user?.language || 'ru';
+    await ctx.answerCbQuery(lang === 'en' ? '⚠️ This payment method is temporarily disabled' : '⚠️ Этот способ оплаты временно отключён администратором', { show_alert: true });
+    return startTopup(ctx);
+  }
   await askTopupAmount(ctx, 'platega', null);
 };
 
 // ─── Шаг 3б: Карта IDBank (Вручную) ──────────────────────────────────────────
 const showCardDetails = async (ctx) => {
+  const settings = await getSettings();
+  if (settings?.cardEnabled === false) {
+    const lang = ctx.user?.language || 'ru';
+    await ctx.answerCbQuery(lang === 'en' ? '⚠️ This payment method is temporarily disabled' : '⚠️ Этот способ оплаты временно отключён администратором', { show_alert: true });
+    return startTopup(ctx);
+  }
   await askTopupAmount(ctx, 'card', null);
 };
 
 // ─── Шаг 3б: Bybit - выбор сети ──────────────────────────────────────────────
 const showBybitOptions = async (ctx) => {
+  const settings = await getSettings();
+  if (settings?.bybitEnabled === false) {
+    const lang = ctx.user?.language || 'ru';
+    await ctx.answerCbQuery(lang === 'en' ? '⚠️ This payment method is temporarily disabled' : '⚠️ Этот способ оплаты временно отключён администратором', { show_alert: true });
+    return startTopup(ctx);
+  }
   ctx.session = ctx.session || {};
   const prevQuickAmount = ctx.session?.topup?.quickAmount || null;
   ctx.session.topup = { method: 'bybit', network: null, step: null, msgId: null, quickAmount: prevQuickAmount };
