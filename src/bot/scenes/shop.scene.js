@@ -1390,20 +1390,39 @@ const confirmPreorder = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
   const lang = ctx.user?.language || 'ru';
   const name = lang === 'en' && product.nameEn ? product.nameEn : product.name;
   const stock = await getStock(product);
-  const effectivePrice = await getEffectivePrice(product, stock);
-  const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
+
+  const activePromo = await getActivePromoFromCtx(ctx);
+  const baseEffectivePrice = await getEffectivePrice(product, stock, null);
+  const baseTotal = parseFloat((baseEffectivePrice * qty).toFixed(2));
+
+  const promoDiscount = activePromo
+    ? promoService.calculateDiscount(activePromo, baseTotal, product._id)
+    : { valid: false, discountAmount: 0 };
+
+  const totalCost = promoDiscount.valid
+    ? promoDiscount.finalPrice
+    : baseTotal;
   const totalCostRub = toRub(totalCost);
+  const baseTotalRub = toRub(baseTotal);
   const unit = lang === 'en' ? 'pcs' : 'шт.';
 
   const isRu = lang === 'ru';
   const tariffLine = qty > 1 ? `${qty} ${unit}` : (product.warrantyDays ? `${product.warrantyDays} дн. гарантии` : `1 ${unit}`);
+
+  let priceDisplay = `<b>${totalCost} USDT</b> (~${totalCostRub} ₽)`;
+  let promoInfoLine = '';
+  if (promoDiscount.valid && totalCost < baseTotal) {
+    const promoNote = ` (${activePromo.type === 'percent' ? '-' + activePromo.value + '%' : '-' + activePromo.value + ' USDT'})`;
+    promoInfoLine = `\n🏷 <b>Скидка по промокоду:</b> <code>${activePromo.code}</code>${promoNote}`;
+    priceDisplay = `<s>${baseTotal} USDT</s> ➔ <b>${totalCost} USDT</b> 🔥${promoNote} (~${totalCostRub} ₽)`;
+  }
 
   const text =
     `<b>Перед оформлением предзаказа</b>\n` +
     `Проверьте условия заказа — это займёт меньше минуты.\n\n` +
     `📦 <b>Товар:</b> ${escapeHtml(name)}\n` +
     `📊 <b>Тариф / Количество:</b> ${tariffLine}\n` +
-    `💰 <b>Цена:</b> <b>${totalCost} USDT</b> (~${totalCostRub} ₽)\n\n` +
+    `💰 <b>Цена:</b> ${priceDisplay}${promoInfoLine}\n\n` +
     `<b>Поставьте галочку, только если вы:</b>\n` +
     `• Прочитали описание товара и согласны с условиями предзаказа.\n` +
     `• Понимаете, что товар будет выдан автоматически, как только пополнится склад.\n` +
@@ -1447,15 +1466,26 @@ const processPreorder = async (ctx, productId, qty = 1) => {
   }
 
   const stock = await getStock(product);
-  const effectivePrice = await getEffectivePrice(product, stock);
-  const totalCost = parseFloat((effectivePrice * qty).toFixed(2));
+  const activePromo = await getActivePromoFromCtx(ctx);
+  const baseEffectivePrice = await getEffectivePrice(product, stock, null);
+  const baseTotal = parseFloat((baseEffectivePrice * qty).toFixed(2));
+
+  const promoDiscount = activePromo
+    ? promoService.calculateDiscount(activePromo, baseTotal, product._id)
+    : { valid: false, discountAmount: 0 };
+
+  const totalCost = promoDiscount.valid
+    ? promoDiscount.finalPrice
+    : baseTotal;
+  const effectivePricePerItem = Number((totalCost / qty).toFixed(2));
+  const totalCostRub = toRub(totalCost);
+  const baseTotalRub = toRub(baseTotal);
 
   if (user.balance < totalCost) {
     return ctx.answerCbQuery(`❌ Недостаточно средств. Нужно: ${totalCost} USDT, ваш баланс: ${user.balance.toFixed(2)} USDT`, { show_alert: true });
   }
 
-  // Атомарное списание с условием в фильтре: двойной клик по кнопке предзаказа
-  // раньше создавал 2×qty оплаченных предзаказов при одном списании.
+  // Атомарное списание с условием в фильтре
   const User = require('../../models/User');
   const { withTransaction } = require('../../services/transactionHelper.service');
   const createdOrders = [];
@@ -1478,18 +1508,35 @@ const processPreorder = async (ctx, productId, qty = 1) => {
       preorderDebited = true;
       ctx.user = debitedUser;
 
+      const discountPerItem = promoDiscount.valid && promoDiscount.discountAmount > 0
+        ? parseFloat((promoDiscount.discountAmount / qty).toFixed(8))
+        : 0;
+
       for (let i = 0; i < qty; i++) {
         const order = new Order({
           userId: user._id,
           productId: product._id,
-          price: effectivePrice,
+          price: effectivePricePerItem,
           qty: 1,
+          costPrice: (product.costPrice || 0),
+          promoDiscount: discountPerItem,
+          promoCode: promoDiscount.valid && activePromo ? activePromo.code : null,
           status: 'preorder_pending',
           warrantyDays: product.warrantyDays ?? 5,
           subscriptionDays: product.subscriptionDays ?? 30,
         });
         await order.save(sessionOptions);
         createdOrders.push(order);
+      }
+
+      if (activePromo?.promoId && promoDiscount?.valid && promoDiscount?.discountAmount > 0) {
+        await promoService.consumeDiscountPromo({
+          promoId: activePromo.promoId,
+          userId: user._id,
+          orderId: createdOrders[0]?._id || null,
+          discountAmount: promoDiscount.discountAmount,
+          session,
+        });
       }
 
       const Transaction = require('../../models/Transaction');
@@ -1502,14 +1549,12 @@ const processPreorder = async (ctx, productId, qty = 1) => {
       }).save(sessionOptions);
     });
   } catch (err) {
-    // В режиме реальных транзакций откат вернул баланс в БД - перечитываем ctx.user
     if (preorderUsedSession && preorderDebited) {
       try {
         const restored = await User.findById(user._id);
         if (restored) ctx.user = restored;
       } catch (_) {}
     }
-    // Компенсация в режиме без транзакций
     if (!preorderUsedSession && preorderDebited && createdOrders.length === 0) {
       await User.updateOne(
         { _id: user._id },
@@ -1531,13 +1576,19 @@ const processPreorder = async (ctx, productId, qty = 1) => {
 
   const isRu = (user.language || 'ru') === 'ru';
   const unit = isRu ? 'шт' : 'pcs';
+
+  const userPriceDisplay = (promoDiscount.valid && totalCost < baseTotal)
+    ? `<s>${baseTotal} USDT</s> ➔ <b>${totalCost} USDT</b> 🔥`
+    : `<b>${totalCost} USDT</b>`;
+
   const msgText = isRu
     ? `⏳ <b>Предзаказ на ${qty} ${unit} успешно зарезервирован!</b>\n\n` +
       `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n` +
-      `💰 <b>Всего списано:</b> ${totalCost} USDT\n\n` +
+      `💰 <b>Всего списано:</b> ${userPriceDisplay}\n\n` +
       `<i>Ваши предзаказы поставлены в 1-ю очередь. Бот автоматически пришлёт данные товара вам в личные сообщения при пополнении склада!</i>`
     : `⏳ <b>Pre-order for ${qty} ${unit} successfully placed!</b>\n\n` +
       `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n` +
+      `💰 <b>Total charged:</b> ${userPriceDisplay}\n\n` +
       `<i>Your pre-order is in priority queue. The bot will automatically send product data to your PM on stock arrival!</i>`;
 
   const buttons = [
@@ -1552,11 +1603,20 @@ const processPreorder = async (ctx, productId, qty = 1) => {
   }
   await ctx.answerCbQuery('⏳ Предзаказ успешно создан!').catch(() => {});
 
+  const adminPriceDisplay = (promoDiscount.valid && totalCost < baseTotal)
+    ? `<s>${baseTotal} USDT</s> ➔ <b>${totalCost} USDT</b> 🔥 (~${totalCostRub} ₽)`
+    : `<b>${totalCost} USDT</b> (~${totalCostRub} ₽)`;
+
+  const adminPromoLine = promoDiscount.valid && activePromo
+    ? `\n🏷 <b>Промокод:</b> <code>${activePromo.code}</code> (${activePromo.type === 'percent' ? '-' + activePromo.value + '%' : '-' + activePromo.value + ' USDT'})`
+    : '';
+
   notif.sendToAdmins(
     `⏳ <b>Новый Предзаказ!</b>\n\n` +
     `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n` +
-    `👤 <b>Покупатель:</b> @${escapeHtml(user.username || user.telegramId)}\n` +
-    `💰 <b>Сумма:</b> ${effectivePrice} USDT`
+    `📊 <b>Количество:</b> <b>${qty} ${unit}</b>\n` +
+    `👤 <b>Покупатель:</b> @${escapeHtml(user.username || user.telegramId)} (ID <code>${user.telegramId}</code>)\n` +
+    `💰 <b>Сумма списания:</b> ${adminPriceDisplay}${adminPromoLine}`
   ).catch(() => {});
 };
 
