@@ -229,50 +229,52 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     return ctx.answerCbQuery('Пустая категория', { show_alert: true });
   }
 
-  // Получаем наличие сразу для всех товаров категории в один быстрый запрос
   const stockMap = await getStockMap(products);
 
-  // Сортировка: ВСЕ товары в наличии ВСЕГДА идут первыми на первых страницах
-  const sortedProducts = [...products].sort((a, b) => {
-    const stockA = stockMap.get(String(a._id));
-    const stockB = stockMap.get(String(b._id));
-    const hasStockA = stockA === '∞' || (typeof stockA === 'number' && stockA > 0);
-    const hasStockB = stockB === '∞' || (typeof stockB === 'number' && stockB > 0);
+  const allInStock = [];
+  const allOutOfStock = [];
 
-    if (hasStockA && !hasStockB) return -1;
-    if (!hasStockA && hasStockB) return 1;
+  for (const p of products) {
+    const stock = stockMap.get(String(p._id));
+    if (stock === '∞' || (typeof stock === 'number' && stock > 0)) {
+      allInStock.push({ product: p, stock });
+    } else {
+      allOutOfStock.push({ product: p, stock: 0 });
+    }
+  }
 
-    const orderA = a.sortOrder || 0;
-    const orderB = b.sortOrder || 0;
+  // Сортировка внутри каждой группы
+  const sortFn = (a, b) => {
+    const orderA = a.product.sortOrder || 0;
+    const orderB = b.product.sortOrder || 0;
     if (orderA !== orderB) return orderA - orderB;
+    return new Date(b.product.createdAt || 0) - new Date(a.product.createdAt || 0);
+  };
+  allInStock.sort(sortFn);
+  allOutOfStock.sort(sortFn);
 
-    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-  });
+  // По умолчанию блок отсутствующих свернут
+  const isCollapsed = ctx.session?.outOfStockCollapsed !== false;
 
-  const totalPages = Math.ceil(sortedProducts.length / ITEMS_PER_PAGE);
+  // Если свернуто и есть товары в наличии - пагинируем только товары в наличии!
+  let activeList = [];
+  if (isCollapsed && allInStock.length > 0) {
+    activeList = allInStock;
+  } else {
+    activeList = [...allInStock, ...allOutOfStock];
+  }
+
+  const totalPages = Math.max(1, Math.ceil(activeList.length / ITEMS_PER_PAGE));
   const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
-  const paginated = sortedProducts.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  const paginated = activeList.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   const buttons = [];
   const lang = ctx.user?.language || 'ru';
   const isClassicTheme = ctx.user?.btnStyle === 'classic';
-
   const activePromo = await getActivePromoFromCtx(ctx);
 
-  const inStock = [];
-  const outOfStock = [];
-
-  for (const product of paginated) {
-    const stock = stockMap.get(String(product._id));
-    if (stock === '∞' || (typeof stock === 'number' && stock > 0)) {
-      inStock.push({ product, stock });
-    } else {
-      outOfStock.push({ product, stock: 0 });
-    }
-  }
-
-  // 1. Товары в наличии (зелёные)
-  for (const { product, stock } of inStock) {
+  for (const { product, stock } of paginated) {
+    const hasStock = stock === '∞' || (typeof stock === 'number' && stock > 0);
     const effectivePrice = await getEffectivePrice(product, stock, activePromo);
     const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
     const stockBadge = stock === '∞' ? '∞' : stock;
@@ -286,30 +288,22 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
     const label = `${product.icon || '📦'} ${shortName} · ${priceLabelStr} · 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
-    if (!isClassicTheme) btn.style = 'success';
+    if (!isClassicTheme) btn.style = hasStock ? 'success' : 'danger';
     buttons.push([btn]);
   }
 
-  // 2. Товары не в наличии (красные)
-  if (outOfStock.length > 0) {
-    if (inStock.length > 0) {
-      buttons.push([Markup.button.callback(lang === 'en' ? '⏳ Out of stock (Pre-order)' : '⏳ Нет в наличии (предзаказ)', 'shop:noop')]);
-    }
-    for (const { product } of outOfStock) {
-      const effectivePrice = await getEffectivePrice(product, 0, activePromo);
-      const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
-      const maxNameLen = 18;
-      const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
-      const label = `${product.icon || '📦'} ${shortName} · $${effectivePrice} · 📦 0`;
-      const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
-      if (!isClassicTheme) btn.style = 'danger';
-      buttons.push([btn]);
-    }
+  // Кнопка сворачивания / разворачивания отсутствующих товаров (предзаказа)
+  if (allOutOfStock.length > 0 && allInStock.length > 0) {
+    const toggleIcon = isCollapsed ? '▼' : '▲';
+    const toggleLabel = isCollapsed
+      ? (lang === 'en' ? `⏳ Out of stock (${allOutOfStock.length}) ${toggleIcon}` : `⏳ Нет в наличии (предзаказ) · ${allOutOfStock.length} ${toggleIcon}`)
+      : (lang === 'en' ? `⏳ Hide out of stock ${toggleIcon}` : `⏳ Скрыть отсутствующие товары ${toggleIcon}`);
+    buttons.push([Markup.button.callback(toggleLabel, `shop:toggle_out:${categoryId}:${safePage}`)]);
   }
 
   const navButtons = [];
   if (safePage > 1) navButtons.push(Markup.button.callback('⬅️', `shop:category:${categoryId}:${safePage - 1}`));
-  navButtons.push(Markup.button.callback(`${safePage}/${totalPages}`, 'shop:noop'));
+  if (totalPages > 1) navButtons.push(Markup.button.callback(`${safePage}/${totalPages}`, 'shop:noop'));
   if (safePage < totalPages) navButtons.push(Markup.button.callback('➡️', `shop:category:${categoryId}:${safePage + 1}`));
   if (navButtons.length) buttons.push(navButtons);
 
@@ -326,9 +320,9 @@ const showCategory = async (ctx, categoryId, page = 1) => {
 
 const toggleOutOfStock = async (ctx, categoryId, page = 1) => {
   ctx.session = ctx.session || {};
-  ctx.session.outOfStockCollapsed = !ctx.session.outOfStockCollapsed;
+  ctx.session.outOfStockCollapsed = ctx.session.outOfStockCollapsed === false ? true : false;
   await ctx.answerCbQuery().catch(() => {});
-  await showCategory(ctx, categoryId, page);
+  await showCategory(ctx, categoryId, 1);
 };
 
 const showProduct = async (ctx, productId, fromPage = 1) => {
