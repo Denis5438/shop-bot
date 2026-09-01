@@ -222,19 +222,37 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   }
 
   const products = await Product.find({ categoryId, isActive: true })
-    .sort({ sortOrder: 1, createdAt: -1 })
-    .select('name nameEn icon price costPrice type manualStock provider lastSoldAt createdAt')
+    .select('name nameEn icon price costPrice type manualStock provider sortOrder lastSoldAt createdAt')
     .lean();
 
   if (products.length === 0) {
     return ctx.answerCbQuery('Пустая категория', { show_alert: true });
   }
 
-  const totalPages = Math.ceil(products.length / ITEMS_PER_PAGE);
-  const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
-  const paginated = products.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  // Получаем наличие сразу для всех товаров категории в один быстрый запрос
+  const stockMap = await getStockMap(products);
 
-  const stockMap = await getStockMap(paginated);
+  // Сортировка: ВСЕ товары в наличии ВСЕГДА идут первыми на первых страницах
+  const sortedProducts = [...products].sort((a, b) => {
+    const stockA = stockMap.get(String(a._id));
+    const stockB = stockMap.get(String(b._id));
+    const hasStockA = stockA === '∞' || (typeof stockA === 'number' && stockA > 0);
+    const hasStockB = stockB === '∞' || (typeof stockB === 'number' && stockB > 0);
+
+    if (hasStockA && !hasStockB) return -1;
+    if (!hasStockA && hasStockB) return 1;
+
+    const orderA = a.sortOrder || 0;
+    const orderB = b.sortOrder || 0;
+    if (orderA !== orderB) return orderA - orderB;
+
+    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  });
+
+  const totalPages = Math.ceil(sortedProducts.length / ITEMS_PER_PAGE);
+  const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  const paginated = sortedProducts.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+
   const buttons = [];
   const lang = ctx.user?.language || 'ru';
   const isClassicTheme = ctx.user?.btnStyle === 'classic';
@@ -252,8 +270,6 @@ const showCategory = async (ctx, categoryId, page = 1) => {
       outOfStock.push({ product, stock: 0 });
     }
   }
-
-  const isCollapsed = ctx.session?.outOfStockCollapsed ?? true;
 
   // 1. Товары в наличии (зелёные)
   for (const { product, stock } of inStock) {
@@ -274,23 +290,20 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     buttons.push([btn]);
   }
 
-  // 2. Сворачиваемый блок "Нет в наличии" (красные)
+  // 2. Товары не в наличии (красные)
   if (outOfStock.length > 0) {
-    const toggleIcon = isCollapsed ? '▼' : '▲';
-    const toggleLabel = `Нет в наличии · ${outOfStock.length} ${toggleIcon}`;
-    buttons.push([Markup.button.callback(toggleLabel, `shop:toggle_out:${categoryId}:${safePage}`)]);
-
-    if (!isCollapsed) {
-      for (const { product } of outOfStock) {
-        const effectivePrice = await getEffectivePrice(product, 0, activePromo);
-        const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
-        const maxNameLen = 18;
-        const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
-        const label = `${product.icon || '📦'} ${shortName} · $${effectivePrice} · 📦 0`;
-        const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
-        if (!isClassicTheme) btn.style = 'danger';
-        buttons.push([btn]);
-      }
+    if (inStock.length > 0) {
+      buttons.push([Markup.button.callback(lang === 'en' ? '⏳ Out of stock (Pre-order)' : '⏳ Нет в наличии (предзаказ)', 'shop:noop')]);
+    }
+    for (const { product } of outOfStock) {
+      const effectivePrice = await getEffectivePrice(product, 0, activePromo);
+      const displayName = lang === 'en' && product.nameEn ? product.nameEn : product.name;
+      const maxNameLen = 18;
+      const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
+      const label = `${product.icon || '📦'} ${shortName} · $${effectivePrice} · 📦 0`;
+      const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
+      if (!isClassicTheme) btn.style = 'danger';
+      buttons.push([btn]);
     }
   }
 
