@@ -49,31 +49,49 @@ const syncSupplierStock = async (supplierId) => {
   }
 
   // 3. Обновляем все товары этого поставщика в нашей базе
-  const dbProducts = await Product.find({ provider: supplierId });
+  const dbProducts = await Product.find({ provider: supplierId }).select('supplierProductCode manualStock costPrice price').lean();
+  const pricingService = require('./pricing.service');
+  const bulkOps = [];
 
   for (const p of dbProducts) {
     if (!p.supplierProductCode) continue;
 
     const liveData = supplierCodesMap.get(String(p.supplierProductCode));
     if (liveData) {
-      // Если у поставщика есть этот товар - выставляем его реальный остаток
-      p.manualStock = liveData.stock;
-      if (liveData.costPrice && liveData.costPrice > 0) {
-        p.costPrice = liveData.costPrice;
-        // Пересчитываем розничную цену с учетом умной наценки (Smart Pricing)
-        const pricingService = require('./pricing.service');
-        p.price = pricingService.calculateRetailPrice(liveData.costPrice, config);
-      }
-      await p.save();
+      const newStock = liveData.stock;
+      const newCost = liveData.costPrice && liveData.costPrice > 0 ? liveData.costPrice : p.costPrice;
+      const newRetail = liveData.costPrice && liveData.costPrice > 0
+        ? pricingService.calculateRetailPrice(liveData.costPrice, config)
+        : p.price;
+
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: p._id },
+          update: {
+            $set: {
+              manualStock: newStock,
+              costPrice: newCost,
+              price: newRetail,
+            },
+          },
+        },
+      });
       updatedCount++;
     } else {
-      // Если товара нет в ответе поставщика - ставим 0 (нет в наличии)
       if (p.manualStock !== 0) {
-        p.manualStock = 0;
-        await p.save();
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: p._id },
+            update: { $set: { manualStock: 0 } },
+          },
+        });
         updatedCount++;
       }
     }
+  }
+
+  if (bulkOps.length > 0) {
+    await Product.bulkWrite(bulkOps, { ordered: false });
   }
 
   config.lastSyncAt = new Date();

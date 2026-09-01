@@ -119,78 +119,89 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
   const marginPercent = options.marginPercent !== undefined ? parseFloat(options.marginPercent) : config.marginPercent;
   const marginFixed = options.marginFixed !== undefined ? parseFloat(options.marginFixed) : config.marginFixed;
 
+  // 1. Предзагрузка всех существующих категорий в Map
+  const existingCategories = await Category.find().lean();
+  const categoryCache = new Map();
+  for (const cat of existingCategories) {
+    categoryCache.set(cat.name.toLowerCase().trim(), cat._id);
+  }
+
+  // 2. Предзагрузка всех существующих товаров данного поставщика
+  const existingProducts = await Product.find({ provider: supplierId })
+    .select('supplierProductCode _id')
+    .lean();
+  const existingCodesSet = new Set(
+    existingProducts.map((p) => String(p.supplierProductCode))
+  );
+
+  const pricingService = require('./pricing.service');
+  const bulkOps = [];
   let importedCount = 0;
   let updatedCount = 0;
-
-  // Кеш категорий для быстрого сопоставления
-  const categoryCache = new Map();
 
   for (const item of catRes.products) {
     if (!item.productCode || !item.name) continue;
 
-    // 1. Поиск или создание подходящей категории в нашем магазине
+    // Сопоставление / создание категории
     const catName = (item.category || 'Внешние товары').trim();
-    let categoryId = categoryCache.get(catName);
+    const catKey = catName.toLowerCase();
+    let categoryId = categoryCache.get(catKey);
 
     if (!categoryId) {
-      let category = await Category.findOne({ name: catName });
-      if (!category) {
-        category = await Category.create({
-          name: catName,
-          nameEn: catName,
-          icon: item.icon || '📦',
-          isActive: true,
-          sortOrder: 10,
-        });
-      }
-      categoryId = category._id;
-      categoryCache.set(catName, categoryId);
+      const newCat = await Category.create({
+        name: catName,
+        nameEn: catName,
+        icon: item.icon || '📦',
+        isActive: true,
+        sortOrder: 10,
+      });
+      categoryId = newCat._id;
+      categoryCache.set(catKey, categoryId);
     }
 
-    // 2. Расчёт розничной цены продажи с учётом умной наценки (Smart Pricing)
-    const pricingService = require('./pricing.service');
+    // Расчёт розничной цены с учётом умной наценки
     const wholesaleCost = parseFloat(item.priceUsdt || 0);
     const retailPrice = pricingService.calculateRetailPrice(wholesaleCost, config);
+    const codeStr = String(item.productCode);
 
-    // 3. Создание или обновление товара в базе данных
-    const existing = await Product.findOne({
-      provider: supplierId,
-      supplierProductCode: String(item.productCode),
-    });
-
-    if (existing) {
-      existing.name = item.name;
-      if (item.nameEn) existing.nameEn = item.nameEn;
-      if (item.description) existing.description = item.description;
-      if (item.descriptionEn) existing.descriptionEn = item.descriptionEn;
-      existing.costPrice = wholesaleCost;
-      existing.price = retailPrice;
-      existing.manualStock = item.stock;
-      existing.categoryId = categoryId;
-      existing.icon = item.icon || existing.icon || '📦';
-      existing.isActive = true;
-      await existing.save();
+    const isExisting = existingCodesSet.has(codeStr);
+    if (isExisting) {
       updatedCount++;
     } else {
-      await Product.create({
-        name: item.name,
-        nameEn: item.nameEn || '',
-        description: item.description || '',
-        descriptionEn: item.descriptionEn || '',
-        price: retailPrice,
-        costPrice: wholesaleCost,
-        provider: supplierId,
-        supplierProductCode: String(item.productCode),
-        manualStock: item.stock,
-        categoryId: categoryId,
-        icon: item.icon || '📦',
-        type: 'manual',
-        deliveryMethod: 'ready_account',
-        isActive: true,
-        warrantyDays: 5,
-      });
       importedCount++;
+      existingCodesSet.add(codeStr);
     }
+
+    bulkOps.push({
+      updateOne: {
+        filter: {
+          provider: supplierId,
+          supplierProductCode: codeStr,
+        },
+        update: {
+          $set: {
+            name: item.name,
+            ...(item.nameEn ? { nameEn: item.nameEn } : {}),
+            ...(item.description ? { description: item.description } : {}),
+            ...(item.descriptionEn ? { descriptionEn: item.descriptionEn } : {}),
+            costPrice: wholesaleCost,
+            price: retailPrice,
+            manualStock: item.stock ?? 0,
+            categoryId: categoryId,
+            icon: item.icon || '📦',
+            type: 'manual',
+            deliveryMethod: 'ready_account',
+            isActive: true,
+            warrantyDays: 5,
+          },
+        },
+        upsert: true,
+      },
+    });
+  }
+
+  if (bulkOps.length > 0) {
+    await Product.bulkWrite(bulkOps, { ordered: false });
   }
 
   config.lastSyncAt = new Date();

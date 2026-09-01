@@ -163,7 +163,11 @@ const startSetMargin = async (ctx, supplierId) => {
  * Запуск импорта каталога
  */
 const execImportCatalog = async (ctx, supplierId) => {
-  await ctx.answerCbQuery('⏳ Начинаем импорт каталога...', { show_alert: false }).catch(() => {});
+  await ctx.answerCbQuery('⏳ Импортируем каталог...').catch(() => {});
+  await safeEdit(ctx, '⏳ <b>Импорт каталога поставщика...</b>\n\n<i>Получаем каталог и сохраняем товары в базу данных магазина...</i>', {
+    parse_mode: 'HTML',
+  });
+
   const res = await supplierManager.importSupplierCatalog(supplierId);
 
   if (!res.success) {
