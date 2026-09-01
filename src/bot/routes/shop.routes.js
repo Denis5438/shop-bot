@@ -80,13 +80,36 @@ module.exports = (bot) => {
     await shopScene.startPreorderCustomQuantity(ctx, productId, page);
   });
 
-  bot.action(/^shop:preorder:([^:]+)(?::(\d+))?$/, async (ctx) => {
+  bot.action(/^shop:preorder:([^:]+)(?::(\\d+))?(?::(\\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
-    const qty = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
-    await shopScene.confirmPreorder(ctx, productId, qty);
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.confirmPreorder(ctx, productId, page, qty, false);
   });
 
-  bot.action(/^shop:preorder_confirm:([^:]+)(?::(\d+))?$/, async (ctx) => {
+  bot.action(/^shop:preorder_tos_toggle:([^:]+)(?::(\\d+))?(?::(\\d+))?(?::(\\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    const checked = ctx.match[4] === '1';
+    await shopScene.confirmPreorder(ctx, productId, page, qty, checked);
+  });
+
+  bot.action(/^shop:preorder_terms_info:([^:]+)(?::(\\d+))?(?::(\\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showTermsInfo(ctx, productId, page, qty, true);
+  });
+
+  bot.action(/^shop:preorder_desc_info:([^:]+)(?::(\\d+))?(?::(\\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.showProductDescInfo(ctx, productId, page, qty, true);
+  });
+
+  bot.action(/^shop:preorder_confirm:([^:]+)(?::(\\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
     const qty = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
     await shopScene.processPreorder(ctx, productId, qty);
