@@ -451,6 +451,7 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
   }
 
   const stock = await getStock(product);
+  const maxAvailable = stock === '∞' ? 99999 : stock;
   if (stock !== '∞' && qty > stock) {
     qty = stock;
   }
@@ -474,21 +475,42 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
     `🛒 Выбрано: <b>${qty} ${unit}</b>\n` +
     `💵 Итого к оплате: <b>${total} USDT</b> (~${totalRub} ₽)`;
 
-  const buttons = [
-    [
-      Markup.button.callback('➖', `shop:qty_dec:${productId}:${safePage}:${qty}`),
-      Markup.button.callback(`${qty} ${unit}`, 'shop:noop'),
-      Markup.button.callback('➕', `shop:qty_inc:${productId}:${safePage}:${qty}`),
-    ],
-    [
-      Markup.button.callback(`5 ${unit}`, `shop:qty_set:${productId}:${safePage}:5`),
-      Markup.button.callback(`10 ${unit}`, `shop:qty_set:${productId}:${safePage}:10`),
-      Markup.button.callback(`20 ${unit}`, `shop:qty_set:${productId}:${safePage}:20`),
-    ],
-    [Markup.button.callback(lang === 'en' ? '🔢 Enter Custom Quantity' : '🔢 Ввести точное число', `shop:qty_custom:${productId}:${safePage}`)],
-    [Markup.button.callback(lang === 'en' ? '✅ Continue' : '✅ Продолжить', `shop:buy:${productId}:${safePage}:${qty}`)],
-    [Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)]
-  ];
+  const buttons = [];
+
+  // Ряд 1: Кнопки - / текущее количество / +
+  buttons.push([
+    Markup.button.callback('➖', `shop:qty_dec:${productId}:${safePage}:${qty}`),
+    Markup.button.callback(`${qty} ${unit}`, 'shop:noop'),
+    Markup.button.callback('➕', `shop:qty_inc:${productId}:${safePage}:${qty}`),
+  ]);
+
+  // Ряд 2: Быстрые пресеты 5 / 10 / 20 (если остаток позволяет)
+  const presetsRow = [];
+  if (maxAvailable >= 5) presetsRow.push(Markup.button.callback(`5 ${unit}`, `shop:qty_set:${productId}:${safePage}:5`));
+  if (maxAvailable >= 10) presetsRow.push(Markup.button.callback(`10 ${unit}`, `shop:qty_set:${productId}:${safePage}:10`));
+  if (maxAvailable >= 20) presetsRow.push(Markup.button.callback(`20 ${unit}`, `shop:qty_set:${productId}:${safePage}:20`));
+  if (presetsRow.length > 0) buttons.push(presetsRow);
+
+  // Ряд 3: Кнопка моментальной покупки всего доступного остатка
+  if (typeof stock === 'number' && stock > 1) {
+    const maxBuyLabel = lang === 'en' ? `⚡ Купить максимум (${stock} ${unit})` : `⚡ Купить максимум (${stock} ${unit})`;
+    buttons.push([Markup.button.callback(maxBuyLabel, `shop:buy:${productId}:${safePage}:${stock}`)]);
+  }
+
+  // Ряд 4: Ввести точное число
+  buttons.push([
+    Markup.button.callback(lang === 'en' ? '🔢 Enter Custom Quantity' : '🔢 Ввести точное число', `shop:qty_custom:${productId}:${safePage}`)
+  ]);
+
+  // Ряд 5: Продолжить с выбранным количеством
+  buttons.push([
+    Markup.button.callback(lang === 'en' ? '✅ Continue' : '✅ Продолжить', `shop:buy:${productId}:${safePage}:${qty}`)
+  ]);
+
+  // Ряд 6: Назад к товару
+  buttons.push([
+    Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)
+  ]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);
@@ -1304,8 +1326,9 @@ const showPreorderQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1)
       Markup.button.callback(`10 ${unit}`, `shop:preorder_qty_set:${productId}:${safePage}:10`),
       Markup.button.callback(`20 ${unit}`, `shop:preorder_qty_set:${productId}:${safePage}:20`),
     ],
+    [Markup.button.callback(lang === 'en' ? '🔢 Enter Custom Quantity' : '🔢 Ввести точное число', `shop:preorder_qty_custom:${productId}:${safePage}`)],
     [Markup.button.callback(isRu ? `⏳ Предзаказать ${qty} ${unit} (${totalCost} USDT)` : `⏳ Pre-order ${qty} ${unit} (${totalCost} USDT)`, `shop:preorder:${productId}:${qty}`)],
-    [Markup.button.callback(t('btn_back'), `shop:product:${productId}:${safePage}`)]
+    [Markup.button.callback(lang === 'en' ? '⬅️ Back to product' : '⬅️ К товару', `shop:product:${productId}:${safePage}`)]
   ];
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
@@ -1314,6 +1337,35 @@ const showPreorderQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1)
   } catch (_) {
     await ctx.reply(text, opts).catch(() => {});
   }
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+const startPreorderCustomQuantity = async (ctx, productId, fromPage = 1) => {
+  const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const product = await Product.findById(productId);
+  if (!product || !product.isActive) {
+    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+  }
+
+  const lang = ctx.user?.language || 'ru';
+
+  ctx.session = ctx.session || {};
+  ctx.session.userAction = 'enter_shop_quantity';
+  ctx.session.isPreorderCustomQty = true;
+  ctx.session.qtyCustomProductId = productId;
+  ctx.session.qtyCustomPage = safePage;
+  ctx.session.qtyCustomMaxStock = 99999;
+  ctx.session.qtyCustomMsgId = ctx.callbackQuery?.message?.message_id;
+
+  const text =
+    `🔢 <b>Ввод количества для предзаказа</b>\n\n` +
+    `Введите необходимое количество сообщением в чат:`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', `shop:preorder_qty:${productId}:${safePage}:1`)],
+  ]);
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
   await ctx.answerCbQuery().catch(() => {});
 };
 
@@ -1504,6 +1556,7 @@ module.exports = {
   confirmPreorder,
   processPreorder,
   showPreorderQuantitySelect,
+  startPreorderCustomQuantity,
   toggleOutOfStock,
   toggleShopMainOutOfStock,
   handlePayStep,

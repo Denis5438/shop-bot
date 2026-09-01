@@ -74,6 +74,12 @@ module.exports = (bot) => {
     await shopScene.showPreorderQuantitySelect(ctx, productId, page, qty);
   });
 
+  bot.action(/^shop:preorder_qty_custom:([^:]+)(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await shopScene.startPreorderCustomQuantity(ctx, productId, page);
+  });
+
   bot.action(/^shop:preorder:([^:]+)(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
     const qty = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;

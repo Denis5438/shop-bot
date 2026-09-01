@@ -173,7 +173,10 @@ module.exports = (bot) => {
           `⚠️ <b>Некорректное число!</b>\n\n` +
           `Пожалуйста, отправьте только число (например: <code>5</code> или <code>15</code>):\n` +
           `<i>(Максимум: ${maxStock} шт.)</i>`;
-        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `shop:qty:${productId}:${page}:1`)]]);
+        const cancelCallback = session.isPreorderCustomQty
+          ? `shop:preorder_qty:${productId}:${page}:1`
+          : `shop:qty:${productId}:${page}:1`;
+        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', cancelCallback)]]);
         if (targetMsgId) {
           try {
             await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
@@ -189,9 +192,15 @@ module.exports = (bot) => {
         parsedQty = maxStock;
       }
 
+      const isPreorder = session.isPreorderCustomQty;
       session.userAction = null;
+      session.isPreorderCustomQty = null;
       const shopScene = require('../scenes/shop.scene');
-      await shopScene.showQuantitySelect(ctx, productId, page, parsedQty);
+      if (isPreorder) {
+        await shopScene.showPreorderQuantitySelect(ctx, productId, page, parsedQty);
+      } else {
+        await shopScene.showQuantitySelect(ctx, productId, page, parsedQty);
+      }
       return;
     }
 
