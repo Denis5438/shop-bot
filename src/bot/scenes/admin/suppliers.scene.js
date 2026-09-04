@@ -53,23 +53,25 @@ const showSupplierDetail = async (ctx, supplierId) => {
 
   const pricingDesc = pricingService.formatPricingDescription(supplier);
 
-  const currentOnlyStatus = supplier.currentOnly !== false ? '🟢 Только актуальные' : '⚪ Все товары';
+  const currentOnlyStatus = supplier.currentOnly !== false
+    ? '🟢 Только в наличии (без предзаказа)'
+    : '⚪ Все товары (с предзаказом)';
   const filterDesc = supplier.currentOnly !== false
-    ? '🟢 Только актуальные (без архивных)'
-    : '⚪ Все товары (включая неактивные)';
+    ? '🟢 Только товары в наличии (предзаказы скрыты)'
+    : '⚪ Все товары (включая предзаказ на 0 шт.)';
 
   const text = `🔌 <b>Настройки поставщика: ${escapeHtml(supplier.title)}</b>\n\n` +
     `📡 Статус: <b>${status}</b>\n` +
     `🔑 API Ключ: ${keyMasked}\n` +
     `💰 Баланс на счёте поставщика: <b>${supplier.cachedBalance.toFixed(2)} USDT</b>\n` +
     `📈 ${pricingDesc}\n` +
-    `📦 Фильтр каталога: <b>${filterDesc}</b>\n` +
+    `📦 Режим импорта: <b>${filterDesc}</b>\n` +
     `🕒 Последняя синхронизация: ${supplier.lastSyncAt ? new Date(supplier.lastSyncAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) : 'никогда'}`;
 
   const buttons = [
     [Markup.button.callback('🔑 Задать / сменить API-ключ', `admin:supplier:key:${supplierId}`)],
     [Markup.button.callback('📈 Настроить наценку (Smart / %)', `admin:supplier:margin_menu:${supplierId}`)],
-    [Markup.button.callback(`📦 Каталог: ${currentOnlyStatus}`, `admin:supplier:toggle_current:${supplierId}`)],
+    [Markup.button.callback(`📦 Режим: ${currentOnlyStatus}`, `admin:supplier:toggle_current:${supplierId}`)],
     [Markup.button.callback('📥 Импортировать ВСЕ товары в 1 клик', `admin:supplier:import:${supplierId}`)],
     [Markup.button.callback('🔄 Синхронизировать остатки и склад', `admin:supplier:sync:${supplierId}`)],
     [Markup.button.callback('💰 Проверить баланс', `admin:supplier:refresh:${supplierId}`)],
@@ -241,13 +243,30 @@ const execSyncStock = async (ctx, supplierId) => {
  */
 const toggleCurrentOnly = async (ctx, supplierId) => {
   const SupplierConfig = require('../../../models/SupplierConfig');
+  const Product = require('../../../models/Product');
   const config = await SupplierConfig.findOne({ supplierId });
   if (!config) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
 
   config.currentOnly = config.currentOnly === false ? true : false;
   await config.save();
 
-  const msg = config.currentOnly ? '🟢 Включен фильтр: только актуальные товары' : '⚪ Выключен фильтр: загрузка абсолютно всех товаров';
+  if (config.currentOnly) {
+    // Режим "Только в наличии": моментально скрываем товары без остатка
+    await Product.updateMany(
+      { provider: supplierId, manualStock: { $lte: 0 } },
+      { $set: { isActive: false } }
+    );
+  } else {
+    // Режим "Все товары": возвращаем отображение всех товаров поставщика для предзаказа
+    await Product.updateMany(
+      { provider: supplierId },
+      { $set: { isActive: true } }
+    );
+  }
+
+  const msg = config.currentOnly
+    ? '🟢 Режим: Только в наличии (предзаказы скрыты)'
+    : '⚪ Режим: Все товары (предзаказы включены)';
   await ctx.answerCbQuery(msg, { show_alert: true }).catch(() => {});
   await showSupplierDetail(ctx, supplierId);
 };

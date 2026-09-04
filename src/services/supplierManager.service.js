@@ -119,6 +119,27 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
   const marginPercent = options.marginPercent !== undefined ? parseFloat(options.marginPercent) : config.marginPercent;
   const marginFixed = options.marginFixed !== undefined ? parseFloat(options.marginFixed) : config.marginFixed;
 
+  const isOnlyInStock = config.currentOnly !== false;
+
+  // Если включен режим "Только в наличии" — импортируем только товары со stock > 0
+  const productsToProcess = isOnlyInStock
+    ? catRes.products.filter((p) => (p.stock || 0) > 0)
+    : catRes.products;
+
+  // Если режим "Только в наличии" — деактивируем в базе все товары поставщика с 0 остатком
+  if (isOnlyInStock) {
+    await Product.updateMany(
+      { provider: supplierId, manualStock: { $lte: 0 } },
+      { $set: { isActive: false } }
+    );
+  } else {
+    // В режиме "Все товары" восстанавливаем видимость всех товаров поставщика
+    await Product.updateMany(
+      { provider: supplierId },
+      { $set: { isActive: true } }
+    );
+  }
+
   // 1. Предзагрузка всех существующих категорий в Map
   const existingCategories = await Category.find().lean();
   const categoryCache = new Map();
@@ -139,7 +160,7 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
   let importedCount = 0;
   let updatedCount = 0;
 
-  for (const item of catRes.products) {
+  for (const item of productsToProcess) {
     if (!item.productCode || !item.name) continue;
 
     // Сопоставление / создание категории

@@ -53,6 +53,8 @@ const syncSupplierStock = async (supplierId) => {
   const pricingService = require('./pricing.service');
   const bulkOps = [];
 
+  const isOnlyInStock = config.currentOnly !== false;
+
   for (const p of dbProducts) {
     if (!p.supplierProductCode) continue;
 
@@ -63,6 +65,7 @@ const syncSupplierStock = async (supplierId) => {
       const newRetail = liveData.costPrice && liveData.costPrice > 0
         ? pricingService.calculateRetailPrice(liveData.costPrice, config)
         : p.price;
+      const newActive = isOnlyInStock ? newStock > 0 : true;
 
       bulkOps.push({
         updateOne: {
@@ -72,17 +75,23 @@ const syncSupplierStock = async (supplierId) => {
               manualStock: newStock,
               costPrice: newCost,
               price: newRetail,
+              isActive: newActive,
             },
           },
         },
       });
       updatedCount++;
     } else {
-      if (p.manualStock !== 0) {
+      if (p.manualStock !== 0 || (isOnlyInStock && p.isActive)) {
         bulkOps.push({
           updateOne: {
             filter: { _id: p._id },
-            update: { $set: { manualStock: 0 } },
+            update: {
+              $set: {
+                manualStock: 0,
+                ...(isOnlyInStock ? { isActive: false } : {}),
+              },
+            },
           },
         });
         updatedCount++;
