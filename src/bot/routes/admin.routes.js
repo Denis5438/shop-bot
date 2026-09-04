@@ -78,6 +78,10 @@ module.exports = (bot) => {
     await suppliersScene.execSyncStock(ctx, ctx.match[1]);
   });
 
+  bot.action(/^admin:supplier:toggle_current:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.toggleCurrentOnly(ctx, ctx.match[1]);
+  });
+
   bot.action('admin:promos', adminMiddleware, async (ctx) => {
     await promosScene.showPromosMain(ctx);
   });

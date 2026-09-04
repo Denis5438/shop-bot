@@ -111,7 +111,7 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
   const adapter = ADAPTERS[supplierId];
   if (!adapter) return { success: false, error: 'Адаптер не поддерживается' };
 
-  const catRes = await adapter.getProducts(config.apiKey);
+  const catRes = await adapter.getProducts(config.apiKey, { currentOnly: config.currentOnly !== false });
   if (!catRes.success || !catRes.products || catRes.products.length === 0) {
     return { success: false, error: catRes.error || 'У поставщика нет доступных товаров.' };
   }

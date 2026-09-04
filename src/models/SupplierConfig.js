@@ -21,6 +21,7 @@ const supplierConfigSchema = new mongoose.Schema({
     marginFixed: { type: Number, default: 0 },
   }],
   cachedBalance: { type: Number, default: 0 },
+  currentOnly: { type: Boolean, default: true }, // Фильтр товаров поставщика: только актуальные (true) или все (false)
   lastSyncAt: { type: Date, default: null },
   autoSyncEnabled: { type: Boolean, default: true },
   updatedAt: { type: Date, default: Date.now },

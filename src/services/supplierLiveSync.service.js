@@ -31,7 +31,7 @@ const syncSupplierStock = async (supplierId) => {
   }
 
   // 2. Получаем актуальный каталог и остатки
-  const prodRes = await adapter.getProducts(config.apiKey);
+  const prodRes = await adapter.getProducts(config.apiKey, { currentOnly: config.currentOnly !== false });
   if (!prodRes.success || !prodRes.products) {
     return { success: false, error: prodRes.error || 'Не удалось получить остатки' };
   }

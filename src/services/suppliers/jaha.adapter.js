@@ -32,11 +32,28 @@ const getBalance = async (apiKey) => {
   }
 };
 
+const formatError = (err) => {
+  const data = err.response?.data;
+  if (!data) return err.message || 'Ошибка подключения к Jaha API';
+  if (typeof data.detail === 'string') return data.detail;
+  if (Array.isArray(data.detail)) {
+    return data.detail.map((e) => {
+      const loc = Array.isArray(e.loc) ? e.loc.filter((l) => l !== 'body').join('.') : '';
+      return `${loc ? loc + ': ' : ''}${e.msg || 'некорректное значение'}`;
+    }).join('; ');
+  }
+  if (data.message) return data.message;
+  return err.message || 'Неизвестная ошибка Jaha API';
+};
+
 /**
  * Получение всех доступных товаров от Jaha Digital
+ * @param {string} apiKey - API ключ
+ * @param {Object} options - { currentOnly: boolean }
  */
-const getProducts = async (apiKey) => {
+const getProducts = async (apiKey, options = {}) => {
   try {
+    const currentOnly = options.currentOnly !== false;
     let allProducts = [];
     let cursor = null;
     let hasMore = true;
@@ -44,9 +61,11 @@ const getProducts = async (apiKey) => {
 
     while (hasMore && pageCount < 50) {
       pageCount++;
-      const url = cursor
-        ? `${BASE_URL}/products?limit=100&cursor=${encodeURIComponent(cursor)}`
-        : `${BASE_URL}/products?limit=100`;
+      const params = new URLSearchParams({ limit: '100' });
+      if (currentOnly) params.set('current_only', 'true');
+      if (cursor) params.set('cursor', cursor);
+
+      const url = `${BASE_URL}/products?${params.toString()}`;
 
       const res = await axios.get(url, {
         headers: {
@@ -76,24 +95,18 @@ const getProducts = async (apiKey) => {
       success: true,
       products: allProducts.map((p) => {
         let stockVal = 0;
-        if (p.is_available === false || p.in_stock === false || p.status === 'out_of_stock' || p.status === 'disabled' || p.is_active === false) {
+        const status = String(p.status || '').toLowerCase();
+        // По официальной документации Jaha: покупаемыми считаются только позиции со status=available и available > 0
+        if (status === 'available' || status === 'in_stock') {
+          if (typeof p.available === 'number') stockVal = p.available;
+          else if (typeof p.stock === 'number') stockVal = p.stock;
+          else if (typeof p.quantity === 'number') stockVal = p.quantity;
+          else if (typeof p.count === 'number') stockVal = p.count;
+          else if (typeof p.stock_count === 'number') stockVal = p.stock_count;
+          else if (typeof p.available_count === 'number') stockVal = p.available_count;
+          else stockVal = 1;
+        } else {
           stockVal = 0;
-        } else if (p.stock !== undefined && p.stock !== null && !isNaN(Number(p.stock))) {
-          stockVal = Number(p.stock);
-        } else if (p.count !== undefined && p.count !== null && !isNaN(Number(p.count))) {
-          stockVal = Number(p.count);
-        } else if (p.stock_count !== undefined && p.stock_count !== null && !isNaN(Number(p.stock_count))) {
-          stockVal = Number(p.stock_count);
-        } else if (p.available_count !== undefined && p.available_count !== null && !isNaN(Number(p.available_count))) {
-          stockVal = Number(p.available_count);
-        } else if (p.available !== undefined && p.available !== null && !isNaN(Number(p.available))) {
-          stockVal = Number(p.available);
-        } else if (p.remains !== undefined && p.remains !== null && !isNaN(Number(p.remains))) {
-          stockVal = Number(p.remains);
-        } else if (p.quantity !== undefined && p.quantity !== null && !isNaN(Number(p.quantity))) {
-          stockVal = Number(p.quantity);
-        } else if (p.in_stock === true || p.is_available === true) {
-          stockVal = 1;
         }
 
         // Интеллектуальное определение категории по названию товара, если категория не указана
@@ -143,7 +156,7 @@ const getProducts = async (apiKey) => {
         }
 
         return {
-          productCode: p.product_code || p.id || p.code,
+          productCode: p.code || p.product_code || p.id,
           name: prodName,
           nameEn: p.name_en || p.title_en || '',
           description: p.description || '',
@@ -159,7 +172,7 @@ const getProducts = async (apiKey) => {
   } catch (err) {
     return {
       success: false,
-      error: err.response?.data?.detail || err.message || 'Не удалось получить каталог Jaha',
+      error: formatError(err),
       products: [],
     };
   }
@@ -201,7 +214,7 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
       raw: orderData,
     };
   } catch (err) {
-    const detail = err.response?.data?.detail || err.response?.data?.message || err.message;
+    const detail = formatError(err);
     return {
       success: false,
       error: detail,
@@ -210,8 +223,41 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
   }
 };
 
+/**
+ * Проверка статуса и получение выданного товара по номеру заказа в Jaha Digital
+ */
+const getOrder = async (apiKey, orderNumber) => {
+  try {
+    const res = await axios.get(`${BASE_URL}/orders/${encodeURIComponent(orderNumber)}`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      timeout: 15000,
+    });
+
+    const orderData = res.data;
+    const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
+    const status = orderData?.status || (delivery ? 'completed' : 'processing');
+
+    return {
+      success: true,
+      orderNumber: orderData?.order_number || orderNumber,
+      status,
+      deliveryData: delivery ? String(delivery) : null,
+      raw: orderData,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: formatError(err),
+    };
+  }
+};
+
 module.exports = {
   getBalance,
   getProducts,
   createOrder,
+  getOrder,
 };
