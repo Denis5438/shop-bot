@@ -14,10 +14,14 @@ const getBalance = async (apiKey) => {
       },
       timeout: 10000,
     });
+    const acc = res.data?.account || res.data || {};
+    const rawBalance = acc.balance_usdt ?? acc.balance ?? acc.usdt_balance ?? res.data?.balance_usdt ?? res.data?.balance ?? 0;
     return {
       success: true,
-      balance: parseFloat(res.data?.balance || res.data?.usdt_balance || 0),
-      username: res.data?.username || res.data?.telegram_id || 'Jaha Reseller',
+      balance: parseFloat(rawBalance) || 0,
+      username: acc.client_id || acc.username || acc.telegram_id || 'Jaha Reseller',
+      currency: acc.currency || 'USDT',
+      status: acc.status || 'active',
       raw: res.data,
     };
   } catch (err) {

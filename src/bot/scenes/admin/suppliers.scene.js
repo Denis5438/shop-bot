@@ -32,9 +32,18 @@ const showSuppliersMain = async (ctx) => {
  * Карточка конкретного поставщика
  */
 const showSupplierDetail = async (ctx, supplierId) => {
-  const suppliers = await supplierManager.getAllSuppliers();
-  const supplier = suppliers.find((s) => s.supplierId === supplierId);
+  let suppliers = await supplierManager.getAllSuppliers();
+  let supplier = suppliers.find((s) => s.supplierId === supplierId);
   if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  // Если ключ задан, но в кэше 0 или баланс не обновлялся больше 5 минут — обновляем в фоне
+  if (supplier.apiKey && (supplier.cachedBalance === 0 || !supplier.lastSyncAt || Date.now() - new Date(supplier.lastSyncAt).getTime() > 5 * 60 * 1000)) {
+    const refreshed = await supplierManager.refreshSupplierBalance(supplierId).catch(() => null);
+    if (refreshed?.success) {
+      supplier.cachedBalance = refreshed.balance;
+      supplier.lastSyncAt = new Date();
+    }
+  }
 
   const pricingService = require('../../../services/pricing.service');
   const status = supplier.apiKey ? '✅ Подключен и готов к работе' : '⚪ Ключ не задан';
