@@ -28,7 +28,7 @@
   "shop_out_of_stock": "❌ Нет в наличии",
   "product_status_label": "Статус",
   "product_origin_verified": "Верифицированный",
-  "product_origin_supplier": "Товар от поставщика",
+  "product_origin_supplier": "От поставщика",
   "product_warranty_label": "⏳ Гарантия",
   "product_warranty_days": "{days} дн.",
   "product_card": "📦 {icon} <b>{name}</b>\n\n💰 Цена: <b>{price} USDT</b> (~{priceRub} ₽)\n📦 Остаток: {stock}\n\n📝 {description}",

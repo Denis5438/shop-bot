@@ -381,16 +381,21 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const priceLabel = lang === 'en' ? '💰 Price' : '💰 Цена';
   const stockLabel = lang === 'en' ? '📦 Stock' : '📦 Наличие';
   const statusLabel = t('product_status_label') || (lang === 'en' ? 'Status' : 'Статус');
-  const isSupplier = product.itemOrigin === 'supplier' || (product.sellerId && product.itemOrigin !== 'verified');
+  const isSupplier = product.itemOrigin === 'supplier'
+    || Boolean(product.provider && product.provider !== 'local')
+    || Boolean(product.supplierProductCode)
+    || Boolean(product.sellerId && product.itemOrigin !== 'verified');
   const statusIcon = isSupplier ? '👤' : '🛡';
   const originText = isSupplier
-    ? (t('product_origin_supplier') || (lang === 'en' ? 'Supplier Product' : 'Товар от поставщика'))
+    ? (t('product_origin_supplier') || (lang === 'en' ? 'Supplier Product' : 'От поставщика'))
     : (t('product_origin_verified') || (lang === 'en' ? 'Verified' : 'Верифицированный'));
 
   let warrantyLine = '';
-  if (product.warrantyDays && product.warrantyDays > 0) {
+  if (typeof product.warrantyDays === 'number') {
     const warrantyLabel = t('product_warranty_label') || (lang === 'en' ? '⏳ Warranty' : '⏳ Гарантия');
-    const warrantyVal = t('product_warranty_days', { days: product.warrantyDays }) || (lang === 'en' ? `${product.warrantyDays} days` : `${product.warrantyDays} дн.`);
+    const warrantyVal = product.warrantyDays === 0
+      ? (lang === 'en' ? 'No warranty' : 'Без гарантии')
+      : (t('product_warranty_days', { days: product.warrantyDays }) || (lang === 'en' ? `${product.warrantyDays} days` : `${product.warrantyDays} дн.`));
     warrantyLine = `\n${warrantyLabel}: <b>${warrantyVal}</b>`;
   }
 
@@ -772,18 +777,30 @@ const showProductDescInfo = async (ctx, productId, fromPage = 1, qty = 1, isPreo
     ? (lang === 'en' ? '🔑 Activation on your account' : '🔑 Активация на вашем аккаунте')
     : (lang === 'en' ? '📦 Ready account / key' : '📦 Готовый аккаунт / ключ');
 
-  const isSupplier = product.itemOrigin === 'supplier' || (product.sellerId && product.itemOrigin !== 'verified');
+  const isSupplier = product.itemOrigin === 'supplier'
+    || Boolean(product.provider && product.provider !== 'local')
+    || Boolean(product.supplierProductCode)
+    || Boolean(product.sellerId && product.itemOrigin !== 'verified');
   const statusIcon = isSupplier ? '👤' : '🛡';
   const originText = isSupplier
-    ? (lang === 'en' ? 'Supplier Product' : 'Товар от поставщика')
+    ? (lang === 'en' ? 'Supplier Product' : 'От поставщика')
     : (lang === 'en' ? 'Verified' : 'Верифицированный');
+
+  const warrantyVal = product.warrantyDays === 0
+    ? (lang === 'en' ? 'No warranty' : 'Без гарантии')
+    : `${product.warrantyDays ?? 5} дн.`;
+
+  const durationLine = product.subscriptionDays && product.subscriptionDays > 0
+    ? `⏳ <b>${lang === 'en' ? 'Duration' : 'Срок подписки'}:</b> ${product.subscriptionDays} дн.\n`
+    : '';
 
   const text =
     `📝 <b>Описание товара: ${escapeHtml(name)}</b>\n\n` +
     `${statusIcon} <b>Статус:</b> ${originText}\n` +
     `🚚 <b>Способ выдачи:</b> ${deliveryLabel}\n` +
-    `⏳ <b>Срок гарантии:</b> ${product.warrantyDays ?? 5} дн.\n\n` +
-    `<b>Подробная информация:</b>\n` +
+    `⏳ <b>Срок гарантии:</b> ${warrantyVal}\n` +
+    durationLine +
+    `\n<b>Подробная информация:</b>\n` +
     `<blockquote>${escapeHtml(description)}</blockquote>`;
 
   const backAction = isPreorder

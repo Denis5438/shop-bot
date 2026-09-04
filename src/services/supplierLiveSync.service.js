@@ -45,6 +45,8 @@ const syncSupplierStock = async (supplierId) => {
     supplierCodesMap.set(code, {
       stock: stockCount,
       costPrice: item.priceUsdt,
+      warrantyDays: item.warrantyDays,
+      subscriptionDays: item.subscriptionDays,
     });
   }
 
@@ -76,6 +78,9 @@ const syncSupplierStock = async (supplierId) => {
               costPrice: newCost,
               price: newRetail,
               isActive: newActive,
+              itemOrigin: 'supplier',
+              ...(typeof liveData.warrantyDays === 'number' ? { warrantyDays: liveData.warrantyDays } : {}),
+              ...(typeof liveData.subscriptionDays === 'number' ? { subscriptionDays: liveData.subscriptionDays } : {}),
             },
           },
         },

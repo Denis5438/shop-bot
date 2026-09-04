@@ -47,6 +47,161 @@ const formatError = (err) => {
 };
 
 /**
+ * Интеллектуальное определение срока действия подписки и срока гарантии
+ * из названия (title) и описания (description) товара
+ */
+const parseSubscriptionAndWarranty = (name = '', description = '') => {
+  const cleanName = (name || '').trim();
+  const lowerName = cleanName.toLowerCase();
+  // Очищаем описание от возможных длинных UUID/хэшей
+  const cleanDesc = (description || '').replace(/[a-f0-9]{4,}-[a-f0-9-]{10,}/gi, '');
+  const lowerDesc = cleanDesc.toLowerCase();
+
+  // 1. ОПРЕДЕЛЕНИЕ СРОКА ПОДПИСКИ (subscriptionDays)
+  let subscriptionDays = null;
+
+  // Очищаем название от упоминаний гарантии, чтобы они не сбивали парсинг подписки
+  const nameWithoutWarranty = lowerName
+    .replace(/\([^)]*(?:warranty|гарант|w\d|nw|fw)[^)]*\)/g, '')
+    .replace(/\[[^\]]*(?:warranty|гарант|w\d|nw|fw)[^\]]*\]/g, '')
+    .replace(/warranty\s*24\s*h/g, '')
+    .replace(/w24h/g, '')
+    .replace(/\b\d+\s*(?:d|day|days|дн|дней|день)\s*warranty\b/g, '')
+    .replace(/warranty\s*\d+\s*[a-zа-я]+/g, '')
+    .replace(/гарантия\s*\d+\s*[a-zа-я]+/g, '')
+    .replace(/-\s*full warranty/g, '')
+    .replace(/full warranty/g, '');
+
+  // 1.1 Диапазон месяцев (например, 17-18 months, 2-4 месяца)
+  const nameRangeMatch = nameWithoutWarranty.match(/(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*(?:month|months|m|мес|месяц|месяца|месяцев)/i);
+  if (nameRangeMatch) {
+    const avg = (parseInt(nameRangeMatch[1]) + parseInt(nameRangeMatch[2])) / 2;
+    subscriptionDays = Math.round(avg * 30);
+  }
+
+  // 1.2 Годы в названии (1-5 years, 1Y, 1-5 лет, 3 года)
+  if (!subscriptionDays) {
+    const yearMatch = nameWithoutWarranty.match(/(?:^|\s|\b)([1-5])\s*(?:year|years|y|год|года|лет)(?=$|\s|[^\p{L}\p{N}])/iu);
+    if (yearMatch) {
+      subscriptionDays = parseInt(yearMatch[1]) * 365;
+    }
+  }
+
+  // 1.3 Месяцы в названии: 1 Month, 3 Months, 18M, 1M, 3M, 6M, 12M
+  if (!subscriptionDays) {
+    const monthWordsMatch = nameWithoutWarranty.match(/(?:^|\s|\b)([1-9]|[1-3]\d)\s*(?:month|months|мес|месяц|месяца|месяцев)(?=$|\s|[^\p{L}\p{N}])/iu);
+    if (monthWordsMatch) {
+      subscriptionDays = parseInt(monthWordsMatch[1]) * 30;
+    } else {
+      // Краткая запись: 1M..36M, исключая Credit, Token, Cre, Balance, Model
+      const shortMMatch = nameWithoutWarranty.match(/\b([1-9]|[1-3]\d)\s*m\b(?!\s*(?:credit|token|cre|balance|point|req|model))/);
+      if (shortMMatch) {
+        subscriptionDays = parseInt(shortMMatch[1]) * 30;
+      }
+    }
+  }
+
+  // 1.4 Дни в названии: 1 Day, 7 Days, 30 Days, 3D, 7D, 30D, 24H
+  if (!subscriptionDays) {
+    if (/\b24\s*h(ours)?\b/.test(nameWithoutWarranty)) {
+      subscriptionDays = 1;
+    } else {
+      const dayMatch = nameWithoutWarranty.match(/(?:^|\s|\b)(\d{1,3})\s*(?:day|days|дн|дней|день|d)(?=$|\s|[^\p{L}\p{N}])/iu);
+      if (dayMatch && parseInt(dayMatch[1]) <= 365) {
+        subscriptionDays = parseInt(dayMatch[1]);
+      }
+    }
+  }
+
+  // 1.5 Поиск в описании, если в названии не указано явно
+  if (!subscriptionDays) {
+    const descTermMatch = cleanDesc.match(/(?:срок|период|длительность|подписка на|duration|period)[\s:]*(\d{1,3})\s*(месяц|месяца|месяцев|month|months|m|дн|дней|день|days|d|год|года|лет|year|years|y)/iu);
+    if (descTermMatch) {
+      const num = parseInt(descTermMatch[1]);
+      const unit = descTermMatch[2].toLowerCase();
+      if (unit.startsWith('мес') || unit.startsWith('m')) {
+        subscriptionDays = num <= 36 ? num * 30 : 30;
+      } else if (unit.startsWith('дн') || unit.startsWith('d') || unit.startsWith('ден')) {
+        subscriptionDays = num <= 365 ? num : 30;
+      } else if (unit.startsWith('год') || unit.startsWith('лет') || unit.startsWith('y')) {
+        subscriptionDays = num <= 5 ? num * 365 : 365;
+      }
+    }
+  }
+
+  if (!subscriptionDays || subscriptionDays <= 0) {
+    subscriptionDays = 30;
+  }
+
+  // 2. ОПРЕДЕЛЕНИЕ СРОКА ГАРАНТИИ (warrantyDays)
+  let warrantyDays = null;
+
+  // 2.1 Проверка в НАЗВАНИИ:
+  if (/\b(nw|no[-\s]?warranty)\b/i.test(lowerName) || /\[nw\]|\(nw\)/i.test(cleanName) || /без гарантии/iu.test(lowerName)) {
+    warrantyDays = 0;
+  } else if (
+    /\bw(\d+)\s*d?\b/i.test(cleanName) ||
+    /\(w(\d+)d?\)/i.test(cleanName) ||
+    /\[w(\d+)d?\]/i.test(cleanName)
+  ) {
+    const m = cleanName.match(/w(\d+)\s*d?/i);
+    if (m) warrantyDays = parseInt(m[1]);
+  } else if (/(\d+)\s*(?:d|day|days|дн|дней|день)\s*warranty/iu.test(lowerName) || /warranty\s*[:\s]*(\d+)\s*(?:d|day|days|дн|дней|день)/iu.test(lowerName)) {
+    const m = lowerName.match(/(\d+)\s*(?:d|day|days|дн|дней|день)\s*warranty/iu) || lowerName.match(/warranty\s*[:\s]*(\d+)\s*(?:d|day|days|дн|дней|день)/iu);
+    if (m) warrantyDays = parseInt(m[1]);
+  } else if (/warranty\s*[:\s]*(\d+)\s*(?:month|months|m|мес|месяц|месяца|месяцев)/iu.test(lowerName)) {
+    const m = lowerName.match(/warranty\s*[:\s]*(\d+)\s*(?:month|months|m|мес|месяц|месяца|месяцев)/iu);
+    if (m) warrantyDays = parseInt(m[1]) * 30;
+  } else if (/warranty\s*[:\s]*(\d+)\s*(?:year|years|y|год|года|лет)/iu.test(lowerName)) {
+    const m = lowerName.match(/warranty\s*[:\s]*(\d+)\s*(?:year|years|y|год|года|лет)/iu);
+    if (m) warrantyDays = parseInt(m[1]) * 365;
+  } else if (
+    /\b(fw|full[-\s]?warranty|fully covered|fully guaranteed|полная гарантия)\b/iu.test(lowerName) ||
+    /\[fw\]|\(fw\)/i.test(cleanName)
+  ) {
+    warrantyDays = subscriptionDays;
+  } else if (/warranty\s*24\s*h/i.test(lowerName) || /w24h/i.test(lowerName)) {
+    warrantyDays = 1;
+  }
+
+  // 2.2 Проверка в ОПИСАНИИ:
+  if (warrantyDays === null) {
+    if (/\b(nw|no[-\s]?warranty)\b/i.test(lowerDesc) || /без гарантии/iu.test(lowerDesc)) {
+      warrantyDays = 0;
+    } else if (
+      /\b(fw|full[-\s]?warranty|fully covered|fully guaranteed|полная гарантия|гарантия на весь срок)\b/iu.test(lowerDesc) ||
+      /гарантия\s*(?:на\s*)?подписку/iu.test(lowerDesc)
+    ) {
+      warrantyDays = subscriptionDays;
+    } else if (/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:day|days|дн|дней|день)/iu.test(lowerDesc)) {
+      const m = lowerDesc.match(/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:day|days|дн|дней|день)/iu);
+      if (m) warrantyDays = parseInt(m[1]);
+    } else if (/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:month|months|мес|месяц|месяца)/iu.test(lowerDesc)) {
+      const m = lowerDesc.match(/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:month|months|мес|месяц|месяца)/iu);
+      if (m) warrantyDays = parseInt(m[1]) * 30;
+    } else if (/гарантия активации/iu.test(lowerDesc)) {
+      warrantyDays = 1;
+    }
+  }
+
+  // 2.3 Значение по умолчанию:
+  if (warrantyDays === null) {
+    if (subscriptionDays === 1) {
+      warrantyDays = 1;
+    } else {
+      warrantyDays = 5;
+    }
+  }
+
+  // Защита: гарантия не может превышать срок действия
+  if (warrantyDays > subscriptionDays) {
+    warrantyDays = subscriptionDays;
+  }
+
+  return { subscriptionDays, warrantyDays };
+};
+
+/**
  * Получение всех доступных товаров от Jaha Digital
  * @param {string} apiKey - API ключ
  * @param {Object} options - { currentOnly: boolean }
@@ -155,6 +310,8 @@ const getProducts = async (apiKey, options = {}) => {
           else detectedCategory = detectedCategory || 'AI & Digital Tools';
         }
 
+        const durationInfo = parseSubscriptionAndWarranty(prodName, p.description || '');
+
         return {
           productCode: p.code || p.product_code || p.id,
           name: prodName,
@@ -166,6 +323,8 @@ const getProducts = async (apiKey, options = {}) => {
           category: detectedCategory,
           icon: p.icon || '🤖',
           deliveryType: p.delivery_type || 'instant',
+          warrantyDays: durationInfo.warrantyDays,
+          subscriptionDays: durationInfo.subscriptionDays,
         };
       }),
     };
@@ -260,4 +419,5 @@ module.exports = {
   getProducts,
   createOrder,
   getOrder,
+  parseSubscriptionAndWarranty,
 };
