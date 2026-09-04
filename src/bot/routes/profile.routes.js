@@ -91,6 +91,7 @@ module.exports = (bot) => {
     await ctx.answerCbQuery().catch(() => {});
     ctx.session = ctx.session || {};
     ctx.session.userAction = 'enter_promo';
+    ctx.session.promoReturnTo = 'profile';
     if (ctx.callbackQuery?.message?.message_id) {
       ctx.session.promoMsgId = ctx.callbackQuery.message.message_id;
     }
@@ -98,7 +99,7 @@ module.exports = (bot) => {
     const text = `🎟 <b>Активация промокода</b>\n\n` +
       `Введите ваш промокод в ответном сообщении:`;
 
-    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'menu:profile')]]);
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'promo:cancel')]]);
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => ctx.reply(text, { parse_mode: 'HTML', ...keyboard }));
   });
 };

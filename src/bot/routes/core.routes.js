@@ -382,11 +382,13 @@ module.exports = (bot) => {
   });
 
   bot.action('menu:shop', async (ctx) => {
+    if (ctx.session?.userAction === 'enter_promo') ctx.session.userAction = null;
     await shopScene.showShopPage(ctx, 1);
   });
 
   // ─── КОРЗИНА ТОВАРОВ ───
   bot.action(['menu:cart', 'cart:main'], async (ctx) => {
+    if (ctx.session?.userAction === 'enter_promo') ctx.session.userAction = null;
     await cartScene.showCart(ctx);
   });
 
@@ -418,11 +420,12 @@ module.exports = (bot) => {
       `Введите код купона/промокода в ответном сообщении для получения скидки на корзину:`;
     await safeEdit(ctx, text, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад в корзину', 'menu:cart')]]),
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Назад в корзину', 'promo:cancel')]]),
     });
   });
 
   bot.action('menu:profile', async (ctx) => {
+    if (ctx.session?.userAction === 'enter_promo') ctx.session.userAction = null;
     await profileScene.showProfile(ctx);
   });
 

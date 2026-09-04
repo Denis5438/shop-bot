@@ -23,6 +23,19 @@ module.exports = (bot) => {
   bot.on(['text', 'photo', 'video', 'document'], async (ctx, next) => {
     const session = ctx.session || {};
 
+    // Если пользователь отправляет команду (начинается со слэша /),
+    // немедленно сбрасываем любые зависшие userAction ввода и передаём управление команде!
+    const textMsg = (ctx.message?.text || '').trim();
+    if (textMsg.startsWith('/')) {
+      if (ctx.session) {
+        ctx.session.userAction = null;
+        ctx.session.tokenCheck = null;
+        ctx.session.promoReturnTo = null;
+        ctx.session.promoCheckoutProductId = null;
+      }
+      return next();
+    }
+
     // Бесплатная проверка токена (№6): пользователь прислал токен без оплаты.
     if (session.tokenCheck && session.tokenCheck.productId) {
       const { validateChatgptToken, formatCheckReport } = require('../../services/token-check.service');
@@ -73,11 +86,7 @@ module.exports = (bot) => {
           `🎟 <b>Активация промокода</b>\n` +
           `Введите корректный промокод в ответном сообщении:`;
 
-        const cancelCallback = session.promoReturnTo === 'checkout' && session.promoCheckoutProductId
-          ? `shop:buy:${session.promoCheckoutProductId}:${session.promoCheckoutPage || 1}:${session.promoCheckoutQty || 1}`
-          : 'menu:profile';
-
-        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', cancelCallback)]]);
+        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'promo:cancel')]]);
 
         if (targetMsgId) {
           try {
@@ -550,5 +559,33 @@ module.exports = (bot) => {
     // Потом остальное (фото-чек пополнения)
     if (await topupScene.handleTopupProof(ctx)) return;
     return next();
+  });
+
+  bot.action('promo:cancel', async (ctx) => {
+    ctx.session = ctx.session || {};
+    const returnTo = ctx.session.promoReturnTo;
+    const checkoutProductId = ctx.session.promoCheckoutProductId;
+    const checkoutPage = ctx.session.promoCheckoutPage || 1;
+    const checkoutQty = ctx.session.promoCheckoutQty || 1;
+
+    ctx.session.userAction = null;
+    ctx.session.promoReturnTo = null;
+    ctx.session.promoCheckoutProductId = null;
+    ctx.session.promoCheckoutPage = null;
+    ctx.session.promoCheckoutQty = null;
+    ctx.session.promoMsgId = null;
+
+    await ctx.answerCbQuery('Отменено').catch(() => {});
+
+    if (returnTo === 'checkout' && checkoutProductId) {
+      const shopScene = require('../scenes/shop.scene');
+      return shopScene.confirmPurchase(ctx, checkoutProductId, checkoutPage, checkoutQty, false);
+    }
+    if (returnTo === 'cart') {
+      const cartScene = require('../scenes/cart.scene');
+      return cartScene.showCart(ctx);
+    }
+    const profileScene = require('../scenes/profile.scene');
+    return profileScene.showProfile(ctx);
   });
 };

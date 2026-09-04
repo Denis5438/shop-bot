@@ -24,36 +24,65 @@ const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-17-78';
 const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-17-44';
 
 const clearActivePromo = async (ctx) => {
-  // Очищаем применённый промокод из сессии и профиля пользователя после успешной покупки
-  if (ctx.session?.activePromo || ctx.user?.activePromoCode) {
-    ctx.session.activePromo = null;
+  // Очищаем применённый промокод из сессии и базы данных пользователя
+  if (ctx.session) ctx.session.activePromo = null;
+  if (ctx.user) ctx.user.activePromoCode = null;
+  if (ctx.user?._id) {
     const User = require('../../models/User');
     await User.updateOne({ _id: ctx.user._id }, { $set: { activePromoCode: null } }).catch(() => {});
   }
 };
 
 const getActivePromoFromCtx = async (ctx) => {
-  if (ctx.session?.activePromo) return ctx.session.activePromo;
-  if (ctx.user?.activePromoCode) {
-    const PromoCode = require('../../models/PromoCode');
-    const promo = await PromoCode.findById(ctx.user.activePromoCode).lean();
-    if (promo && promo.isActive && (!promo.expiresAt || new Date() <= new Date(promo.expiresAt))) {
-      const activeObj = {
-        success: true,
-        type: promo.type,
-        code: promo.code,
-        promoId: promo._id,
-        value: promo.value,
-        minOrderAmount: promo.minOrderAmount,
-        productId: promo.productId ? promo.productId.toString() : null,
-        isActive: true,
-      };
-      ctx.session = ctx.session || {};
-      ctx.session.activePromo = activeObj;
-      return activeObj;
+  const promoId = ctx.session?.activePromo?.promoId || ctx.user?.activePromoCode;
+  if (!promoId) return null;
+
+  const PromoCode = require('../../models/PromoCode');
+  const PromoUsage = require('../../models/PromoUsage');
+
+  // ВСЕГДА проверяем актуальный статус промокода в базе данных!
+  const promo = await PromoCode.findById(promoId).lean();
+
+  // 1. Промокод удален из базы или выключен администратором
+  if (!promo || !promo.isActive) {
+    await clearActivePromo(ctx);
+    return null;
+  }
+
+  // 2. Промокод истёк по времени
+  if (promo.expiresAt && new Date() > new Date(promo.expiresAt)) {
+    await clearActivePromo(ctx);
+    return null;
+  }
+
+  // 3. Превышен общий лимит активаций
+  if (promo.maxActivations !== -1 && promo.currentActivations >= promo.maxActivations) {
+    await clearActivePromo(ctx);
+    return null;
+  }
+
+  // 4. Проверяем лимит использований этим пользователем
+  if (ctx.user?._id) {
+    const userUsageCount = await PromoUsage.countDocuments({ promoId: promo._id, userId: ctx.user._id });
+    if (promo.maxPerUser !== -1 && userUsageCount >= promo.maxPerUser) {
+      await clearActivePromo(ctx);
+      return null;
     }
   }
-  return null;
+
+  const activeObj = {
+    success: true,
+    type: promo.type,
+    code: promo.code,
+    promoId: promo._id,
+    value: promo.value,
+    minOrderAmount: promo.minOrderAmount,
+    productId: promo.productId ? promo.productId.toString() : null,
+    isActive: true,
+  };
+  ctx.session = ctx.session || {};
+  ctx.session.activePromo = activeObj;
+  return activeObj;
 };
 
 const stockIndicator = (stock, t) => {
@@ -783,7 +812,7 @@ const startCheckoutPromo = async (ctx, productId, fromPage = 1, qty = 1) => {
     `Отправьте промокод в чат сообщением, чтобы получить скидку на ваш заказ:`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('❌ Отмена', `shop:buy:${productId}:${fromPage}:${qty}`)],
+    [Markup.button.callback('❌ Отмена', 'promo:cancel')],
   ]);
 
   await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
@@ -1085,8 +1114,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     throw err;
   }
 
-  if (ctx.session) ctx.session.activePromo = null;
-  if (ctx.user) ctx.user.activePromoCode = null;
+  await clearActivePromo(ctx);
 
   // Уведомление продавца (sellerId и sellerPayout уже сохранены в заказе атомарно)
   if (product.sellerId && product.sellerPrice > 0) {
@@ -1574,6 +1602,8 @@ const processPreorder = async (ctx, productId, qty = 1) => {
     }
     throw err;
   }
+
+  await clearActivePromo(ctx);
 
   await Waitlist.updateOne(
     { userId: user._id, productId: product._id },

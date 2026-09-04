@@ -84,8 +84,22 @@ const getCart = async (user) => {
   let discountAmount = 0;
   if (dbUser.activePromoCode) {
     activePromo = await PromoCode.findById(dbUser.activePromoCode).lean();
-    if (!activePromo || !activePromo.isActive || (activePromo.expiresAt && new Date() > new Date(activePromo.expiresAt))) {
+    if (
+      !activePromo ||
+      !activePromo.isActive ||
+      (activePromo.expiresAt && new Date() > new Date(activePromo.expiresAt)) ||
+      (activePromo.maxActivations !== -1 && activePromo.currentActivations >= activePromo.maxActivations)
+    ) {
       activePromo = null;
+    } else {
+      const PromoUsage = require('../models/PromoUsage');
+      const usageCount = await PromoUsage.countDocuments({ promoId: activePromo._id, userId: dbUser._id });
+      if (activePromo.maxPerUser !== -1 && usageCount >= activePromo.maxPerUser) {
+        activePromo = null;
+      }
+    }
+    if (!activePromo) {
+      await User.updateOne({ _id: dbUser._id }, { $set: { activePromoCode: null } }).catch(() => {});
     }
   }
 
