@@ -55,6 +55,8 @@ const showSettings = async (ctx) => {
   const plategaBtnStr = settings.plategaEnabled !== false ? '⚡ СБП: Выкл' : '⚡ СБП: Вкл';
   const cardBtnStr = settings.cardEnabled !== false ? '🏦 IDBank: Выкл' : '🏦 IDBank: Вкл';
   const bybitBtnStr = settings.bybitEnabled !== false ? '📊 Bybit: Выкл' : '📊 Bybit: Вкл';
+  const cleanChatStatusText = settings.cleanChatEnabled ? '🟢 Вкл' : '🔴 Выкл';
+  const cleanChatBtnStr = settings.cleanChatEnabled ? '🧹 Чистый чат: Выкл' : '🧹 Чистый чат: Вкл';
 
   const webhookDomain = process.env.RENDER_EXTERNAL_HOSTNAME || process.env.DOMAIN || 'shop-bot-62dd.onrender.com';
   const plategaWebhookUrl = `https://${webhookDomain}/webhook/platega`;
@@ -81,7 +83,8 @@ const showSettings = async (ctx) => {
     `⏱ Авто-подтверждение заказа: <b>${settings.autoConfirmHours ?? 24} ч.</b>\n\n` +
     `🚕 Умные цены (x1.2 при &lt;10 шт): <b>${smartPriceText}</b>\n` +
     `📉 Умная уценка (-${settings.autoMarkdownPercent}% / ${settings.autoMarkdownDays}дн): <b>${settings.autoMarkdownEnabled ? '🔴 Вкл' : '🟢 Выкл'}</b>\n` +
-    `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n\n` +
+    `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n` +
+    `🧹 Чистый чат (удаление старых сообщений): <b>${cleanChatStatusText}</b>\n\n` +
     `💱 Текущий курс: 1 USD = <b>${getRate()} ₽</b>\n` +
     `🕐 Обновлён: ${getUpdatedAt()}\n\n` +
     `🛡 Тех. обслуживание: <b>${modeText}</b>`;
@@ -92,6 +95,7 @@ const showSettings = async (ctx) => {
       Markup.button.callback(cardBtnStr, 'admin:settings:toggle_card'),
       Markup.button.callback(bybitBtnStr, 'admin:settings:toggle_bybit'),
     ],
+    [Markup.button.callback(cleanChatBtnStr, 'admin:settings:toggle_clean_chat')],
     [Markup.button.callback('✏️ Platega Merchant ID', 'admin:settings:edit:plategaMerchantId')],
     [Markup.button.callback('✏️ Platega Secret Key', 'admin:settings:edit:plategaSecret')],
     [Markup.button.callback('✏️ Изменить кошелёк', 'admin:settings:edit:topupWallet')],
@@ -212,6 +216,15 @@ const toggleBybit = async (ctx) => {
   await showSettings(ctx);
 };
 
+const toggleCleanChat = async (ctx) => {
+  const settings = await getLiveSettings();
+  settings.cleanChatEnabled = !settings.cleanChatEnabled;
+  await settings.save();
+  invalidateCache();
+  await ctx.answerCbQuery(settings.cleanChatEnabled ? '🧹 Чистый чат включён' : '✅ Чистый чат выключен');
+  await showSettings(ctx);
+};
+
 // Запрос на редактирование поля
 const startEditSetting = async (ctx, field) => {
   const fieldNames = {
@@ -312,6 +325,7 @@ module.exports = {
   togglePlatega,
   toggleCard,
   toggleBybit,
+  toggleCleanChat,
   startEditSetting,
   handleSettingsInput,
   resetAllUserToS,

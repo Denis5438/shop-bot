@@ -34,6 +34,8 @@ const settingsSchema = new mongoose.Schema({
   plategaSecret: { type: String, default: '' },
   cardEnabled: { type: Boolean, default: true },
   bybitEnabled: { type: Boolean, default: true },
+  // Чистый чат (автоудаление старых сообщений бота)
+  cleanChatEnabled: { type: Boolean, default: false },
 }, {
   timestamps: true
 });

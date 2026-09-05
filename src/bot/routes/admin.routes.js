@@ -788,6 +788,9 @@ module.exports = (bot) => {
   bot.action('admin:settings:toggle_bybit', adminMiddleware, async (ctx) => {
     await settingsScene.toggleBybit(ctx);
   });
+  bot.action('admin:settings:toggle_clean_chat', adminMiddleware, async (ctx) => {
+    await settingsScene.toggleCleanChat(ctx);
+  });
 
   bot.action(/^admin:settings:edit:(\w+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();

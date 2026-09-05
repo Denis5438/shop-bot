@@ -20,6 +20,7 @@ const { mainKeyboard, languageKeyboard } = require('../keyboards/main.keyboard')
 const { toRub } = require('../../services/currency.service');
 const { tosGateKeyboard, tosGateText, PRIVACY_URL, AGREEMENT_URL } = require('../middlewares/tos');
 const { checkUserSubscriptions } = require('../services/channelCheck.service');
+const { cleanPreviousBotMessage, saveBotMessage } = require('../utils/cleanChat');
 
 const showChannelSubScreen = async (ctx, subCheckResult, isEdit = false) => {
   const { results } = subCheckResult;
@@ -56,24 +57,32 @@ const showChannelSubScreen = async (ctx, subCheckResult, isEdit = false) => {
 
 module.exports = (bot) => {
   bot.start(async (ctx) => {
+    await cleanPreviousBotMessage(ctx);
+
     const user = ctx.user;
     const t = ctx.t;
 
     // Если первый раз - предлагаем выбрать язык
     if (!user) {
-      return ctx.reply('⚠️ Не удалось загрузить профиль. Попробуйте позже или обратитесь в поддержку.').catch(() => {});
+      const sent = await ctx.reply('⚠️ Не удалось загрузить профиль. Попробуйте позже или обратитесь в поддержку.').catch(() => {});
+      saveBotMessage(ctx, sent?.message_id);
+      return;
     }
 
     // Показываем выбор языка ТОЛЬКО совершенно новым пользователям (первый запуск)
     const isBrandNewUser = (Date.now() - new Date(user.createdAt).getTime() < 10000) && !user.languageSelected;
 
     if (isBrandNewUser) {
-      return ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
+      const sent = await ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
+      saveBotMessage(ctx, sent?.message_id);
+      return;
     }
 
     // Экран Оферты (ToS) на языке пользователя (если не принял)
     if (!user.acceptedToS) {
-      return ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
+      const sent = await ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
+      saveBotMessage(ctx, sent?.message_id);
+      return;
     }
 
     // Проверка обязательной подписки на каналы
@@ -82,10 +91,11 @@ module.exports = (bot) => {
       return showChannelSubScreen(ctx, subCheck, false);
     }
 
-    await ctx.reply(
+    const sent = await ctx.reply(
       t('welcome_back', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
       { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
     );
+    saveBotMessage(ctx, sent?.message_id);
   });
 
   // ─────────────────── ToS: согласие / отказ ───────────────────

@@ -10,12 +10,32 @@ const { getSettings } = require('../../services/settingsCache.service');
 
 // ─── Вспомогательная функция ──────────────────────────────────────────────────
 const editOrReply = async (ctx, text, extra) => {
-  try {
-    if (ctx.callbackQuery) {
-      return await ctx.editMessageText(text, extra);
-    }
-  } catch (_) { }
-  return await ctx.reply(text, extra);
+  const topup = ctx.session?.topup;
+  const targetMsgId = ctx.callbackQuery?.message?.message_id || topup?.msgId;
+
+  if (ctx.callbackQuery) {
+    try {
+      const res = await ctx.editMessageText(text, extra);
+      if (topup && res && typeof res === 'object' && res.message_id) {
+        topup.msgId = res.message_id;
+      }
+      return res;
+    } catch (_) { }
+  } else if (targetMsgId && ctx.chat?.id && ctx.telegram?.editMessageText) {
+    try {
+      const res = await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, extra);
+      if (topup) {
+        topup.msgId = targetMsgId;
+      }
+      return res;
+    } catch (_) { }
+  }
+
+  const sent = await ctx.reply(text, extra);
+  if (topup && sent?.message_id) {
+    topup.msgId = sent.message_id;
+  }
+  return sent;
 };
 
 // Форматирование суммы: fmtUSDT теперь общий (из utils/ui)
@@ -28,7 +48,8 @@ const fmtRUB = (rub) => {
 // ─── Шаг 1: Выбор суммы (пресеты + своя сумма) ──────────────────────────────
 const startTopup = async (ctx) => {
   ctx.session = ctx.session || {};
-  ctx.session.topup = { step: 'amount', currency: 'usdt', msgId: null };
+  const currentMsgId = ctx.callbackQuery?.message?.message_id || ctx.session?.topup?.msgId || null;
+  ctx.session.topup = { step: 'amount', currency: 'usdt', msgId: currentMsgId };
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
   const rate = getRate();
@@ -74,8 +95,8 @@ const startTopup = async (ctx) => {
   };
 
   const sent = await editOrReply(ctx, text, opts);
-  if (sent && ctx.session.topup) {
-    ctx.session.topup.msgId = sent.message_id;
+  if (ctx.session.topup) {
+    ctx.session.topup.msgId = sent?.message_id || currentMsgId;
   }
 };
 
@@ -83,8 +104,10 @@ const startTopup = async (ctx) => {
 const showCustomAmountPrompt = async (ctx) => {
   ctx.session = ctx.session || {};
   ctx.session.topup = ctx.session.topup || {};
+  const currentMsgId = ctx.callbackQuery?.message?.message_id || ctx.session.topup.msgId || null;
   ctx.session.topup.step = 'custom_amount';
   ctx.session.topup.currency = 'usdt';
+  ctx.session.topup.msgId = currentMsgId;
   const lang = ctx.user?.language || 'ru';
   const rate = getRate();
   const settings = await getSettings();
@@ -105,10 +128,13 @@ const showCustomAmountPrompt = async (ctx) => {
     [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:main')],
   ];
 
-  await editOrReply(ctx, text, {
+  const sent = await editOrReply(ctx, text, {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard(buttons),
   });
+  if (ctx.session.topup) {
+    ctx.session.topup.msgId = sent?.message_id || currentMsgId;
+  }
   await ctx.answerCbQuery().catch(() => {});
 };
 
@@ -320,23 +346,27 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 
   const parsed = parseAmount(rawAmount ?? ctx.message?.text ?? '');
 
+  if (ctx.message?.message_id) {
+    ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+  }
+
   if (!parsed.ok) {
     const errorMsg = lang === 'en' && parsed.reason.includes('Некорректная') ? 'Invalid amount format' : parsed.reason;
-    await ctx.reply(
-      `❌ ${errorMsg}`,
-      {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')]]),
-      }
-    );
+    const errText = lang === 'en'
+      ? `❌ ${errorMsg}\n\n💬 <b>Enter top-up amount in USDT:</b>\n\nType the number in your message (e.g., <code>15</code> or <code>25.5</code>):`
+      : `❌ ${errorMsg}\n\n💬 <b>Введите желаемую сумму пополнения в USDT:</b>\n\nНапишите число в сообщении (например: <code>15</code> или <code>25.5</code>):`;
+    const errKeyboard = [
+      [Markup.button.callback(lang === 'en' ? '⬅️ Back to amounts' : '⬅️ Назад к выбору сумм', 'menu:topup')],
+      [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:main')],
+    ];
+    await editOrReply(ctx, errText, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard(errKeyboard),
+    });
     return true;
   }
 
   const inputAmount = parsed.value;
-
-  if (ctx.message?.message_id) {
-    ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
-  }
 
   const rate = getRate();
   const { currency = 'usdt' } = topup;
@@ -357,11 +387,15 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
   if (amountUSDT < minTopup) {
     const minRub = Math.ceil(minTopup * rate);
     const errMsg = currency === 'usdt'
-      ? (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minTopup} USDT</b>\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minTopup} USDT</b>\n\nВведите сумму ещё раз:`)
-      : (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minRub} ₽</b> (~${minTopup} USDT)\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minRub} ₽</b> (~${minTopup} USDT)\n\nВведите сумму ещё раз:`);
-    await ctx.reply(errMsg, {
+      ? (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minTopup} USDT</b>\n\n💬 Enter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minTopup} USDT</b>\n\n💬 Введите сумму ещё раз:`)
+      : (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minRub} ₽</b> (~${minTopup} USDT)\n\n💬 Enter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minRub} ₽</b> (~${minTopup} USDT)\n\n💬 Введите сумму ещё раз:`);
+    const errKeyboard = [
+      [Markup.button.callback(lang === 'en' ? '⬅️ Back to amounts' : '⬅️ Назад к выбору сумм', 'menu:topup')],
+      [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:main')],
+    ];
+    await editOrReply(ctx, errMsg, {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')]]),
+      ...Markup.inlineKeyboard(errKeyboard),
     });
     return true;
   }
