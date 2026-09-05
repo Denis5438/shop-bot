@@ -25,126 +25,20 @@ const fmtRUB = (rub) => {
   return `${rub.toFixed(0)} ₽ (~${usdt.toFixed(2)} USDT)`;
 };
 
-// ─── Шаг 1: Выбор способа оплаты ─────────────────────────────────────────────
+// ─── Шаг 1: Выбор суммы (пресеты + своя сумма) ──────────────────────────────
 const startTopup = async (ctx) => {
   ctx.session = ctx.session || {};
-  ctx.session.topup = null;
+  ctx.session.topup = { step: 'amount', currency: 'usdt', msgId: null };
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
-
-  const settings = await getSettings();
-  const buttons = [];
-
-  const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
-  const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
-  const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
-  const backLabel = t('btn_back');
-
-  if (settings?.plategaEnabled !== false) {
-    buttons.push([Markup.button.callback(sbpLabel, 'topup:pay:platega')]);
-  }
-  if (settings?.cardEnabled !== false) {
-    buttons.push([Markup.button.callback(idbankLabel, 'topup:pay:card')]);
-  }
-  if (settings?.bybitEnabled !== false) {
-    buttons.push([Markup.button.callback(bybitLabel, 'topup:pay:bybit')]);
-  }
-
-  if (buttons.length === 0) {
-    const closedText = lang === 'en'
-      ? '💳 <b>Balance top-up is temporarily unavailable.</b>\n\nPlease try again later or contact support.'
-      : '💳 <b>Пополнение баланса временно приостановлено.</b>\n\nПожалуйста, попробуйте позже или обратитесь в поддержку.';
-    const closedButtons = [
-      [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
-      [Markup.button.callback(backLabel, 'menu:main')],
-    ];
-    return editOrReply(ctx, closedText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(closedButtons) });
-  }
-
-  buttons.push([Markup.button.callback(backLabel, 'menu:main')]);
-
-  const title = lang === 'en' ? 'Balance Top Up' : 'Пополнение баланса';
-  const choose = lang === 'en' ? 'Select a payment method:' : 'Выберите удобный способ оплаты:';
-
-  await editOrReply(ctx,
-    `💳 <b>${title}</b>\n\n${choose}`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard(buttons),
-    }
-  );
-};
-
-// Быстрое пополнение на конкретную сумму (из карточки товара)
-const startTopupWithAmount = async (ctx, amount) => {
-  ctx.session = ctx.session || {};
-  ctx.session.topup = { quickAmount: amount };
-  const t = ctx.t || ((k) => k);
-  const lang = ctx.user?.language || 'ru';
-
-  const settings = await getSettings();
-  const buttons = [];
-
-  const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
-  const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
-  const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
-  const backLabel = t('btn_back');
-
-  if (settings?.plategaEnabled !== false) {
-    buttons.push([Markup.button.callback(sbpLabel, 'topup:pay:platega')]);
-  }
-  if (settings?.cardEnabled !== false) {
-    buttons.push([Markup.button.callback(idbankLabel, 'topup:pay:card')]);
-  }
-  if (settings?.bybitEnabled !== false) {
-    buttons.push([Markup.button.callback(bybitLabel, 'topup:pay:bybit')]);
-  }
-
-  if (buttons.length === 0) {
-    const closedText = lang === 'en'
-      ? '💳 <b>Balance top-up is temporarily unavailable.</b>\n\nPlease try again later or contact support.'
-      : '💳 <b>Пополнение баланса временно приостановлено.</b>\n\nПожалуйста, попробуйте позже или обратитесь в поддержку.';
-    const closedButtons = [
-      [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
-      [Markup.button.callback(backLabel, 'menu:main')],
-    ];
-    return editOrReply(ctx, closedText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(closedButtons) });
-  }
-
-  buttons.push([Markup.button.callback(backLabel, 'menu:main')]);
-
-  const title = lang === 'en' ? 'Quick Top Up' : 'Быстрое пополнение';
-  const amountLbl = lang === 'en' ? 'Amount to pay' : 'Сумма к пополнению';
-  const chooseLbl = lang === 'en' ? 'Select a payment method:' : 'Выберите способ оплаты:';
-
-  await editOrReply(ctx,
-    `💳 <b>${title}</b>\n\n` +
-    `<blockquote>💰 ${amountLbl}: <b>${amount} USDT</b> (~${toRub(amount)} ₽)</blockquote>\n\n${chooseLbl}`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard(buttons),
-    }
-  );
-};
-
-// ─── Шаг 2: Выбор платёжной системы ─────────────────────────────────────────
-const showDirectOptions = async (ctx) => {
-  return startTopup(ctx);
-};
-
-// ─── Ввод суммы (только USDT) ───────────────────────────────────────────────────────
-const askTopupAmount = async (ctx, method, network = null) => {
-  const prevQuickAmount = ctx.session?.topup?.quickAmount || null;
-  ctx.session.topup = { method, network, step: 'amount', currency: 'usdt', msgId: null, quickAmount: prevQuickAmount };
-  const lang = ctx.user?.language || 'ru';
-
-  if (prevQuickAmount) {
-    return await handleAmountInput(ctx, String(prevQuickAmount));
-  }
-
   const rate = getRate();
-  const currencyLine = lang === 'en' ? `💱 Rate: <b>1 USDT = ${rate.toFixed(2)} ₽</b>` : `💱 Курс: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`;
-  const hint = lang === 'en' ? `Example: <code>5</code> - is ~${(5 * rate).toFixed(0)} ₽` : `Например: <code>5</code> - это ~${(5 * rate).toFixed(0)} ₽`;
+
+  const currencyLine = lang === 'en'
+    ? `💱 Rate: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`
+    : `💱 Курс: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`;
+  const hint = lang === 'en'
+    ? `Example: <code>5</code> - is ~${(5 * rate).toFixed(0)} ₽`
+    : `Например: <code>5</code> - это ~${(5 * rate).toFixed(0)} ₽`;
 
   const presets = [5, 10, 20, 50, 100];
   const presetLabel = 'USDT';
@@ -155,6 +49,9 @@ const askTopupAmount = async (ctx, method, network = null) => {
   const presetRow2 = presets.slice(3).map((v) =>
     Markup.button.callback(`${v} ${presetLabel}`, `topup:preset:usdt:${v}`)
   );
+
+  const customAmountLabel = t('btn_custom_amount') || (lang === 'en' ? '✍️ Custom amount' : '✍️ Своя сумма');
+  const cancelLabel = t('btn_cancel') || (lang === 'en' ? '❌ Cancel' : '❌ Отмена');
 
   const text = lang === 'en'
     ? `💬 <b>Enter amount in USDT:</b>\n\n` +
@@ -171,14 +68,127 @@ const askTopupAmount = async (ctx, method, network = null) => {
     ...Markup.inlineKeyboard([
       presetRow1,
       presetRow2,
-      [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', (method === 'card' || method === 'platega') ? 'topup:method:direct' : 'topup:pay:bybit')],
+      [Markup.button.callback(customAmountLabel, 'topup:custom_amount')],
+      [Markup.button.callback(cancelLabel, 'menu:main')],
     ]),
   };
 
-  const sent = await ctx.editMessageText(text, opts).catch(() => ctx.reply(text, opts));
-  if (sent) {
+  const sent = await editOrReply(ctx, text, opts);
+  if (sent && ctx.session.topup) {
     ctx.session.topup.msgId = sent.message_id;
   }
+};
+
+// ─── Шаг 1.1: Экран ввода своей суммы ─────────────────────────────────────────
+const showCustomAmountPrompt = async (ctx) => {
+  ctx.session = ctx.session || {};
+  ctx.session.topup = ctx.session.topup || {};
+  ctx.session.topup.step = 'custom_amount';
+  ctx.session.topup.currency = 'usdt';
+  const lang = ctx.user?.language || 'ru';
+  const rate = getRate();
+  const settings = await getSettings();
+  const minTopup = settings?.minTopup || 1;
+
+  const text = lang === 'en'
+    ? `💬 <b>Enter top-up amount in USDT:</b>\n\n` +
+      `💱 Rate: <b>1 USDT = ${rate.toFixed(2)} ₽</b>\n` +
+      `📌 Minimum amount: <b>${minTopup} USDT</b>\n\n` +
+      `Type the number in your message (e.g., <code>15</code> or <code>25.5</code>):`
+    : `💬 <b>Введите желаемую сумму пополнения в USDT:</b>\n\n` +
+      `💱 Курс: <b>1 USDT = ${rate.toFixed(2)} ₽</b>\n` +
+      `📌 Минимальная сумма: <b>${minTopup} USDT</b>\n\n` +
+      `Напишите число в сообщении (например: <code>15</code> или <code>25.5</code>):`;
+
+  const buttons = [
+    [Markup.button.callback(lang === 'en' ? '⬅️ Back to amounts' : '⬅️ Назад к выбору сумм', 'menu:topup')],
+    [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:main')],
+  ];
+
+  await editOrReply(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard(buttons),
+  });
+  await ctx.answerCbQuery().catch(() => {});
+};
+
+// ─── Шаг 2: Выбор способа оплаты (после выбора суммы) ────────────────────────
+const showPaymentMethods = async (ctx) => {
+  ctx.session = ctx.session || {};
+  const topup = ctx.session.topup;
+  const lang = ctx.user?.language || 'ru';
+  const t = ctx.t || ((k) => k);
+
+  if (!topup || !topup.amountUSDT) {
+    return startTopup(ctx);
+  }
+
+  topup.step = 'method';
+
+  const settings = await getSettings();
+  const buttons = [];
+
+  const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
+  const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
+  const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
+  const changeAmountLabel = t('btn_change_amount') || (lang === 'en' ? '⬅️ Change amount' : '⬅️ Изменить сумму');
+  const cancelLabel = t('btn_cancel') || (lang === 'en' ? '❌ Cancel' : '❌ Отмена');
+
+  if (settings?.plategaEnabled !== false) {
+    buttons.push([Markup.button.callback(sbpLabel, 'topup:pay:platega')]);
+  }
+  if (settings?.cardEnabled !== false) {
+    buttons.push([Markup.button.callback(idbankLabel, 'topup:pay:card')]);
+  }
+  if (settings?.bybitEnabled !== false) {
+    buttons.push([Markup.button.callback(bybitLabel, 'topup:pay:bybit')]);
+  }
+
+  if (buttons.length === 0) {
+    const closedText = lang === 'en'
+      ? '💳 <b>Balance top-up is temporarily unavailable.</b>\n\nPlease try again later or contact support.'
+      : '💳 <b>Пополнение баланса временно приостановлено.</b>\n\nПожалуйста, попробуйте позже или обратитесь в поддержку.';
+    const closedButtons = [
+      [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
+      [Markup.button.callback(changeAmountLabel, 'menu:topup')],
+    ];
+    return editOrReply(ctx, closedText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(closedButtons) });
+  }
+
+  buttons.push([Markup.button.callback(changeAmountLabel, 'menu:topup')]);
+  buttons.push([Markup.button.callback(cancelLabel, 'menu:main')]);
+
+  const title = lang === 'en' ? 'Balance Top Up' : 'Пополнение баланса';
+  const choose = lang === 'en' ? 'Select a payment method:' : 'Выберите удобный способ оплаты:';
+  const amountLbl = lang === 'en' ? 'Top-up amount' : 'Сумма к пополнению';
+
+  const text =
+    `💳 <b>${title}</b>\n\n` +
+    `<blockquote>💰 ${amountLbl}: <b>${topup.amountUSDT} USDT</b> (~${topup.amountRUB.toFixed(0)} ₽)</blockquote>\n\n` +
+    `${choose}`;
+
+  await editOrReply(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard(buttons),
+  });
+};
+
+// Быстрое пополнение на конкретную сумму (из карточки товара)
+const startTopupWithAmount = async (ctx, amount) => {
+  ctx.session = ctx.session || {};
+  const rate = getRate();
+  ctx.session.topup = {
+    amountUSDT: amount,
+    amountRUB: amount * rate,
+    currency: 'usdt',
+    quickAmount: amount,
+    step: 'method',
+  };
+  return showPaymentMethods(ctx);
+};
+
+const showDirectOptions = async (ctx) => {
+  return showPaymentMethods(ctx);
 };
 
 // ─── Шаг 3а: СБП Автоматически (Platega) ──────────────────────────────────────
@@ -187,9 +197,16 @@ const showPlategaDetails = async (ctx) => {
   if (settings?.plategaEnabled === false) {
     const lang = ctx.user?.language || 'ru';
     await ctx.answerCbQuery(lang === 'en' ? '⚠️ This payment method is temporarily disabled' : '⚠️ Этот способ оплаты временно отключён администратором', { show_alert: true });
+    return showPaymentMethods(ctx);
+  }
+  ctx.session = ctx.session || {};
+  ctx.session.topup = ctx.session.topup || {};
+  if (!ctx.session.topup.amountUSDT) {
     return startTopup(ctx);
   }
-  await askTopupAmount(ctx, 'platega', null);
+  ctx.session.topup.method = 'platega';
+  ctx.session.topup.network = null;
+  return generateRequisitesAndShow(ctx);
 };
 
 // ─── Шаг 3б: Карта IDBank (Вручную) ──────────────────────────────────────────
@@ -198,36 +215,48 @@ const showCardDetails = async (ctx) => {
   if (settings?.cardEnabled === false) {
     const lang = ctx.user?.language || 'ru';
     await ctx.answerCbQuery(lang === 'en' ? '⚠️ This payment method is temporarily disabled' : '⚠️ Этот способ оплаты временно отключён администратором', { show_alert: true });
+    return showPaymentMethods(ctx);
+  }
+  ctx.session = ctx.session || {};
+  ctx.session.topup = ctx.session.topup || {};
+  if (!ctx.session.topup.amountUSDT) {
     return startTopup(ctx);
   }
-  await askTopupAmount(ctx, 'card', null);
+  ctx.session.topup.method = 'card';
+  ctx.session.topup.network = null;
+  return generateRequisitesAndShow(ctx);
 };
 
-// ─── Шаг 3б: Bybit - выбор сети ──────────────────────────────────────────────
+// ─── Шаг 3в: Bybit - выбор сети ──────────────────────────────────────────────
 const showBybitOptions = async (ctx) => {
   const settings = await getSettings();
   if (settings?.bybitEnabled === false) {
     const lang = ctx.user?.language || 'ru';
     await ctx.answerCbQuery(lang === 'en' ? '⚠️ This payment method is temporarily disabled' : '⚠️ Этот способ оплаты временно отключён администратором', { show_alert: true });
-    return startTopup(ctx);
+    return showPaymentMethods(ctx);
   }
   ctx.session = ctx.session || {};
-  const prevQuickAmount = ctx.session?.topup?.quickAmount || null;
-  ctx.session.topup = { method: 'bybit', network: null, step: null, msgId: null, quickAmount: prevQuickAmount };
+  ctx.session.topup = ctx.session.topup || {};
+  if (!ctx.session.topup.amountUSDT) {
+    return startTopup(ctx);
+  }
+  ctx.session.topup.method = 'bybit';
+  const topup = ctx.session.topup;
   const lang = ctx.user?.language || 'ru';
-  const t = ctx.t || ((k) => k);
   const title = lang === 'en' ? 'Top Up via Bybit (USDT)' : 'Пополнение через Bybit (USDT)';
   const chooseLbl = lang === 'en' ? 'Choose a network:' : 'Выберите сеть:';
-  const backLabel = t('btn_back');
+  const amountLbl = lang === 'en' ? 'Top-up amount' : 'Сумма к пополнению';
 
-  await ctx.editMessageText(
-    `📊 <b>${title}</b>\n\n${chooseLbl}`,
+  await editOrReply(ctx,
+    `📊 <b>${title}</b>\n\n` +
+    `<blockquote>💰 ${amountLbl}: <b>${topup.amountUSDT} USDT</b> (~${topup.amountRUB.toFixed(0)} ₽)</blockquote>\n\n` +
+    `${chooseLbl}`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔴 TRC-20 (Tron)', 'topup:network:trc20')],
         [Markup.button.callback('🟡 BEP-20 (BSC)', 'topup:network:bep20')],
-        [Markup.button.callback(backLabel, 'topup:method:direct')],
+        [Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:methods:back')],
       ]),
     }
   );
@@ -239,7 +268,6 @@ const BYBIT_NETWORKS = {
   uid: { icon: '🆔', label: 'Bybit UID (Внутренний)' },
 };
 
-// Получаем адреса из Settings (БД через кеш). Реквизиты должны быть заданы админом.
 const getBybitAddresses = async () => {
   const { getSettings } = require('../../services/settingsCache.service');
   const settings = await getSettings();
@@ -251,33 +279,45 @@ const getBybitAddresses = async () => {
 };
 
 const showBybitNetwork = async (ctx, network) => {
-  await askTopupAmount(ctx, 'bybit', network);
+  ctx.session = ctx.session || {};
+  ctx.session.topup = ctx.session.topup || {};
+  if (!ctx.session.topup.amountUSDT) {
+    return startTopup(ctx);
+  }
+  ctx.session.topup.method = 'bybit';
+  ctx.session.topup.network = network;
+  return generateRequisitesAndShow(ctx);
 };
 
-// UX-1: Обработчик кнопки-пресета. Подставляем сумму как будто её ввели вручную
-// и прогоняем через тот же flow - это даёт -1 клик в типичном сценарии.
+// Обработчик кнопки-пресета
 const handlePresetAmount = async (ctx, currency, amountStr) => {
-  const topup = ctx.session?.topup;
+  ctx.session = ctx.session || {};
+  ctx.session.topup = ctx.session.topup || {};
+  const topup = ctx.session.topup;
   const lang = ctx.user?.language || 'ru';
-  if (!topup || topup.step !== 'amount') {
-    return ctx.answerCbQuery(lang === 'en' ? '⚠️ Step expired, start again' : '⚠️ Шаг устарел, начните заново', { show_alert: true }).catch(() => null);
+
+  const parsed = parseAmount(amountStr);
+  if (!parsed.ok) {
+    return ctx.answerCbQuery(lang === 'en' ? '⚠️ Invalid amount' : '⚠️ Некорректная сумма', { show_alert: true }).catch(() => null);
   }
 
-  // Синхронизируем валюту (на случай если юзер нажал пресет в «чужой» валюте).
+  const rate = getRate();
+  const val = parsed.value;
   topup.currency = currency;
+  topup.amountUSDT = currency === 'usdt' ? val : val / rate;
+  topup.amountRUB = currency === 'usdt' ? val * rate : val;
 
-  await ctx.answerCbQuery(lang === 'en' ? `💵 Amount: ${amountStr} ${currency === 'usdt' ? 'USDT' : '₽'}` : `💵 Сумма: ${amountStr} ${currency === 'usdt' ? 'USDT' : '₽'}`).catch(() => null);
+  await ctx.answerCbQuery(lang === 'en' ? `💵 Amount: ${amountStr} USDT` : `💵 Сумма: ${amountStr} USDT`).catch(() => null);
 
-  return handleAmountInput(ctx, String(amountStr));
+  return showPaymentMethods(ctx);
 };
 
-// ─── Сумма введена → показываем реквизиты ────────────────────────────────────
+// Ввод суммы текстом
 const handleAmountInput = async (ctx, rawAmount = null) => {
   const topup = ctx.session?.topup;
-  if (!topup || topup.step !== 'amount') return false;
+  if (!topup || (topup.step !== 'amount' && topup.step !== 'custom_amount')) return false;
   const lang = ctx.user?.language || 'ru';
 
-  // Human-friendly парсинг: понимает "5.5", "5,5", "1 000", "5 USDT", "500 руб"
   const parsed = parseAmount(rawAmount ?? ctx.message?.text ?? '');
 
   if (!parsed.ok) {
@@ -294,15 +334,13 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 
   const inputAmount = parsed.value;
 
-  // Удаляем сообщение пользователя (если это реальное сообщение, а не quickAmount)
   if (ctx.message?.message_id) {
-    ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => { });
+    ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
   }
 
   const rate = getRate();
-  const { method, network, currency } = topup;
+  const { currency = 'usdt' } = topup;
 
-  // Рассчитываем обе стороны
   let amountUSDT, amountRUB;
   if (currency === 'usdt') {
     amountUSDT = inputAmount;
@@ -316,9 +354,8 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
   const settings = await getSettings();
   const minTopup = settings?.minTopup || 1;
 
-  // Минимум minTopup USDT
   if (amountUSDT < minTopup) {
-    const minRub = Math.ceil(minTopup * getRate());
+    const minRub = Math.ceil(minTopup * rate);
     const errMsg = currency === 'usdt'
       ? (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minTopup} USDT</b>\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minTopup} USDT</b>\n\nВведите сумму ещё раз:`)
       : (lang === 'en' ? `❌ <b>Minimum top-up amount - ${minRub} ₽</b> (~${minTopup} USDT)\n\nEnter the amount again:` : `❌ <b>Минимальная сумма пополнения - ${minRub} ₽</b> (~${minTopup} USDT)\n\nВведите сумму ещё раз:`);
@@ -331,18 +368,36 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 
   topup.amountUSDT = amountUSDT;
   topup.amountRUB = amountRUB;
+  topup.currency = currency;
+
+  return showPaymentMethods(ctx);
+};
+
+// ─── Генерация счёта / реквизитов выбранного способа ─────────────────────────
+const generateRequisitesAndShow = async (ctx) => {
+  const topup = ctx.session?.topup;
+  if (!topup || !topup.amountUSDT) {
+    return startTopup(ctx);
+  }
+
+  const lang = ctx.user?.language || 'ru';
+  const rate = getRate();
+  const { method, network, amountUSDT, amountRUB } = topup;
+  const { getSettings } = require('../../services/settingsCache.service');
+  const settings = await getSettings();
+  const minTopup = settings?.minTopup || 1;
 
   // ─── Обработка пополнения через СБП (Platega) ──────────────────────────────
   if (method === 'platega') {
     const plategaService = require('../../services/platega.service');
     const plategaConfig = await plategaService.getPlategaConfig();
     if (!plategaConfig.isReady) {
-      await ctx.reply(lang === 'en' ? '❌ SBP payment is temporarily unavailable. Please choose another payment method.' : '❌ Оплата через СБП временно недоступна. Пожалуйста, выберите другой способ пополнения.', {
+      await editOrReply(ctx, lang === 'en' ? '❌ SBP payment is temporarily unavailable. Please choose another payment method.' : '❌ Оплата через СБП временно недоступна. Пожалуйста, выберите другой способ пополнения.', {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
           [Markup.button.callback(lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)', 'topup:pay:card')],
           [Markup.button.callback(lang === 'en' ? '📊 Bybit / USDT' : '📊 Bybit / USDT', 'topup:pay:bybit')],
-          [Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:method:direct')],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:methods:back')],
         ]),
       });
       return true;
@@ -371,10 +426,10 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
       await TopupRequest.deleteOne({ _id: request._id }).catch(() => {});
       const logger = require('../../config/logger');
       logger.error(`[Platega Topup Error]: ${err.message}`);
-      await ctx.reply(lang === 'en' ? '❌ Failed to create SBP payment invoice. Please try again later or use another method.' : '❌ Не удалось создать счёт для оплаты через СБП. Попробуйте позже или выберите другой способ.', {
+      await editOrReply(ctx, lang === 'en' ? '❌ Failed to create SBP payment invoice. Please try again later or use another method.' : '❌ Не удалось создать счёт для оплаты через СБП. Попробуйте позже или выберите другой способ.', {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:method:direct')],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:methods:back')],
           [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
         ]),
       });
@@ -385,7 +440,7 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
     request.payUrl = pRes.payUrl;
     await request.save();
 
-    ctx.session.topup = null; // Завершаем FSM ввода суммы
+    ctx.session.topup = null; // Завершаем FSM ввода
 
     const text = lang === 'en'
       ? `⚡ <b>SBP Payment (Instant)</b>\n\n` +
@@ -409,18 +464,18 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
       [Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', `topup:platega:cancel:${request._id}`)],
     ];
 
-    if (topup.msgId) {
+    if (topup.msgId && ctx.telegram?.editMessageText) {
       await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, text, {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard(buttons),
-      }).catch(() => ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }));
+      }).catch(() => editOrReply(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }));
     } else {
-      await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+      await editOrReply(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
     }
     return true;
   }
 
-  const isAutoCrypto = method === 'bybit'; // И UID, и блокчейны теперь авто!
+  const isAutoCrypto = method === 'bybit';
 
   // Строим реквизиты
   let reqs = '';
@@ -435,9 +490,10 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
     const cardNumber = String(settings?.cardNumber || '').trim();
     const cardHolder = String(settings?.cardHolder || '').trim();
     if (!cardNumber || !cardHolder) {
-      await ctx.reply(lang === 'en' ? '❌ Card details are not configured. Contact support or choose another payment method.' : '❌ Реквизиты карты не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
+      await editOrReply(ctx, lang === 'en' ? '❌ Card details are not configured. Contact support or choose another payment method.' : '❌ Реквизиты карты не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
+        parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:method:direct')],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:methods:back')],
           [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
         ]),
       });
@@ -454,10 +510,11 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
   } else {
     const bybitAddresses = await getBybitAddresses();
     net = bybitAddresses[network];
-    topupAddr = network === 'trc20' && settings?.topupWallet ? settings.topupWallet : net.address;
+    topupAddr = network === 'trc20' && settings?.topupWallet ? settings.topupWallet : net?.address;
     topupAddr = String(topupAddr || '').trim();
     if (!net || !topupAddr) {
-      await ctx.reply(lang === 'en' ? '❌ Details for the selected network are not configured. Contact support or choose another payment method.' : '❌ Реквизиты для выбранной сети не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
+      await editOrReply(ctx, lang === 'en' ? '❌ Details for the selected network are not configured. Contact support or choose another payment method.' : '❌ Реквизиты для выбранной сети не настроены. Обратитесь в поддержку или выберите другой способ пополнения.', {
+        parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
           [Markup.button.callback(lang === 'en' ? '⬅️ Bybit networks' : '⬅️ К сетям Bybit', 'topup:pay:bybit')],
           [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
@@ -473,16 +530,13 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
         `📬 ${network === 'uid' ? 'UID' : 'Адрес'}:\n<code>${escapeHtml(topupAddr)}</code></blockquote>` + copyHint(lang);
   }
 
-  // Если это авто-крипта, ждем нажатия кнопки 'Я отправил', иначе 'proof' (скриншот)
   topup.step = isAutoCrypto ? 'waiting_txid_btn' : 'proof';
 
   let text = '';
-
   if (isAutoCrypto) {
     const isBsc = network === 'bep20';
     const label = isBsc ? 'BSC (BEP20)' : 'Tron (TRC20)';
     const coin = 'USDT';
-    const icon = isBsc ? '🟡' : '🔴';
 
     text = lang === 'en'
       ? `🌐 <b>Top Up USDT (${network.toUpperCase()})</b>\n\n` +
@@ -518,10 +572,11 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
   const buttons = [];
   if (isAutoCrypto) {
     buttons.push([Markup.button.callback(network === 'uid' ? (lang === 'en' ? '🔎 I sent it - enter UID' : '🔎 Я перевёл - отправить UID') : (lang === 'en' ? '🔎 I sent it - enter TXID' : '🔎 Я отправил - ввести TXID'), 'topup:enter_txid')]);
-    buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад', 'topup:pay:bybit')]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад к сетям', 'topup:pay:bybit')]);
   } else {
     buttons.push([Markup.button.callback(lang === 'en' ? '✅ I paid' : '✅ Я оплатил', 'topup:card_paid')]);
-    buttons.push([Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:topup')]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:methods:back')]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '❌ Cancel' : '❌ Отмена', 'menu:main')]);
   }
 
   const opts = {
@@ -529,10 +584,10 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
     ...Markup.inlineKeyboard(buttons),
   };
 
-  if (topup.msgId) {
-    await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, text, opts).catch(() => ctx.reply(text, opts));
+  if (topup.msgId && ctx.telegram?.editMessageText) {
+    await ctx.telegram.editMessageText(ctx.chat.id, topup.msgId, null, text, opts).catch(() => editOrReply(ctx, text, opts));
   } else {
-    await ctx.reply(text, opts);
+    await editOrReply(ctx, text, opts);
   }
 
   return true;
@@ -1197,6 +1252,8 @@ module.exports = {
   startTopup,
   startTopupWithAmount,
   showDirectOptions,
+  showPaymentMethods,
+  showCustomAmountPrompt,
   showPlategaDetails,
   showBybitOptions,
   showBybitNetwork,

@@ -456,6 +456,16 @@ module.exports = (bot) => {
     await topupScene.showDirectOptions(ctx);
   });
 
+  // Назад к экрану способов оплаты
+  bot.action('topup:methods:back', async (ctx) => {
+    await topupScene.showPaymentMethods(ctx);
+  });
+
+  // Переход к экрану ввода своей суммы
+  bot.action('topup:custom_amount', async (ctx) => {
+    await topupScene.showCustomAmountPrompt(ctx);
+  });
+
   // СБП Автоматически (Platega)
   bot.action('topup:pay:platega', async (ctx) => {
     await topupScene.showPlategaDetails(ctx);

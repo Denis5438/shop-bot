@@ -42,6 +42,8 @@
   "order_cancelled": "❌ Заказ отменён\n\n📋 Заказ: <code>{orderId}</code>\n💬 Причина: {reason}\n\n💰 Средства возвращены на баланс: {price} USDT",
   "order_failed": "❌ Произошла ошибка при активации!\n\n📋 Заказ: <code>{orderId}</code>\n\n💬 {error}\n\n💰 Средства возвращены. Обратитесь в поддержку.",
   "profile_title": "👤 <b>Мой профиль</b>\n\n🆔 ID: <code>{telegramId}</code>\n📛 Имя: {firstName}\n\n💰 Баланс: <b>{balance} USDT</b> (~{balanceRub} ₽)\n📦 Заказов: {ordersCount}\n💸 Потрачено: {totalSpent} USDT (~{totalSpentRub} ₽)\n\n🔗 Реферальный код: <code>{referralCode}</code>\n👥 Приглашено: {referralsCount} чел.\n\n📅 В магазине с: {createdAt}",
+  "btn_custom_amount": "✍️ Своя сумма",
+  "btn_change_amount": "⬅️ Изменить сумму",
   "topup_enter_amount": "💳 Введите сумму пополнения в USDT\n\n📌 Минимум: {min} USDT\n\nПример: <code>5</code>",
   "topup_invalid_amount": "❌ Неверная сумма. Введите число больше {min}.",
   "topup_instructions": "💳 <b>Пополнение баланса</b>\n\n💰 Сумма: <b>{amount} USDT</b> (~{amountRub} ₽)\n\n📤 Отправьте монеты на адрес:\n<code>{wallet}</code>\n🌐 Сеть: <b>{network}</b>\n\n📸 После отправки пришлите скриншот чека или хэш транзакции.",

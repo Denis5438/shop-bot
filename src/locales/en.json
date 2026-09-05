@@ -42,6 +42,8 @@
   "order_cancelled": "❌ Order cancelled\n\n📋 Order: <code>{orderId}</code>\n💬 Reason: {reason}\n\n💰 Funds returned to balance: {price} USDT",
   "order_failed": "❌ Activation error!\n\n📋 Order: <code>{orderId}</code>\n\n💬 {error}\n\n💰 Funds returned. Please contact support.",
   "profile_title": "👤 <b>My Profile</b>\n\n🆔 ID: <code>{telegramId}</code>\n📛 Name: {firstName}\n\n💰 Balance: <b>{balance} USDT</b> (~{balanceRub} ₽)\n📦 Orders: {ordersCount}\n💸 Spent: {totalSpent} USDT (~{totalSpentRub} ₽)\n\n🔗 Referral code: <code>{referralCode}</code>\n👥 Invited: {referralsCount} people\n\n📅 Member since: {createdAt}",
+  "btn_custom_amount": "✍️ Custom amount",
+  "btn_change_amount": "⬅️ Change amount",
   "topup_enter_amount": "💳 Enter top-up amount in USDT\n\n📌 Minimum: {min} USDT\n\nExample: <code>5</code>",
   "topup_invalid_amount": "❌ Invalid amount. Enter a number greater than {min}.",
   "topup_instructions": "💳 <b>Balance Top-up</b>\n\n💰 Amount: <b>{amount} USDT</b> (~{amountRub} ₽)\n\n📤 Send coins to the address:\n<code>{wallet}</code>\n🌐 Network: <b>{network}</b>\n\n📸 After sending, please provide a screenshot of the receipt or transaction hash.",
