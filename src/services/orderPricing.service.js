@@ -31,6 +31,18 @@ const getEffectivePrice = async (product, stockCount, activePromo = null) => {
     }
   }
 
+  // Flash Sale («Горящие часы»)
+  if (
+    product?.flashSale?.enabled &&
+    product.flashSale.expiresAt &&
+    new Date(product.flashSale.expiresAt) > new Date() &&
+    product.flashSale.discountPercent > 0
+  ) {
+    const discount = price * (product.flashSale.discountPercent / 100);
+    const costLimit = Number(product.costPrice) || 0;
+    price = Number(Math.max(price - discount, costLimit).toFixed(2));
+  }
+
   if (activePromo) {
     const discountRes = promoService.calculateDiscount(activePromo, price, product._id);
     if (discountRes.valid) price = discountRes.finalPrice;

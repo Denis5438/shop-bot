@@ -266,6 +266,82 @@ module.exports = (bot) => {
     await productsScene.toggleProductOrigin(ctx, productId, page);
   });
 
+  // ─── ADMIN: Flash Sale (Горящие часы) ───
+  bot.action(/^admin:product:flash:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await productsScene.showFlashSaleMenu(ctx, productId, page);
+  });
+
+  bot.action(/^admin:flash:pct:(.+?):(\d+):(\d+)$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = parseInt(ctx.match[2], 10) || 1;
+    const pct = parseInt(ctx.match[3], 10) || 20;
+    ctx.session = ctx.session || {};
+    ctx.session.flashWizard = ctx.session.flashWizard || {};
+    ctx.session.flashWizard.discountPercent = pct;
+    await ctx.answerCbQuery(`Скидка: -${pct}%`).catch(() => {});
+    await productsScene.showFlashSaleMenu(ctx, productId, page);
+  });
+
+  bot.action(/^admin:flash:dur:(.+?):(\d+):(\d+)$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = parseInt(ctx.match[2], 10) || 1;
+    const dur = parseInt(ctx.match[3], 10) || 4;
+    ctx.session = ctx.session || {};
+    ctx.session.flashWizard = ctx.session.flashWizard || {};
+    ctx.session.flashWizard.durationHours = dur;
+    await ctx.answerCbQuery(`Длительность: ${dur}ч`).catch(() => {});
+    await productsScene.showFlashSaleMenu(ctx, productId, page);
+  });
+
+  bot.action(/^admin:flash:custom_pct:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    ctx.session = ctx.session || {};
+    ctx.session.adminAction = 'flash_custom_pct';
+    ctx.session.flashProductId = productId;
+    ctx.session.flashPage = page;
+    await ctx.answerCbQuery().catch(() => {});
+    await ctx.reply('✏️ Введите процент скидки (число от 1 до 99):', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:flash:${productId}:${page}`)]]),
+    });
+  });
+
+  bot.action(/^admin:flash:custom_dur:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    ctx.session = ctx.session || {};
+    ctx.session.adminAction = 'flash_custom_dur';
+    ctx.session.flashProductId = productId;
+    ctx.session.flashPage = page;
+    await ctx.answerCbQuery().catch(() => {});
+    await ctx.reply('✏️ Введите длительность акции в часах (например: 3 или 48):', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:flash:${productId}:${page}`)]]),
+    });
+  });
+
+  bot.action(/^admin:flash:start:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await productsScene.startFlashSale(ctx, productId, page);
+  });
+
+  bot.action(/^admin:flash:stop:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await productsScene.stopFlashSale(ctx, productId, page);
+  });
+
+  bot.action(/^admin:flash:extend:(.+?):(\d+):(\d+)$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = parseInt(ctx.match[2], 10) || 1;
+    const hours = parseInt(ctx.match[3], 10) || 2;
+    await productsScene.extendFlashSale(ctx, productId, page, hours);
+  });
+
   bot.action(/^admin:product:field:category:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const productId = ctx.match[1];

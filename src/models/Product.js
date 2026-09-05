@@ -45,6 +45,14 @@ const productSchema = new mongoose.Schema({
   sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },
   // Сколько из цены продажи идёт продавцу (в USDT)
   sellerPrice: { type: Number, default: 0 },
+
+  // ─── Flash Sale («Горящие часы») ───────────────────────────────────────────
+  flashSale: {
+    enabled: { type: Boolean, default: false },
+    discountPercent: { type: Number, default: 0 },
+    expiresAt: { type: Date, default: null },
+    startedAt: { type: Date, default: null },
+  },
 });
 
 // Магазин: товары категории с сортировкой; списки активных товаров в админке

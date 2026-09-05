@@ -313,9 +313,17 @@ const showCategory = async (ctx, categoryId, page = 1) => {
       priceLabelStr = `̶$̶${product.price} ➔ $${effectivePrice}`;
     }
 
+    const isFlash = Boolean(
+      product.flashSale?.enabled &&
+      product.flashSale.expiresAt &&
+      new Date(product.flashSale.expiresAt) > new Date() &&
+      product.flashSale.discountPercent > 0
+    );
+    const flashPrefix = isFlash ? '⚡ ' : '';
+
     const maxNameLen = 18;
     const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
-    const label = `${product.icon || '📦'} ${shortName} · ${priceLabelStr} · 📦 ${stockBadge}`;
+    const label = `${flashPrefix}${product.icon || '📦'} ${shortName} · ${priceLabelStr} · 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
     if (!isClassicTheme) btn.style = hasStock ? 'success' : 'danger';
     buttons.push([btn]);
@@ -406,10 +414,34 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     durationLine = `\n${durationLabel}: <b>${durationVal}</b>`;
   }
 
+  const now = Date.now();
+  const isFlashSale = Boolean(
+    product.flashSale?.enabled &&
+    product.flashSale.expiresAt &&
+    new Date(product.flashSale.expiresAt).getTime() > now &&
+    product.flashSale.discountPercent > 0
+  );
+
+  let flashSaleBlock = '';
+  if (isFlashSale) {
+    const diffMs = Math.max(0, new Date(product.flashSale.expiresAt).getTime() - now);
+    const totalSecs = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    const pad = (n) => String(n).padStart(2, '0');
+    const timerStr = `${pad(hours)}:${pad(mins)}:${pad(secs)}`;
+
+    flashSaleBlock = lang === 'en'
+      ? `\n\n<blockquote>🔥 <b>FLASH SALE -${product.flashSale.discountPercent}%!</b>\n⏳ Ends in: <code>${timerStr}</code></blockquote>`
+      : `\n\n<blockquote>🔥 <b>FLASH SALE -${product.flashSale.discountPercent}%!</b>\n⏳ До конца скидки: <code>${timerStr}</code></blockquote>`;
+  }
+
   let priceDisplay = `<b>${effectivePrice} USDT</b> (~${toRub(effectivePrice)} ₽)`;
   if (effectivePrice < product.price) {
     const promoNote = activePromo ? ` (Промокод ${activePromo.code})` : '';
-    priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b> 🔥${promoNote} (~${toRub(effectivePrice)} ₽)`;
+    const flashNote = isFlashSale ? ` 🔥 (-${product.flashSale.discountPercent}%)` : ' 🔥';
+    priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b>${flashNote}${promoNote} (~${toRub(effectivePrice)} ₽)`;
   }
 
   const text =
@@ -417,7 +449,8 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
     `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
     `${stockLabel}: ${stockIndicator(stock, t)}\n` +
-    `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}${durationLine}</blockquote>\n\n` +
+    `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}${durationLine}</blockquote>` +
+    `${flashSaleBlock}\n\n` +
     `${description ? `<blockquote expandable>📝 ${escapeHtml(description)}</blockquote>\n` : ''}`;
 
   const buttons = [];
@@ -455,7 +488,11 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   const backAction = product.categoryId
     ? `shop:category:${product.categoryId}:${safePage}`
     : `shop:page:${safePage}`;
-  buttons.push([Markup.button.callback(t('shop_back_to_list'), backAction)]);
+  const bottomRow = [Markup.button.callback(t('shop_back_to_list'), backAction)];
+  if (isFlashSale) {
+    bottomRow.unshift(Markup.button.callback(lang === 'en' ? '🔄 Refresh' : '🔄 Обновить', `shop:product:${productId}:${safePage}`));
+  }
+  buttons.push(bottomRow);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);

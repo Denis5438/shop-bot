@@ -138,6 +138,23 @@ const showProductEdit = async (ctx, productId, page = 1) => {
 
   const originLabel = product.itemOrigin === 'supplier' ? '👤 От поставщика' : '🛡 Верифицированный ✅';
 
+  const now = Date.now();
+  const isFlash = Boolean(
+    product.flashSale?.enabled &&
+    product.flashSale.expiresAt &&
+    new Date(product.flashSale.expiresAt).getTime() > now &&
+    product.flashSale.discountPercent > 0
+  );
+
+  let flashSaleLine = '⚡ Flash Sale: ⚪ Выкл';
+  if (isFlash) {
+    const leftMs = Math.max(0, new Date(product.flashSale.expiresAt).getTime() - now);
+    const leftH = Math.floor(leftMs / (1000 * 3600));
+    const leftM = Math.floor((leftMs % (1000 * 3600)) / (1000 * 60));
+    const discounted = Math.max(0.01, product.price * (1 - product.flashSale.discountPercent / 100));
+    flashSaleLine = `⚡ Flash Sale: 🔥 <b>Вкл (-${product.flashSale.discountPercent}% ➔ ${discounted.toFixed(2)} USDT)</b>, осталось ~${leftH}ч ${leftM}м`;
+  }
+
   const text =
     `✏️ <b>Редактирование товара</b>\n\n` +
     `📦 Название (RU): <b>${escapeHtml(product.name)}</b>\n` +
@@ -152,12 +169,14 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     `🛡 Гарантия: ${product.warrantyDays ?? 5} дн.\n` +
     `⏳ Срок подписки: ${product.subscriptionDays ? `${product.subscriptionDays} дн.` : 'Бессрочно'}\n` +
     `📍 Происхождение: <b>${originLabel}</b>\n` +
+    `${flashSaleLine}\n` +
     `${sellerLine}\n` +
     `🔘 Статус: ${product.isActive ? '✅ Активен (виден в магазине)' : '🔴 Скрыт'}`;
 
   const buttons = [
     [Markup.button.callback('💰 Изменить цену продажи', `admin:product:field:price:${productId}:${page}`)],
     [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}:${page}`)],
+    [Markup.button.callback(isFlash ? `🔥 Flash Sale: -${product.flashSale.discountPercent}% (Управление)` : '⚡ Включить Flash Sale (Акция)', `admin:product:flash:${productId}:${page}`)],
     [
       Markup.button.callback('✏️ Название (RU)', `admin:product:field:name:${productId}:${page}`),
       Markup.button.callback('🇬🇧 Название (EN)', `admin:product:field:nameEn:${productId}:${page}`),
@@ -329,6 +348,38 @@ const handleProductInput = async (ctx) => {
 
   if (ctx.message && ctx.message.message_id) {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+  }
+
+  // ─── Flash Sale: ввод своего процента ───────────────────────────────────────
+  if (session.adminAction === 'flash_custom_pct') {
+    const { flashProductId, flashPage } = session;
+    const text = (ctx.message?.text || '').trim().replace('%', '');
+    const pct = parseInt(text, 10);
+    if (isNaN(pct) || pct < 1 || pct > 99) {
+      await ctx.reply('❌ Введите число от 1 до 99 (процент скидки):');
+      return true;
+    }
+    session.adminAction = null;
+    session.flashWizard = session.flashWizard || {};
+    session.flashWizard.discountPercent = pct;
+    await showFlashSaleMenu(ctx, flashProductId, flashPage);
+    return true;
+  }
+
+  // ─── Flash Sale: ввод своего времени ────────────────────────────────────────
+  if (session.adminAction === 'flash_custom_dur') {
+    const { flashProductId, flashPage } = session;
+    const text = (ctx.message?.text || '').trim();
+    const dur = parseFloat(text.replace(',', '.'));
+    if (isNaN(dur) || dur <= 0 || dur > 720) {
+      await ctx.reply('❌ Введите число часов от 0.5 до 720 (например: 2 или 12):');
+      return true;
+    }
+    session.adminAction = null;
+    session.flashWizard = session.flashWizard || {};
+    session.flashWizard.durationHours = dur;
+    await showFlashSaleMenu(ctx, flashProductId, flashPage);
+    return true;
   }
 
   // ─── Назначение продавца ──────────────────────────────────────────────────
@@ -739,6 +790,140 @@ const toggleProductOrigin = async (ctx, productId, page = 1) => {
   await showProductEdit(ctx, productId, page);
 };
 
+// ─── FLASH SALE (Горящие часы) ────────────────────────────────────────────────
+const showFlashSaleMenu = async (ctx, productId, page = 1) => {
+  const product = await Product.findById(productId);
+  if (!product) {
+    return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+  }
+
+  const now = Date.now();
+  const isFlash = Boolean(
+    product.flashSale?.enabled &&
+    product.flashSale.expiresAt &&
+    new Date(product.flashSale.expiresAt).getTime() > now &&
+    product.flashSale.discountPercent > 0
+  );
+
+  ctx.session = ctx.session || {};
+  ctx.session.flashWizard = ctx.session.flashWizard || {
+    discountPercent: 20,
+    durationHours: 4,
+  };
+
+  const discountPercent = ctx.session.flashWizard.discountPercent || 20;
+  const durationHours = ctx.session.flashWizard.durationHours || 4;
+  const promoPrice = Math.max(0.01, product.price * (1 - discountPercent / 100)).toFixed(2);
+
+  let text = '';
+  const buttons = [];
+
+  if (isFlash) {
+    const leftMs = Math.max(0, new Date(product.flashSale.expiresAt).getTime() - now);
+    const leftH = Math.floor(leftMs / (1000 * 3600));
+    const leftM = Math.floor((leftMs % (1000 * 3600)) / (1000 * 60));
+    const leftS = Math.floor((leftMs % (1000 * 60)) / 1000);
+    const activePrice = Math.max(0.01, product.price * (1 - product.flashSale.discountPercent / 100)).toFixed(2);
+
+    text =
+      `🔥 <b>Flash Sale активен для товара!</b>\n\n` +
+      `📦 Товар: <b>${escapeHtml(product.name)}</b>\n` +
+      `💰 Обычная цена: <b>${product.price} USDT</b>\n` +
+      `🏷 Акционная цена: <b>${activePrice} USDT</b> (-${product.flashSale.discountPercent}%)\n` +
+      `⏳ До конца акции: <b>${leftH}ч ${leftM}м ${leftS}с</b>\n\n` +
+      `<i>Вы можете продлить акцию или остановить её досрочно.</i>`;
+
+    buttons.push([
+      Markup.button.callback('⏳ +2 часа', `admin:flash:extend:${productId}:${page}:2`),
+      Markup.button.callback('⏳ +6 часов', `admin:flash:extend:${productId}:${page}:6`),
+      Markup.button.callback('⏳ +24 часа', `admin:flash:extend:${productId}:${page}:24`),
+    ]);
+    buttons.push([Markup.button.callback('🛑 Остановить Flash Sale', `admin:flash:stop:${productId}:${page}`)]);
+  } else {
+    text =
+      `⚡ <b>Настройка Flash Sale (Горящие часы)</b>\n\n` +
+      `📦 Товар: <b>${escapeHtml(product.name)}</b>\n` +
+      `💰 Базовая цена: <b>${product.price} USDT</b>\n` +
+      `📉 Выбранная скидка: <b>-${discountPercent}%</b>\n` +
+      `⏳ Длительность: <b>${durationHours} ч.</b>\n` +
+      `🏷 Цена со скидкой: <b>${promoPrice} USDT</b>\n\n` +
+      `<i>Выберите процент скидки и длительность ниже:</i>`;
+
+    const pctPresets = [10, 20, 30, 50];
+    const pctButtons = pctPresets.map((p) =>
+      Markup.button.callback(p === discountPercent ? `🔘 -${p}%` : `-${p}%`, `admin:flash:pct:${productId}:${page}:${p}`)
+    );
+    pctButtons.push(Markup.button.callback('✍️ %', `admin:flash:custom_pct:${productId}:${page}`));
+
+    const durPresets = [2, 4, 6, 12, 24];
+    const durButtons = durPresets.map((d) =>
+      Markup.button.callback(d === durationHours ? `🔘 ${d}ч` : `${d}ч`, `admin:flash:dur:${productId}:${page}:${d}`)
+    );
+    durButtons.push(Markup.button.callback('✍️ ч', `admin:flash:custom_dur:${productId}:${page}`));
+
+    buttons.push(pctButtons);
+    buttons.push(durButtons);
+    buttons.push([Markup.button.callback('🚀 Запустить Flash Sale', `admin:flash:start:${productId}:${page}`)]);
+  }
+
+  buttons.push([Markup.button.callback('⬅️ Назад к товару', `admin:product:edit:${productId}:${page}`)]);
+
+  await safeEdit(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard(buttons),
+  });
+};
+
+const startFlashSale = async (ctx, productId, page = 1) => {
+  const product = await Product.findById(productId);
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  const discountPercent = Math.min(99, Math.max(1, ctx.session?.flashWizard?.discountPercent || 20));
+  const durationHours = Math.max(0.1, ctx.session?.flashWizard?.durationHours || 4);
+
+  product.flashSale = {
+    enabled: true,
+    discountPercent,
+    expiresAt: new Date(Date.now() + durationHours * 3600 * 1000),
+    startedAt: new Date(),
+  };
+
+  await product.save();
+  await ctx.answerCbQuery(`🔥 Flash Sale на ${durationHours}ч со скидкой -${discountPercent}% запущен!`, { show_alert: true });
+  await showProductEdit(ctx, productId, page);
+};
+
+const stopFlashSale = async (ctx, productId, page = 1) => {
+  const product = await Product.findById(productId);
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  if (product.flashSale) {
+    product.flashSale.enabled = false;
+    product.flashSale.expiresAt = new Date();
+    await product.save();
+  }
+
+  await ctx.answerCbQuery('🛑 Flash Sale остановлен', { show_alert: true });
+  await showProductEdit(ctx, productId, page);
+};
+
+const extendFlashSale = async (ctx, productId, page = 1, hours = 2) => {
+  const product = await Product.findById(productId);
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  const numHours = parseFloat(hours) || 2;
+  const currentExpiry = product.flashSale?.expiresAt ? new Date(product.flashSale.expiresAt).getTime() : Date.now();
+  const baseTime = Math.max(Date.now(), currentExpiry);
+
+  product.flashSale = product.flashSale || {};
+  product.flashSale.enabled = true;
+  product.flashSale.expiresAt = new Date(baseTime + numHours * 3600 * 1000);
+  await product.save();
+
+  await ctx.answerCbQuery(`⏳ Акция продлена на +${numHours} ч.`).catch(() => {});
+  await showFlashSaleMenu(ctx, productId, page);
+};
+
 module.exports = {
   showProductsList,
   showProductEdit,
@@ -754,4 +939,8 @@ module.exports = {
   askManualSellerInput,
   removeSellerFromProduct,
   toggleProductOrigin,
+  showFlashSaleMenu,
+  startFlashSale,
+  stopFlashSale,
+  extendFlashSale,
 };
