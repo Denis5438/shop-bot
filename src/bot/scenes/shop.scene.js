@@ -251,7 +251,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   }
 
   const products = await Product.find({ categoryId, isActive: true })
-    .select('name nameEn icon price costPrice type manualStock provider sortOrder lastSoldAt createdAt')
+    .select('name nameEn icon price costPrice type manualStock provider sortOrder lastSoldAt createdAt flashSale')
     .lean();
 
   if (products.length === 0) {
