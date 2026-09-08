@@ -1,5 +1,7 @@
 const SupplierConfig = require('../models/SupplierConfig');
 const Product = require('../models/Product');
+const Category = require('../models/Category');
+const logger = require('../config/logger');
 const jahaAdapter = require('./suppliers/jaha.adapter');
 const akundingAdapter = require('./suppliers/akunding.adapter');
 const canbosoAdapter = require('./suppliers/canboso.adapter');
@@ -118,6 +120,87 @@ const syncSupplierStock = async (supplierId) => {
     }
   }
 
+  let newImportedCount = 0;
+
+  if (config.autoImportNewProducts !== false) {
+    const existingCodesSet = new Set(dbProducts.map((p) => String(p.supplierProductCode)));
+    const newItems = prodRes.products.filter((item) => item.productCode && !existingCodesSet.has(String(item.productCode)));
+
+    if (newItems.length > 0) {
+      const existingCategories = await Category.find().lean();
+      const categoryCache = new Map();
+      for (const cat of existingCategories) {
+        categoryCache.set(cat.name.toLowerCase().trim(), cat._id);
+      }
+
+      for (const item of newItems) {
+        const catName = (item.category || 'Внешние товары').trim();
+        const catKey = catName.toLowerCase();
+        let categoryId = categoryCache.get(catKey);
+
+        if (!categoryId) {
+          const newCat = await Category.create({
+            name: catName,
+            nameEn: catName,
+            icon: item.icon || '📦',
+            isActive: true,
+            sortOrder: 10,
+          });
+          categoryId = newCat._id;
+          categoryCache.set(catKey, categoryId);
+        }
+
+        const wholesaleCost = parseFloat(item.priceUsdt || 0);
+        let retailPrice = pricingService.calculateRetailPrice(wholesaleCost, config);
+        let officialPrice = 0;
+        let officialDiscountPercent = 0;
+
+        if (isGeminiMode && wholesaleCost > 0) {
+          const evalRes = geminiPricing.calculateFallbackPrice(item.name, wholesaleCost);
+          retailPrice = evalRes.recommendedPrice;
+          officialPrice = evalRes.officialPrice || 0;
+          officialDiscountPercent = evalRes.discountPercent || 0;
+        }
+
+        const codeStr = String(item.productCode);
+        const stockCount = typeof item.stock === 'number' ? item.stock : (item.stock ? 99 : 0);
+        const isActive = isOnlyInStock ? stockCount > 0 : true;
+
+        bulkOps.push({
+          updateOne: {
+            filter: {
+              provider: supplierId,
+              supplierProductCode: codeStr,
+            },
+            update: {
+              $set: {
+                name: item.name,
+                ...(item.nameEn ? { nameEn: item.nameEn } : {}),
+                ...(item.description ? { description: item.description } : {}),
+                ...(item.descriptionEn ? { descriptionEn: item.descriptionEn } : {}),
+                costPrice: wholesaleCost,
+                price: retailPrice,
+                officialPrice,
+                officialDiscountPercent,
+                manualStock: stockCount,
+                categoryId,
+                icon: item.icon || '📦',
+                type: 'manual',
+                deliveryMethod: 'ready_account',
+                isActive,
+                warrantyDays: typeof item.warrantyDays === 'number' ? item.warrantyDays : 5,
+                subscriptionDays: typeof item.subscriptionDays === 'number' ? item.subscriptionDays : 30,
+                itemOrigin: 'supplier',
+              },
+            },
+            upsert: true,
+          },
+        });
+        newImportedCount++;
+      }
+    }
+  }
+
   if (bulkOps.length > 0) {
     await Product.bulkWrite(bulkOps, { ordered: false });
   }
@@ -125,11 +208,14 @@ const syncSupplierStock = async (supplierId) => {
   config.lastSyncAt = new Date();
   await config.save();
 
+  logger.info(`[SupplierSync] ${supplierId}: обновлено ${updatedCount} товаров, авто-импортировано новинок: ${newImportedCount}`);
+
   return {
     success: true,
     supplierId,
     balance: config.cachedBalance,
     updatedCount,
+    newImportedCount,
   };
 };
 

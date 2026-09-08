@@ -4,6 +4,7 @@ const connectDB = require('./src/db/connect');
 const createBot = require('./src/bot/index');
 const currencyService = require('./src/services/currency.service');
 const autoConfirmCron = require('./src/cron/autoConfirm');
+const supplierSyncCron = require('./src/cron/supplierCatalogSync.cron');
 const logger = require('./src/config/logger');
 const notif = require('./src/services/notification.service');
 const { startHealthServer, stopHealthServer } = require('./src/bot/health-server');
@@ -19,6 +20,7 @@ const main = async () => {
 
   // Инициализация фоновых задач (Cron) - тоже сохраняем для остановки
   const autoConfirmTask = autoConfirmCron.init();
+  const supplierSyncTask = supplierSyncCron.init();
 
   // Создаём и запускаем бота
   const bot = createBot();
@@ -42,6 +44,7 @@ const main = async () => {
     // Останавливаем node-cron задачи (они не в cronHandles бота)
     try { rateTask?.stop(); } catch (_) {}
     try { autoConfirmTask?.stop(); } catch (_) {}
+    try { supplierSyncTask?.stop(); } catch (_) {}
     try { bot.stop(signal); } catch (_) {}
     try { await stopHealthServer(healthServer); } catch (_) {}
     // Закрываем соединение с БД, чтобы не оборвать незавершённые записи

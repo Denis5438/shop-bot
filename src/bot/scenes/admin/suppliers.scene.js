@@ -60,18 +60,27 @@ const showSupplierDetail = async (ctx, supplierId) => {
     ? '🟢 Только товары в наличии (предзаказы скрыты)'
     : '⚪ Все товары (включая предзаказ на 0 шт.)';
 
+  const autoImportStatus = supplier.autoImportNewProducts !== false
+    ? '🟢 Вкл (каждые 30 мин)'
+    : '🔴 Выкл';
+  const autoImportBtnStr = supplier.autoImportNewProducts !== false
+    ? '🔄 Авто-импорт новинок: Выкл'
+    : '🔄 Авто-импорт новинок: Вкл';
+
   const text = `🔌 <b>Настройки поставщика: ${escapeHtml(supplier.title)}</b>\n\n` +
     `📡 Статус: <b>${status}</b>\n` +
     `🔑 API Ключ: ${keyMasked}\n` +
     `💰 Баланс на счёте поставщика: <b>${supplier.cachedBalance.toFixed(2)} USDT</b>\n` +
     `📈 ${pricingDesc}\n` +
     `📦 Режим импорта: <b>${filterDesc}</b>\n` +
+    `🔄 Авто-импорт новинок: <b>${autoImportStatus}</b>\n` +
     `🕒 Последняя синхронизация: ${supplier.lastSyncAt ? new Date(supplier.lastSyncAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) : 'никогда'}`;
 
   const buttons = [
     [Markup.button.callback('🔑 Задать / сменить API-ключ', `admin:supplier:key:${supplierId}`)],
     [Markup.button.callback('📈 Настроить наценку (Smart / %)', `admin:supplier:margin_menu:${supplierId}`)],
     [Markup.button.callback(`📦 Режим: ${currentOnlyStatus}`, `admin:supplier:toggle_current:${supplierId}`)],
+    [Markup.button.callback(autoImportBtnStr, `admin:supplier:toggle_auto_import:${supplierId}`)],
     [Markup.button.callback('📥 Импортировать ВСЕ товары в 1 клик', `admin:supplier:import:${supplierId}`)],
     [Markup.button.callback('🔄 Синхронизировать остатки и склад', `admin:supplier:sync:${supplierId}`)],
     [Markup.button.callback('💰 Проверить баланс', `admin:supplier:refresh:${supplierId}`)],
@@ -272,6 +281,21 @@ const toggleCurrentOnly = async (ctx, supplierId) => {
   await showSupplierDetail(ctx, supplierId);
 };
 
+const toggleAutoImport = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const config = await SupplierConfig.findOne({ supplierId });
+  if (!config) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  config.autoImportNewProducts = config.autoImportNewProducts === false ? true : false;
+  await config.save();
+
+  const msg = config.autoImportNewProducts
+    ? '🟢 Авто-импорт новинок включён (каждые 30 мин)'
+    : '🔴 Авто-импорт новинок выключен';
+  await ctx.answerCbQuery(msg, { show_alert: true }).catch(() => {});
+  await showSupplierDetail(ctx, supplierId);
+};
+
 module.exports = {
   showSuppliersMain,
   showSupplierDetail,
@@ -283,4 +307,5 @@ module.exports = {
   execRefreshBalance,
   execSyncStock,
   toggleCurrentOnly,
+  toggleAutoImport,
 };

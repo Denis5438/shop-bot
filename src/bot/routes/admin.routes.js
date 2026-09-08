@@ -82,6 +82,10 @@ module.exports = (bot) => {
     await suppliersScene.toggleCurrentOnly(ctx, ctx.match[1]);
   });
 
+  bot.action(/^admin:supplier:toggle_auto_import:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.toggleAutoImport(ctx, ctx.match[1]);
+  });
+
   bot.action('admin:promos', adminMiddleware, async (ctx) => {
     await promosScene.showPromosMain(ctx);
   });
