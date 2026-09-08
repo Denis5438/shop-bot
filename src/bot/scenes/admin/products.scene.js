@@ -162,7 +162,6 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     `🇬🇧 Название (EN): ${nameEnStr}\n` +
     `💰 <b>Цена продажи: ${product.price} USDT</b>\n` +
     `💸 Закупочная цена: <b>${product.costPrice || 0} USDT</b>\n` +
-    `🏷 Оф. цена производителя: <b>${product.officialPrice ? `${product.officialPrice} USDT` + (product.officialDiscountPercent > 0 ? ` (скидка ${product.officialDiscountPercent}%)` : '') : 'не задана'}</b>\n` +
     `🔑 Источник: ${escapeHtml(product.provider || 'local')}\n` +
     `🗂 Категория: ${product.categoryId ? escapeHtml(product.categoryId.name) : 'Нет'}\n` +
     `🚚 Выдача: ${deliveryLabel}\n` +
@@ -180,10 +179,7 @@ const showProductEdit = async (ctx, productId, page = 1) => {
       Markup.button.callback('💰 Изменить цену', `admin:product:field:price:${productId}:${page}`),
       Markup.button.callback('✨ Расчёт Gemini AI', `admin:product:gemini_calc:${productId}:${page}`),
     ],
-    [
-      Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}:${page}`),
-      Markup.button.callback('🏷 Оф. цена', `admin:product:field:officialPrice:${productId}:${page}`),
-    ],
+    [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}:${page}`)],
     [Markup.button.callback(isFlash ? `🔥 Flash Sale: -${product.flashSale.discountPercent}% (Управление)` : '⚡ Включить Flash Sale (Акция)', `admin:product:flash:${productId}:${page}`)],
     [
       Markup.button.callback('✏️ Название (RU)', `admin:product:field:name:${productId}:${page}`),

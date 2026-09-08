@@ -444,21 +444,10 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b>${flashNote}${promoNote} (~${toRub(effectivePrice)} ₽)`;
   }
 
-  let officialPriceLine = '';
-  if (product.officialPrice && product.officialPrice > effectivePrice) {
-    const offDisc = product.officialDiscountPercent > 0
-      ? product.officialDiscountPercent
-      : Math.round(((product.officialPrice - effectivePrice) / product.officialPrice) * 100);
-    const discBadge = offDisc > 0 ? ` (Выгода ${offDisc}%! 🔥)` : '';
-    officialPriceLine = lang === 'en'
-      ? `\n🏷 Official price: <s>${product.officialPrice} USDT</s>${discBadge}`
-      : `\n🏷 Официальная цена: <s>${product.officialPrice} USDT</s>${discBadge}`;
-  }
-
   const text =
     balanceHeader(ctx.user) +
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
-    `<blockquote>${priceLabel}: ${priceDisplay}${officialPriceLine}${alertLine}\n` +
+    `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
     `${stockLabel}: ${stockIndicator(stock, t)}\n` +
     `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}${durationLine}</blockquote>` +
     `${flashSaleBlock}\n\n` +
