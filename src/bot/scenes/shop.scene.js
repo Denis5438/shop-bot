@@ -251,7 +251,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   }
 
   const products = await Product.find({ categoryId, isActive: true })
-    .select('name nameEn icon price costPrice type manualStock provider sortOrder lastSoldAt createdAt flashSale')
+    .select('name nameEn icon price costPrice type manualStock provider sortOrder lastSoldAt createdAt flashSale officialPrice officialDiscountPercent')
     .lean();
 
   if (products.length === 0) {
@@ -444,10 +444,21 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b>${flashNote}${promoNote} (~${toRub(effectivePrice)} ₽)`;
   }
 
+  let officialPriceLine = '';
+  if (product.officialPrice && product.officialPrice > effectivePrice) {
+    const offDisc = product.officialDiscountPercent > 0
+      ? product.officialDiscountPercent
+      : Math.round(((product.officialPrice - effectivePrice) / product.officialPrice) * 100);
+    const discBadge = offDisc > 0 ? ` (Выгода ${offDisc}%! 🔥)` : '';
+    officialPriceLine = lang === 'en'
+      ? `\n🏷 Official price: <s>${product.officialPrice} USDT</s>${discBadge}`
+      : `\n🏷 Официальная цена: <s>${product.officialPrice} USDT</s>${discBadge}`;
+  }
+
   const text =
     balanceHeader(ctx.user) +
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
-    `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
+    `<blockquote>${priceLabel}: ${priceDisplay}${officialPriceLine}${alertLine}\n` +
     `${stockLabel}: ${stockIndicator(stock, t)}\n` +
     `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}${durationLine}</blockquote>` +
     `${flashSaleBlock}\n\n` +

@@ -85,6 +85,7 @@ const showSettings = async (ctx) => {
     `📉 Умная уценка (-${settings.autoMarkdownPercent}% / ${settings.autoMarkdownDays}дн): <b>${settings.autoMarkdownEnabled ? '🔴 Вкл' : '🟢 Выкл'}</b>\n` +
     `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n` +
     `🧹 Чистый чат (удаление старых сообщений): <b>${cleanChatStatusText}</b>\n\n` +
+    `✨ API Gemini AI: <code>${settings.geminiApiKey ? '••••••••' + String(settings.geminiApiKey).slice(-4) : 'не задан'}</code>\n\n` +
     `💱 Текущий курс: 1 USD = <b>${getRate()} ₽</b>\n` +
     `🕐 Обновлён: ${getUpdatedAt()}\n\n` +
     `🛡 Тех. обслуживание: <b>${modeText}</b>`;
@@ -96,6 +97,7 @@ const showSettings = async (ctx) => {
       Markup.button.callback(bybitBtnStr, 'admin:settings:toggle_bybit'),
     ],
     [Markup.button.callback(cleanChatBtnStr, 'admin:settings:toggle_clean_chat')],
+    [Markup.button.callback('✨ API GEMINI', 'admin:settings:edit:geminiApiKey')],
     [Markup.button.callback('✏️ Platega Merchant ID', 'admin:settings:edit:plategaMerchantId')],
     [Markup.button.callback('✏️ Platega Secret Key', 'admin:settings:edit:plategaSecret')],
     [Markup.button.callback('✏️ Изменить кошелёк', 'admin:settings:edit:topupWallet')],
@@ -244,6 +246,7 @@ const startEditSetting = async (ctx, field) => {
     adminDigestIntervalMinutes: 'интервал сводки уведомлений в минутах (от 5 до 1440)',
     minSellerWithdraw: 'минимальную сумму вывода для продавцов (в USDT, например: 5)',
     autoConfirmHours: 'кол-во часов на проверку заказа (после чего деньги уходят продавцу)',
+    geminiApiKey: 'API-ключ Google Gemini (из Google AI Studio https://aistudio.google.com/)',
   };
   
   ctx.session = ctx.session || {};

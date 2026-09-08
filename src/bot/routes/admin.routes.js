@@ -396,6 +396,7 @@ module.exports = (bot) => {
     const fieldLabels = {
       price: '💰 новую Цену Продажи в USDT (например: 5.50)',
       costPrice: '💸 новую Закупочную Цену в USDT (например: 2.00)',
+      officialPrice: '🏷 Официальную розничную цену от производителя в USD (например: 20.00)',
       name: '📦 новое Название товара',
       description: '📝 Описание товара на русском',
       descriptionEn: '📝 Описание товара на английском',
@@ -409,6 +410,22 @@ module.exports = (bot) => {
       ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}:${page}`)]]),
     });
     await ctx.answerCbQuery().catch(() => {});
+  });
+
+  // ─── ADMIN: Расчёт и применение цены через Gemini AI ───────────────────────
+  bot.action(/^admin:product:gemini_calc:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    await productsScene.calculateProductWithGemini(ctx, productId, page);
+  });
+
+  bot.action(/^adm:p_gem_app:(.+?):(\d+):([0-9.]+):([0-9.]+):(\d+)$/, adminMiddleware, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = parseInt(ctx.match[2], 10);
+    const newPrice = ctx.match[3];
+    const offPrice = ctx.match[4];
+    const offDisc = ctx.match[5];
+    await productsScene.applyGeminiProductPrice(ctx, productId, page, newPrice, offPrice, offDisc);
   });
 
   bot.action(/^admin:product:set_stock:(.+?)(?::(\d+))?$/, adminMiddleware, async (ctx) => {

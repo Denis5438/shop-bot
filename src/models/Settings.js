@@ -8,6 +8,8 @@ const settingsSchema = new mongoose.Schema({
   minTopup: { type: Number, default: 1 },
   referralBonus: { type: Number, default: 0.5 },
   smartPricing: { type: Boolean, default: false },
+  geminiApiKey: { type: String, default: '' },
+  smartPricingPreset: { type: String, default: 'gemini_ai' },
   // Умная уценка
   autoMarkdownEnabled: { type: Boolean, default: false },
   autoMarkdownDays: { type: Number, default: 3 },

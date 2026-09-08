@@ -102,6 +102,7 @@ const showMarginMenu = async (ctx, supplierId) => {
     `Один фиксированный процент наценки на все товары поставщика.`;
 
   const buttons = [
+    [Markup.button.callback('✨ Smart: Gemini AI (Оф. цены + маржа)', `admin:supplier:preset:${supplierId}:gemini_ai`)],
     [Markup.button.callback('🎯 Smart: Стандарт (30% ➔ 20% ➔ 15% ➔ 8%)', `admin:supplier:preset:${supplierId}:standard`)],
     [Markup.button.callback('💰 Smart: Макс. прибыль (40% ➔ 25% ➔ 20% ➔ 12%)', `admin:supplier:preset:${supplierId}:high_profit`)],
     [Markup.button.callback('🔥 Smart: Минимум (20% ➔ 12% ➔ 8% ➔ 5%)', `admin:supplier:preset:${supplierId}:minimal`)],

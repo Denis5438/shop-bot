@@ -5,6 +5,7 @@ const Order = require('../../../models/Order');
 const Seller = require('../../../models/Seller');
 const keysScene = require('./keys.scene');
 const notif = require('../../../services/notification.service');
+const geminiPricing = require('../../../services/geminiPricing.service');
 const { escapeHtml, extractTextWithEmojis, safeEdit } = require('../../utils/ui');
 const {
   buildKeyQueryForProduct,
@@ -161,6 +162,7 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     `🇬🇧 Название (EN): ${nameEnStr}\n` +
     `💰 <b>Цена продажи: ${product.price} USDT</b>\n` +
     `💸 Закупочная цена: <b>${product.costPrice || 0} USDT</b>\n` +
+    `🏷 Оф. цена производителя: <b>${product.officialPrice ? `${product.officialPrice} USDT` + (product.officialDiscountPercent > 0 ? ` (скидка ${product.officialDiscountPercent}%)` : '') : 'не задана'}</b>\n` +
     `🔑 Источник: ${escapeHtml(product.provider || 'local')}\n` +
     `🗂 Категория: ${product.categoryId ? escapeHtml(product.categoryId.name) : 'Нет'}\n` +
     `🚚 Выдача: ${deliveryLabel}\n` +
@@ -174,8 +176,14 @@ const showProductEdit = async (ctx, productId, page = 1) => {
     `🔘 Статус: ${product.isActive ? '✅ Активен (виден в магазине)' : '🔴 Скрыт'}`;
 
   const buttons = [
-    [Markup.button.callback('💰 Изменить цену продажи', `admin:product:field:price:${productId}:${page}`)],
-    [Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}:${page}`)],
+    [
+      Markup.button.callback('💰 Изменить цену', `admin:product:field:price:${productId}:${page}`),
+      Markup.button.callback('✨ Расчёт Gemini AI', `admin:product:gemini_calc:${productId}:${page}`),
+    ],
+    [
+      Markup.button.callback('💸 Закупочная цена', `admin:product:field:costPrice:${productId}:${page}`),
+      Markup.button.callback('🏷 Оф. цена', `admin:product:field:officialPrice:${productId}:${page}`),
+    ],
     [Markup.button.callback(isFlash ? `🔥 Flash Sale: -${product.flashSale.discountPercent}% (Управление)` : '⚡ Включить Flash Sale (Акция)', `admin:product:flash:${productId}:${page}`)],
     [
       Markup.button.callback('✏️ Название (RU)', `admin:product:field:name:${productId}:${page}`),
@@ -605,13 +613,21 @@ const handleProductInput = async (ctx) => {
     const page = productPage || 1;
 
     const update = {};
-    if (field === 'price' || field === 'costPrice') {
+    if (field === 'price' || field === 'costPrice' || field === 'officialPrice') {
       const num = parseFloat(value.replace(',', '.'));
       if (Number.isNaN(num) || num < 0) {
         await ctx.reply('❌ Неверное число. Введите корректную цену (например: 4.50):');
         return true;
       }
       update[field] = num;
+      if (field === 'officialPrice') {
+        const prod = await Product.findById(productId);
+        if (prod && num > prod.price) {
+          update.officialDiscountPercent = Math.round(((num - prod.price) / num) * 100);
+        } else {
+          update.officialDiscountPercent = 0;
+        }
+      }
     } else if (field === 'warrantyDays' || field === 'subscriptionDays') {
       const num = parseInt(value, 10);
       if (Number.isNaN(num) || num < 0) {
@@ -924,6 +940,67 @@ const extendFlashSale = async (ctx, productId, page = 1, hours = 2) => {
   await showFlashSaleMenu(ctx, productId, page);
 };
 
+const calculateProductWithGemini = async (ctx, productId, page = 1) => {
+  const product = await Product.findById(productId).populate('categoryId');
+  if (!product) return ctx.answerCbQuery('❌ Товар не найден', { show_alert: true });
+
+  await ctx.answerCbQuery('✨ Gemini AI анализирует рынок и оф. цены...').catch(() => {});
+
+  const baseCost = product.costPrice > 0 ? product.costPrice : (product.sellerPrice > 0 ? product.sellerPrice : product.price);
+
+  const evalRes = await geminiPricing.evaluateProduct({
+    name: product.name,
+    costPrice: baseCost,
+    category: product.categoryId?.name || '',
+  });
+
+  const discountLine = evalRes.discountPercent > 0
+    ? `🔥 <b>Выгода для покупателя:</b> <b>скидка ${evalRes.discountPercent}%</b> от оф. сайта\n`
+    : '';
+
+  const text =
+    `✨ <b>Gemini AI: Умное ценообразование</b>\n\n` +
+    `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n` +
+    `💸 <b>Себестоимость / Опт:</b> <b>${evalRes.costPrice} USDT</b>\n` +
+    `🏷 <b>Официальная цена:</b> <b>${evalRes.officialPrice ? `${evalRes.officialPrice} USDT` : 'не определена'}</b>\n\n` +
+    `🎯 <b>Рекомендуемая цена:</b> <b>${evalRes.recommendedPrice} USDT</b>\n` +
+    `${discountLine}` +
+    `💰 <b>Чистая прибыль магазина:</b> <b>+${evalRes.profit} USDT</b>\n\n` +
+    `💡 <b>Обоснование:</b>\n<i>${escapeHtml(evalRes.reasoning)}</i>\n\n` +
+    `Текущая цена в магазине: <b>${product.price} USDT</b>`;
+
+  const buttons = [
+    [Markup.button.callback(`✅ Применить: ${evalRes.recommendedPrice} USDT`, `adm:p_gem_app:${productId}:${page}:${evalRes.recommendedPrice}:${evalRes.officialPrice}:${evalRes.discountPercent}`)],
+    [Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}:${page}`)],
+  ];
+
+  await safeEdit(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard(buttons),
+  });
+};
+
+const applyGeminiProductPrice = async (ctx, productId, page = 1, newPrice, officialPrice = 0, discountPercent = 0) => {
+  const price = parseFloat(newPrice);
+  const offPrice = parseFloat(officialPrice) || 0;
+  const offDisc = parseInt(discountPercent, 10) || 0;
+
+  if (isNaN(price) || price <= 0) {
+    return ctx.answerCbQuery('❌ Некорректная цена', { show_alert: true });
+  }
+
+  await Product.findByIdAndUpdate(productId, {
+    $set: {
+      price,
+      officialPrice: offPrice,
+      officialDiscountPercent: offDisc,
+    },
+  });
+
+  await ctx.answerCbQuery(`✅ Установлена цена: ${price} USDT!`, { show_alert: true });
+  await showProductEdit(ctx, productId, page);
+};
+
 module.exports = {
   showProductsList,
   showProductEdit,
@@ -943,4 +1020,6 @@ module.exports = {
   startFlashSale,
   stopFlashSale,
   extendFlashSale,
+  calculateProductWithGemini,
+  applyGeminiProductPrice,
 };

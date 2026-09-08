@@ -14,7 +14,7 @@ const supplierConfigSchema = new mongoose.Schema({
   marginPercent: { type: Number, default: 30 }, // Наценка в % (по умолчанию 30%)
   marginFixed: { type: Number, default: 0 },    // Фиксированная наценка в USDT
   smartPricingEnabled: { type: Boolean, default: false }, // Включена ли умная градуированная наценка
-  smartPricingPreset: { type: String, enum: ['standard', 'high_profit', 'minimal', 'custom'], default: 'standard' },
+  smartPricingPreset: { type: String, enum: ['standard', 'high_profit', 'minimal', 'gemini_ai', 'custom'], default: 'standard' },
   pricingTiers: [{
     maxPrice: { type: Number, default: null }, // До какой оптовой цены (null = выше)
     marginPercent: { type: Number, default: 15 },

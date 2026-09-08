@@ -33,6 +33,16 @@ const PRESETS = {
       { maxPrice: null, marginPercent: 5, marginFixed: 0 },
     ],
   },
+  gemini_ai: {
+    name: '✨ Gemini AI (Оф. цены + маржа)',
+    description: 'Интеллектуальный расчет от официальной цены сервиса с защитой от завышения',
+    tiers: [
+      { maxPrice: 5, marginPercent: 40, marginFixed: 0 },
+      { maxPrice: 30, marginPercent: 20, marginFixed: 0 },
+      { maxPrice: 100, marginPercent: 12, marginFixed: 0 },
+      { maxPrice: null, marginPercent: 7, marginFixed: 0 },
+    ],
+  },
 };
 
 /**
@@ -91,6 +101,10 @@ const formatPricingDescription = (supplierConfig) => {
   }
 
   const presetKey = supplierConfig.smartPricingPreset || 'standard';
+  if (presetKey === 'gemini_ai') {
+    return `✨ <b>Smart: Gemini AI (Оф. цены + маржа)</b>\n  └ Отталкивается от оф. прайса ($20 для GPT и т.д.), дает клиенту скидку и защищает от завышения`;
+  }
+
   const preset = PRESETS[presetKey] || { name: 'Кастомная' };
   const tiers = getActiveTiers(supplierConfig);
 

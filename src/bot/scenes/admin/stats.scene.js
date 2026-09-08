@@ -17,12 +17,13 @@ const getPeriodRange = (period) => {
     case 'day':
       from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       break;
-    case 'week':
+    case 'week': {
       const day = now.getDay() || 7;
       from = new Date(now);
       from.setDate(now.getDate() - day + 1);
       from.setHours(0, 0, 0, 0);
       break;
+    }
     case 'month':
       from = new Date(now.getFullYear(), now.getMonth(), 1);
       break;

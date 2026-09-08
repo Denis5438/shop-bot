@@ -51,8 +51,10 @@ const syncSupplierStock = async (supplierId) => {
   }
 
   // 3. Обновляем все товары этого поставщика в нашей базе
-  const dbProducts = await Product.find({ provider: supplierId }).select('supplierProductCode manualStock costPrice price').lean();
+  const dbProducts = await Product.find({ provider: supplierId }).select('name supplierProductCode manualStock costPrice price officialPrice officialDiscountPercent').lean();
   const pricingService = require('./pricing.service');
+  const geminiPricing = require('./geminiPricing.service');
+  const isGeminiMode = config.smartPricingPreset === 'gemini_ai';
   const bulkOps = [];
 
   const isOnlyInStock = config.currentOnly !== false;
@@ -64,9 +66,19 @@ const syncSupplierStock = async (supplierId) => {
     if (liveData) {
       const newStock = liveData.stock;
       const newCost = liveData.costPrice && liveData.costPrice > 0 ? liveData.costPrice : p.costPrice;
-      const newRetail = liveData.costPrice && liveData.costPrice > 0
+      let newRetail = liveData.costPrice && liveData.costPrice > 0
         ? pricingService.calculateRetailPrice(liveData.costPrice, config)
         : p.price;
+      let officialPrice = p.officialPrice || 0;
+      let officialDiscountPercent = p.officialDiscountPercent || 0;
+
+      if (isGeminiMode && liveData.costPrice && liveData.costPrice > 0) {
+        const evalRes = geminiPricing.calculateFallbackPrice(p.name, liveData.costPrice);
+        newRetail = evalRes.recommendedPrice;
+        officialPrice = evalRes.officialPrice;
+        officialDiscountPercent = evalRes.discountPercent;
+      }
+
       const newActive = isOnlyInStock ? newStock > 0 : true;
 
       bulkOps.push({
@@ -77,6 +89,8 @@ const syncSupplierStock = async (supplierId) => {
               manualStock: newStock,
               costPrice: newCost,
               price: newRetail,
+              officialPrice,
+              officialDiscountPercent,
               isActive: newActive,
               itemOrigin: 'supplier',
               ...(typeof liveData.warrantyDays === 'number' ? { warrantyDays: liveData.warrantyDays } : {}),

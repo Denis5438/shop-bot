@@ -1,6 +1,7 @@
 const SupplierConfig = require('../models/SupplierConfig');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
+const logger = require('../config/logger');
 
 const jahaAdapter = require('./suppliers/jaha.adapter');
 const akundingAdapter = require('./suppliers/akunding.adapter');
@@ -156,11 +157,28 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
   );
 
   const pricingService = require('./pricing.service');
+  const geminiPricing = require('./geminiPricing.service');
+  const isGeminiMode = config.smartPricingPreset === 'gemini_ai';
+  let geminiEvaluations = [];
+
+  if (isGeminiMode) {
+    try {
+      const batchItems = productsToProcess.map((p) => ({
+        name: p.name,
+        costPrice: parseFloat(p.priceUsdt || 0),
+      }));
+      geminiEvaluations = await geminiPricing.evaluateBatch(batchItems);
+    } catch (e) {
+      logger.warn(`Failed to batch evaluate Gemini pricing: ${e.message}`);
+    }
+  }
+
   const bulkOps = [];
   let importedCount = 0;
   let updatedCount = 0;
 
-  for (const item of productsToProcess) {
+  for (let i = 0; i < productsToProcess.length; i++) {
+    const item = productsToProcess[i];
     if (!item.productCode || !item.name) continue;
 
     // Сопоставление / создание категории
@@ -182,7 +200,19 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
 
     // Расчёт розничной цены с учётом умной наценки
     const wholesaleCost = parseFloat(item.priceUsdt || 0);
-    const retailPrice = pricingService.calculateRetailPrice(wholesaleCost, config);
+    let retailPrice = pricingService.calculateRetailPrice(wholesaleCost, config);
+    let officialPrice = 0;
+    let officialDiscountPercent = 0;
+
+    if (isGeminiMode && geminiEvaluations[i]) {
+      const gRes = geminiEvaluations[i];
+      if (gRes.recommendedPrice && gRes.recommendedPrice > wholesaleCost) {
+        retailPrice = gRes.recommendedPrice;
+        officialPrice = gRes.officialPrice || 0;
+        officialDiscountPercent = gRes.discountPercent || 0;
+      }
+    }
+
     const codeStr = String(item.productCode);
 
     const isExisting = existingCodesSet.has(codeStr);
@@ -207,6 +237,8 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
             ...(item.descriptionEn ? { descriptionEn: item.descriptionEn } : {}),
             costPrice: wholesaleCost,
             price: retailPrice,
+            officialPrice,
+            officialDiscountPercent,
             manualStock: item.stock ?? 0,
             categoryId: categoryId,
             icon: item.icon || '📦',

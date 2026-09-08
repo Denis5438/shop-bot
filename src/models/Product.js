@@ -7,6 +7,8 @@ const productSchema = new mongoose.Schema({
   descriptionEn: { type: String, default: '' },
   price: { type: Number, required: true },
   costPrice: { type: Number, default: 0 },
+  officialPrice: { type: Number, default: 0 },
+  officialDiscountPercent: { type: Number, default: 0 },
   icon: { type: String, default: '📦' },
   type: { type: String, enum: ['key', 'gpt_activation', 'manual'], default: 'key' },
   manualStock: { type: Number, default: -1 },
