@@ -275,10 +275,17 @@ module.exports = (bot) => {
   });
 
   // ─── ADMIN: Товары ───
+  bot.action('admin:products:clear_search', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery('Поиск сброшен').catch(() => {});
+    await productsScene.showProductsList(ctx, 1, null);
+  });
+
   bot.action(/^admin:products(?::(\d+))?$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const page = ctx.match[1] ? parseInt(ctx.match[1], 10) : 1;
-    await productsScene.showProductsList(ctx, page);
+    // Если переход в общий раздел без номера страницы (напр. по кнопке меню "📦 Товары") — сбрасываем старый поиск
+    const isDirectMenuClick = !ctx.match[1];
+    await productsScene.showProductsList(ctx, page, isDirectMenuClick ? null : undefined);
   });
 
   bot.action('admin:product:search', adminMiddleware, async (ctx) => {

@@ -24,10 +24,21 @@ const ACTIVE_ORDER_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmati
 
 const PRODUCTS_PER_PAGE = 7;
 
-const showProductsList = async (ctx, page = 1, searchQuery = null) => {
+const showProductsList = async (ctx, page = 1, searchQuery = undefined) => {
+  ctx.session = ctx.session || {};
+
+  // Если параметр передан явно (строка для поиска или null для сброса)
+  if (searchQuery !== undefined) {
+    ctx.session.productSearchQuery = (searchQuery && typeof searchQuery === 'string' && searchQuery.trim())
+      ? searchQuery.trim()
+      : null;
+  }
+
+  const activeSearch = ctx.session.productSearchQuery || null;
+
   const query = {};
-  if (searchQuery && typeof searchQuery === 'string' && searchQuery.trim()) {
-    query.name = new RegExp(searchQuery.trim(), 'i');
+  if (activeSearch) {
+    query.name = new RegExp(activeSearch, 'i');
   }
 
   const total = await Product.countDocuments(query);
@@ -41,14 +52,15 @@ const showProductsList = async (ctx, page = 1, searchQuery = null) => {
     .lean();
 
   if (products.length === 0) {
-    const emptyText = searchQuery
-      ? `🔍 По запросу «<b>${escapeHtml(searchQuery)}</b>» ничего не найдено.`
+    const emptyText = activeSearch
+      ? `🔍 По запросу «<b>${escapeHtml(activeSearch)}</b>» ничего не найдено.`
       : '📦 <b>Управление Товарами</b>\n\nСписок товаров пуст.';
     const emptyButtons = [
+      activeSearch ? [Markup.button.callback('❌ Сбросить поиск (все товары)', 'admin:products:clear_search')] : [],
       [Markup.button.callback('🔍 Повторить поиск', 'admin:product:search')],
       [Markup.button.callback('➕ Добавить товар', 'admin:product:add')],
       [Markup.button.callback('⬅️ В панель управления', 'admin:main')],
-    ];
+    ].filter((r) => r.length > 0);
     return safeEdit(ctx, emptyText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) });
   }
 
@@ -66,7 +78,9 @@ const showProductsList = async (ctx, page = 1, searchQuery = null) => {
     countsMap.get(pidStr)[prov] = row.count;
   }
 
-  const searchHeader = searchQuery ? `🔍 Результаты поиска «<b>${escapeHtml(searchQuery)}</b>»\n\n` : '';
+  const searchHeader = activeSearch
+    ? `🔍 <b>Поиск:</b> «<code>${escapeHtml(activeSearch)}</code>» · <i>Найдено: ${total} шт.</i>\n\n`
+    : '';
   let text = `📦 <b>Управление Товарами</b>  ·  Стр. ${safePage}/${totalPages}\n\n` + searchHeader;
   const buttons = [];
 
@@ -106,9 +120,12 @@ const showProductsList = async (ctx, page = 1, searchQuery = null) => {
   if (navRow.length > 0) buttons.push(navRow);
 
   buttons.push([
-    Markup.button.callback('🔍 Найти товар', 'admin:product:search'),
+    Markup.button.callback(activeSearch ? '🔍 Другой поиск' : '🔍 Найти товар', 'admin:product:search'),
     Markup.button.callback('➕ Добавить товар', 'admin:product:add'),
   ]);
+  if (activeSearch) {
+    buttons.push([Markup.button.callback('❌ Сбросить поиск (все товары)', 'admin:products:clear_search')]);
+  }
   buttons.push([Markup.button.callback('⬅️ В панель управления', 'admin:main')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
