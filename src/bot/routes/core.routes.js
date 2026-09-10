@@ -78,6 +78,16 @@ module.exports = (bot) => {
       return;
     }
 
+    // Проверка глубокой ссылки на товар: /start p_<id> или /start prod_<id>
+    const startPayload = ctx.startPayload || (typeof ctx.message?.text === 'string' ? ctx.message.text.match(/^\/start(?:@\w+)?\s+(\S+)/)?.[1] : null);
+    const prodMatch = startPayload ? startPayload.match(/^(?:p_|prod_)([a-f0-9]{24})$/) : null;
+    const targetProductId = prodMatch ? prodMatch[1] : null;
+
+    if (targetProductId) {
+      ctx.session = ctx.session || {};
+      ctx.session.pendingProductId = targetProductId;
+    }
+
     // Экран Оферты (ToS) на языке пользователя (если не принял)
     if (!user.acceptedToS) {
       const sent = await ctx.reply(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) });
@@ -89,6 +99,13 @@ module.exports = (bot) => {
     const subCheck = await checkUserSubscriptions(ctx.telegram, user.telegramId);
     if (subCheck.isEnabled && !subCheck.allSubscribed) {
       return showChannelSubScreen(ctx, subCheck, false);
+    }
+
+    // Если был переход по ссылке на товар — сразу открываем карточку товара
+    if (targetProductId) {
+      delete ctx.session.pendingProductId;
+      const shopScene = require('../scenes/shop.scene');
+      return shopScene.showProduct(ctx, targetProductId, 1);
     }
 
     const sent = await ctx.reply(
@@ -117,6 +134,14 @@ module.exports = (bot) => {
     const subCheck = await checkUserSubscriptions(ctx.telegram, ctx.user.telegramId);
     if (subCheck.isEnabled && !subCheck.allSubscribed) {
       return showChannelSubScreen(ctx, subCheck, true);
+    }
+
+    // Если был переход по ссылке на товар — сразу открываем карточку товара
+    if (ctx.session?.pendingProductId) {
+      const pId = ctx.session.pendingProductId;
+      delete ctx.session.pendingProductId;
+      const shopScene = require('../scenes/shop.scene');
+      return shopScene.showProduct(ctx, pId, 1);
     }
 
     try {

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const SupplierConfig = require('../models/SupplierConfig');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
@@ -28,42 +29,50 @@ const syncSupplierStock = async (supplierId) => {
 
   // 1. Получаем актуальный баланс
   const balRes = await adapter.getBalance(config.apiKey);
-  if (balRes.success) {
+  if (balRes.success && typeof balRes.balance === 'number') {
     config.cachedBalance = balRes.balance;
   }
 
-  // 2. Получаем актуальный каталог и остатки
-  const prodRes = await adapter.getProducts(config.apiKey, { currentOnly: config.currentOnly !== false });
-  if (!prodRes.success || !prodRes.products) {
-    return { success: false, error: prodRes.error || 'Не удалось получить остатки' };
+  // 2. Получаем актуальные товары и остатки от поставщика
+  const prodRes = await adapter.getProducts(config.apiKey);
+  if (!prodRes.success || !Array.isArray(prodRes.products)) {
+    return { success: false, error: prodRes.error || 'Не удалось получить товары' };
   }
 
-  let updatedCount = 0;
+  // Индексируем полученные данные по коду товара поставщика
   const supplierCodesMap = new Map();
-
   for (const item of prodRes.products) {
-    const code = String(item.productCode);
-    const stockCount = typeof item.stock === 'number' ? item.stock : (item.stock ? 99 : 0);
-    supplierCodesMap.set(code, {
-      stock: stockCount,
-      costPrice: item.priceUsdt,
-      warrantyDays: item.warrantyDays,
-      subscriptionDays: item.subscriptionDays,
-    });
+    if (item.productCode) {
+      supplierCodesMap.set(String(item.productCode), {
+        stock: typeof item.stock === 'number' ? item.stock : (item.stock ? 99 : 0),
+        costPrice: parseFloat(item.priceUsdt || 0),
+        name: item.name,
+        warrantyDays: item.warrantyDays,
+        subscriptionDays: item.subscriptionDays,
+      });
+    }
   }
 
-  // 3. Обновляем все товары этого поставщика в нашей базе
-  const dbProducts = await Product.find({ provider: supplierId }).select('name supplierProductCode manualStock costPrice price officialPrice officialDiscountPercent').lean();
+  // 3. Находим все товары в нашей базе, привязанные к этому поставщику
+  const dbProducts = await Product.find({ provider: supplierId });
+
   const pricingService = require('./pricing.service');
   const geminiPricing = require('./geminiPricing.service');
-  const isGeminiMode = config.smartPricingPreset === 'gemini_ai';
+  const isGeminiMode = config.smartPricingEnabled && config.smartPricingPreset === 'gemini_ai';
+
+  let updatedCount = 0;
   const bulkOps = [];
 
   const isOnlyInStock = config.currentOnly !== false;
 
+  const restockedProducts = [];
+  const outOfStockProducts = [];
+  const newlyImportedProducts = [];
+
   for (const p of dbProducts) {
     if (!p.supplierProductCode) continue;
 
+    const oldStock = typeof p.manualStock === 'number' ? p.manualStock : 0;
     const liveData = supplierCodesMap.get(String(p.supplierProductCode));
     if (liveData) {
       const newStock = liveData.stock;
@@ -75,7 +84,7 @@ const syncSupplierStock = async (supplierId) => {
       let officialDiscountPercent = p.officialDiscountPercent || 0;
 
       if (isGeminiMode && liveData.costPrice && liveData.costPrice > 0) {
-        const evalRes = geminiPricing.calculateFallbackPrice(p.name, liveData.costPrice);
+        const evalRes = geminiPricing.calculateFallbackPrice(p.name, liveData.costPrice, config);
         newRetail = evalRes.recommendedPrice;
         officialPrice = evalRes.officialPrice;
         officialDiscountPercent = evalRes.discountPercent;
@@ -102,6 +111,23 @@ const syncSupplierStock = async (supplierId) => {
         },
       });
       updatedCount++;
+
+      // Отслеживание пополнений для уведомлений
+      if (newStock > oldStock) {
+        const addedStock = newStock - oldStock;
+        const minQty = config.notifyMinRestockQty || 1;
+        if (addedStock >= minQty) {
+          restockedProducts.push({
+            product: p,
+            oldStock,
+            newStock,
+            addedStock,
+            price: newRetail,
+          });
+        }
+      } else if (newStock === 0 && oldStock > 0) {
+        outOfStockProducts.push({ product: p, oldStock });
+      }
     } else {
       if (p.manualStock !== 0 || (isOnlyInStock && p.isActive)) {
         bulkOps.push({
@@ -116,6 +142,9 @@ const syncSupplierStock = async (supplierId) => {
           },
         });
         updatedCount++;
+        if (oldStock > 0) {
+          outOfStockProducts.push({ product: p, oldStock });
+        }
       }
     }
   }
@@ -156,7 +185,7 @@ const syncSupplierStock = async (supplierId) => {
         let officialDiscountPercent = 0;
 
         if (isGeminiMode && wholesaleCost > 0) {
-          const evalRes = geminiPricing.calculateFallbackPrice(item.name, wholesaleCost);
+          const evalRes = geminiPricing.calculateFallbackPrice(item.name, wholesaleCost, config);
           retailPrice = evalRes.recommendedPrice;
           officialPrice = evalRes.officialPrice || 0;
           officialDiscountPercent = evalRes.discountPercent || 0;
@@ -165,6 +194,7 @@ const syncSupplierStock = async (supplierId) => {
         const codeStr = String(item.productCode);
         const stockCount = typeof item.stock === 'number' ? item.stock : (item.stock ? 99 : 0);
         const isActive = isOnlyInStock ? stockCount > 0 : true;
+        const newProdId = new mongoose.Types.ObjectId();
 
         bulkOps.push({
           updateOne: {
@@ -173,6 +203,9 @@ const syncSupplierStock = async (supplierId) => {
               supplierProductCode: codeStr,
             },
             update: {
+              $setOnInsert: {
+                _id: newProdId,
+              },
               $set: {
                 name: item.name,
                 ...(item.nameEn ? { nameEn: item.nameEn } : {}),
@@ -196,6 +229,16 @@ const syncSupplierStock = async (supplierId) => {
             upsert: true,
           },
         });
+
+        newlyImportedProducts.push({
+          product: {
+            _id: newProdId,
+            name: item.name,
+            icon: item.icon || '📦',
+          },
+          stock: stockCount,
+          price: retailPrice,
+        });
         newImportedCount++;
       }
     }
@@ -210,12 +253,33 @@ const syncSupplierStock = async (supplierId) => {
 
   logger.info(`[SupplierSync] ${supplierId}: обновлено ${updatedCount} товаров, авто-импортировано новинок: ${newImportedCount}`);
 
+  // 4. Отправка отчётов и уведомлений
+  const notificationService = require('./notification.service');
+
+  if (config.notifyAdminOnSync !== false) {
+    await notificationService.notifyAdminSyncReport(config, {
+      restocked: restockedProducts,
+      newlyImported: newlyImportedProducts,
+      outOfStock: outOfStockProducts,
+      totalUpdated: updatedCount,
+    }).catch((err) => logger.warn(`[SupplierSync] Ошибка отчёта админам: ${err.message}`));
+  }
+
+  if (config.notifyUsersOnRestock === true && (restockedProducts.length > 0 || newlyImportedProducts.length > 0)) {
+    await notificationService.notifyPublicRestockAndNew(config, {
+      restocked: restockedProducts,
+      newlyImported: newlyImportedProducts,
+    }).catch((err) => logger.warn(`[SupplierSync] Ошибка клиентских постов: ${err.message}`));
+  }
+
   return {
     success: true,
     supplierId,
     balance: config.cachedBalance,
     updatedCount,
     newImportedCount,
+    restockedCount: restockedProducts.length,
+    outOfStockCount: outOfStockProducts.length,
   };
 };
 

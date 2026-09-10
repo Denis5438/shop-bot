@@ -26,6 +26,17 @@ const supplierConfigSchema = new mongoose.Schema({
   autoSyncEnabled: { type: Boolean, default: true },
   autoImportNewProducts: { type: Boolean, default: true },
   syncIntervalMinutes: { type: Number, default: 30 },
+  // Уведомления поставщика
+  notifyAdminOnSync: { type: Boolean, default: true },
+  notifyUsersOnRestock: { type: Boolean, default: false },
+  userNotificationChannel: { type: String, default: '' },
+  userNotificationBroadcast: { type: Boolean, default: false },
+  notifyMinRestockQty: { type: Number, default: 1 },
+  // Гибкие настройки Gemini AI для этого поставщика
+  geminiTargetDiscountPercent: { type: Number, default: 10 }, // Целевая скидка от оф. цены (например 10%)
+  geminiMaxMarkupUsd: { type: Number, default: 15 },          // Потолок наценки на дорогие товары ($)
+  geminiMinProfitUsd: { type: Number, default: 1.0 },         // Мин. чистая прибыль магазина ($)
+  geminiStrategy: { type: String, enum: ['discount', 'balanced', 'margin'], default: 'balanced' },
   updatedAt: { type: Date, default: Date.now },
 });
 

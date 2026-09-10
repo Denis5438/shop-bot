@@ -437,6 +437,54 @@ module.exports = (bot) => {
       return;
     }
 
+    // ─── ВВОД TELEGRAM-КАНАЛА ДЛЯ УВЕДОМЛЕНИЙ ПОСТАВЩИКА ───
+    if (session.adminAction === 'supplier_set_channel' && ctx.user.role === 'admin') {
+      const targetMsgId = session.wizardMsgId;
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
+      const supplierId = session.targetSupplierId;
+      let channelInput = ctx.message.text.trim();
+      session.adminAction = null;
+      session.targetSupplierId = null;
+      session.wizardMsgId = null;
+
+      if (!channelInput.startsWith('@') && !channelInput.startsWith('-')) {
+        channelInput = '@' + channelInput;
+      }
+
+      const SupplierConfig = require('../../models/SupplierConfig');
+      await SupplierConfig.findOneAndUpdate(
+        { supplierId },
+        {
+          $set: {
+            userNotificationChannel: channelInput,
+            notifyUsersOnRestock: true,
+          },
+        }
+      );
+
+      const text = `✅ Канал для публикаций установлен: <code>${escapeHtml(channelInput)}</code>!\n\n` +
+        `Теперь при обнаружении пополнений или новинок бот будет автоматически публиковать посты в этот канал.\n` +
+        `⚠️ <i>Убедитесь, что бот добавлен администратором в этот канал!</i>`;
+
+      const keyboard = Markup.inlineKeyboard([[Markup.button.callback('🔔 К настройкам уведомлений', `admin:supplier:notif_menu:${supplierId}`)]]);
+
+      if (targetMsgId) {
+        try {
+          await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+          return;
+        } catch (_) {}
+      }
+
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        ...keyboard,
+      });
+      return;
+    }
+
     // Обработка отправки сообщения пользователю (от админа)
     if (session.adminAction === 'send_message' && ctx.user.role === 'admin') {
       const targetId = session.targetTelegramId;

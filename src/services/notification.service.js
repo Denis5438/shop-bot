@@ -726,6 +726,170 @@ const notifyWarrantyClaim = async (order, user, product, reason, mediaId = null,
   }
 };
 
+// ─── Уведомления синхронизации внешних поставщиков ──────────────────────────
+/**
+ * Сводный отчёт администраторам о результатах синхронизации поставщика
+ */
+const notifyAdminSyncReport = async (supplier, stats = {}) => {
+  if (!botInstance) return;
+
+  const restocked = stats.restocked || [];
+  const newlyImported = stats.newlyImported || [];
+  const outOfStock = stats.outOfStock || [];
+
+  // Если ничего не изменилось и нет пополнений/новинок, не спамим если не включен принудительный отчёт
+  if (restocked.length === 0 && newlyImported.length === 0 && outOfStock.length === 0 && stats.totalUpdated === 0) {
+    return;
+  }
+
+  let text = `🔌 <b>Отчёт синхронизации: ${escapeHtml(supplier.title)}</b>\n\n`;
+
+  if (restocked.length > 0) {
+    text += `🆙 <b>Пополнились товары (${restocked.length} шт.):</b>\n`;
+    const slice = restocked.slice(0, 10);
+    slice.forEach((it) => {
+      const icon = it.product?.icon || '📦';
+      const name = escapeHtml(it.product?.name || 'Товар');
+      text += ` • ${icon} <b>${name}</b>: ${it.oldStock} ➔ <b>${it.newStock} шт.</b> (+${it.addedStock}) | ${it.price} USDT\n`;
+    });
+    if (restocked.length > 10) {
+      text += ` <i>... и ещё ${restocked.length - 10} поз.</i>\n`;
+    }
+    text += '\n';
+  }
+
+  if (newlyImported.length > 0) {
+    text += `🆕 <b>Новые товары добавлены (${newlyImported.length} шт.):</b>\n`;
+    const slice = newlyImported.slice(0, 10);
+    slice.forEach((it) => {
+      const icon = it.product?.icon || '📦';
+      const name = escapeHtml(it.product?.name || 'Товар');
+      text += ` • ${icon} <b>${name}</b>: ${it.stock} шт. | ${it.price} USDT\n`;
+    });
+    if (newlyImported.length > 10) {
+      text += ` <i>... и ещё ${newlyImported.length - 10} поз.</i>\n`;
+    }
+    text += '\n';
+  }
+
+  if (outOfStock.length > 0) {
+    text += `⚠️ <b>Закончились / Нет в наличии (${outOfStock.length} шт.):</b>\n`;
+    const slice = outOfStock.slice(0, 10);
+    slice.forEach((it) => {
+      const name = escapeHtml(it.product?.name || 'Товар');
+      text += ` • ❌ ${name} (0 шт.)\n`;
+    });
+    if (outOfStock.length > 10) {
+      text += ` <i>... и ещё ${outOfStock.length - 10} поз.</i>\n`;
+    }
+    text += '\n';
+  }
+
+  text += `💰 Баланс на счёте: <b>${(supplier.cachedBalance || 0).toFixed(2)} USDT</b>\n` +
+    `🕒 Время (МСК): ${new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}`;
+
+  await sendToAdmins(text);
+};
+
+/**
+ * Публикация пополнений и новинок для клиентов (в Telegram-канал и/или рассылка)
+ */
+const notifyPublicRestockAndNew = async (supplier, { restocked = [], newlyImported = [] } = {}) => {
+  if (!botInstance) return;
+
+  const targetChannel = supplier.userNotificationChannel?.trim();
+  const doBroadcast = Boolean(supplier.userNotificationBroadcast);
+
+  if (!targetChannel && !doBroadcast) {
+    return;
+  }
+
+  let botUsername = botInstance.botInfo?.username;
+  if (!botUsername) {
+    const me = await botInstance.telegram.getMe().catch(() => null);
+    botUsername = me?.username || '';
+  }
+
+  const posts = [];
+
+  // Пополненные товары: "🆙 Снова в наличии"
+  for (const it of restocked) {
+    const p = it.product;
+    const pId = String(p._id);
+    const link = botUsername ? `https://t.me/${botUsername}?start=p_${pId}` : '';
+    const icon = p.icon || '📦';
+    const name = escapeHtml(p.name);
+    const titleLine = link ? `<a href="${link}">${name}</a>` : name;
+
+    const msg =
+      `🆙 <b>Снова в наличии</b>\n\n` +
+      `${icon} <b>${titleLine}</b>\n\n` +
+      `💲 <b>Цена:</b> $${it.price} USDT\n` +
+      `📦 <b>В наличии:</b> ${it.newStock}\n` +
+      `➕ <b>Добавлено:</b> ${it.addedStock}`;
+
+    const keyboard = link
+      ? Markup.inlineKeyboard([[Markup.button.url('🛍 Купить сейчас', link)]])
+      : Markup.inlineKeyboard([[Markup.button.callback('🛍 Купить сейчас', `shop:product:${pId}`)]]);
+
+    posts.push({ text: msg, keyboard, product: p });
+  }
+
+  // Новые товары: "🆕 Новый товар"
+  for (const it of newlyImported) {
+    const p = it.product;
+    const pId = String(p._id);
+    const link = botUsername ? `https://t.me/${botUsername}?start=p_${pId}` : '';
+    const icon = p.icon || '📦';
+    const name = escapeHtml(p.name);
+    const titleLine = link ? `<a href="${link}">${name}</a>` : name;
+
+    const msg =
+      `🆕 <b>Новый товар</b>\n\n` +
+      `${icon} <b>${titleLine}</b>\n\n` +
+      `💲 <b>Цена:</b> $${it.price} USDT\n` +
+      `📦 <b>В наличии:</b> ${it.stock}`;
+
+    const keyboard = link
+      ? Markup.inlineKeyboard([[Markup.button.url('🛍 Купить сейчас', link)]])
+      : Markup.inlineKeyboard([[Markup.button.callback('🛍 Купить сейчас', `shop:product:${pId}`)]]);
+
+    posts.push({ text: msg, keyboard, product: p });
+  }
+
+  // 1. Отправка в Telegram-канал
+  if (targetChannel && posts.length > 0) {
+    for (const post of posts) {
+      try {
+        await botInstance.telegram.sendMessage(targetChannel, post.text, {
+          parse_mode: 'HTML',
+          disable_web_page_preview: false,
+          ...post.keyboard,
+        });
+        await new Promise((r) => setTimeout(r, 400)); // Защита от лимитов канала
+      } catch (err) {
+        logger.warn(`[SupplierNotif] Не удалось отправить пост в канал ${targetChannel}: ${err.message}`);
+      }
+    }
+  }
+
+  // 2. Рассылка клиентам в ЛС (если включена)
+  if (doBroadcast && posts.length > 0) {
+    for (const post of posts) {
+      await runBroadcastQueue({
+        items: User.find({ isBanned: false }).select('telegramId language').lean().cursor(),
+        sendFn: async (user) => {
+          await botInstance.telegram.sendMessage(user.telegramId, post.text, {
+            parse_mode: 'HTML',
+            ...post.keyboard,
+          });
+        },
+        delayMs: 35,
+      }).catch((e) => logger.warn(`[SupplierBroadcast] Ошибка рассылки: ${e.message}`));
+    }
+  }
+};
+
 module.exports = {
   setBot,
   sendToAdmins,
@@ -748,6 +912,9 @@ module.exports = {
   notifyWaitlist,
   notifyWarrantyClaim,
   fulfillPreorders,
+  // Синхронизация поставщиков
+  notifyAdminSyncReport,
+  notifyPublicRestockAndNew,
   // №16 Сегментация
   buildSegmentQuery,
   countSegment,

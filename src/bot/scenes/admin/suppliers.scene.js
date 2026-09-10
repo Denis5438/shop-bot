@@ -67,6 +67,9 @@ const showSupplierDetail = async (ctx, supplierId) => {
     ? '🔄 Авто-импорт новинок: Выкл'
     : '🔄 Авто-импорт новинок: Вкл';
 
+  const adminNotifStr = supplier.notifyAdminOnSync !== false ? '🟢 Вкл' : '🔴 Выкл';
+  const userNotifStr = supplier.notifyUsersOnRestock ? '🟢 Вкл' : '🔴 Выкл';
+
   const text = `🔌 <b>Настройки поставщика: ${escapeHtml(supplier.title)}</b>\n\n` +
     `📡 Статус: <b>${status}</b>\n` +
     `🔑 API Ключ: ${keyMasked}\n` +
@@ -74,11 +77,13 @@ const showSupplierDetail = async (ctx, supplierId) => {
     `📈 ${pricingDesc}\n` +
     `📦 Режим импорта: <b>${filterDesc}</b>\n` +
     `🔄 Авто-импорт новинок: <b>${autoImportStatus}</b>\n` +
+    `🔔 Уведомления: Админам <b>${adminNotifStr}</b> | Клиентам <b>${userNotifStr}</b>\n` +
     `🕒 Последняя синхронизация: ${supplier.lastSyncAt ? new Date(supplier.lastSyncAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) : 'никогда'}`;
 
   const buttons = [
     [Markup.button.callback('🔑 Задать / сменить API-ключ', `admin:supplier:key:${supplierId}`)],
     [Markup.button.callback('📈 Настроить наценку (Smart / %)', `admin:supplier:margin_menu:${supplierId}`)],
+    [Markup.button.callback('🔔 Настройки уведомлений', `admin:supplier:notif_menu:${supplierId}`)],
     [Markup.button.callback(`📦 Режим: ${currentOnlyStatus}`, `admin:supplier:toggle_current:${supplierId}`)],
     [Markup.button.callback(autoImportBtnStr, `admin:supplier:toggle_auto_import:${supplierId}`)],
     [Markup.button.callback('📥 Импортировать ВСЕ товары в 1 клик', `admin:supplier:import:${supplierId}`)],
@@ -111,7 +116,7 @@ const showMarginMenu = async (ctx, supplierId) => {
     `Один фиксированный процент наценки на все товары поставщика.`;
 
   const buttons = [
-    [Markup.button.callback('✨ Smart: Gemini AI (Оф. цены + маржа)', `admin:supplier:preset:${supplierId}:gemini_ai`)],
+    [Markup.button.callback('✨ Smart: Gemini AI (Оф. цены + маржа) ⚙️', `admin:supplier:gemini_menu:${supplierId}`)],
     [Markup.button.callback('🎯 Smart: Стандарт (30% ➔ 20% ➔ 15% ➔ 8%)', `admin:supplier:preset:${supplierId}:standard`)],
     [Markup.button.callback('💰 Smart: Макс. прибыль (40% ➔ 25% ➔ 20% ➔ 12%)', `admin:supplier:preset:${supplierId}:high_profit`)],
     [Markup.button.callback('🔥 Smart: Минимум (20% ➔ 12% ➔ 8% ➔ 5%)', `admin:supplier:preset:${supplierId}:minimal`)],
@@ -296,6 +301,268 @@ const toggleAutoImport = async (ctx, supplierId) => {
   await showSupplierDetail(ctx, supplierId);
 };
 
+/**
+ * Меню детальной гибкой настройки Gemini AI ценообразования
+ */
+const showGeminiAiSettings = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const geminiPricing = require('../../../services/geminiPricing.service');
+
+  const supplier = await SupplierConfig.findOne({ supplierId });
+  if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  const discount = supplier.geminiTargetDiscountPercent || 10;
+  const maxMarkup = supplier.geminiMaxMarkupUsd || 15;
+  const minProfit = supplier.geminiMinProfitUsd || 1.0;
+
+  const preview = geminiPricing.getPricingPreview(supplier);
+  let previewText = '';
+  preview.forEach((p) => {
+    const profitStr = p.profit >= 0 ? `+$${p.profit}` : `-$${Math.abs(p.profit)}`;
+    const discStr = p.discountPercent > 0 ? ` (скидка ${p.discountPercent}%)` : '';
+    previewText += `• <b>${escapeHtml(p.name)}</b>:\n  Опт: $${p.costPrice} ➔ <b>Розница: $${p.recommendedPrice} USDT</b> [${profitStr}${discStr}]\n`;
+  });
+
+  const text = `✨ <b>Настройка ценообразования Gemini AI: ${escapeHtml(supplier.title)}</b>\n\n` +
+    `Здесь вы точно задаёте правила, по которым ИИ рассчитывает цены для этого поставщика:\n\n` +
+    `🎯 <b>Скидка от официальной цены:</b> <b>-${discount}%</b>\n` +
+    `└ <i>(Покупатель видит реальную скидку от прайса на оф. сайте)</i>\n\n` +
+    `🛡 <b>Потолок наценки на дорогие товары:</b> <b>+$${maxMarkup} USDT</b>\n` +
+    `└ <i>(Защита от завышения цен: на товарах за $100-$200 наценка строго ограничена!)</i>\n\n` +
+    `💵 <b>Мин. чистая прибыль магазина:</b> <b>+$${minProfit} USDT</b>\n\n` +
+    `👁 <b>Живой предпросмотр цен при этих настройках:</b>\n` +
+    previewText +
+    `\n<i>Выберите нужные параметры ниже и нажмите «✅ Применить»:</i>`;
+
+  const dOpts = [5, 10, 15, 20];
+  const dButtons = dOpts.map((val) => {
+    const label = val === discount ? `✅ -${val}%` : `-${val}%`;
+    return Markup.button.callback(label, `admin:supplier:gemini_set:${supplierId}:discount:${val}`);
+  });
+
+  const mOpts = [10, 15, 20, 30];
+  const mButtons = mOpts.map((val) => {
+    const label = val === maxMarkup ? `✅ +$${val}` : `+$${val}`;
+    return Markup.button.callback(label, `admin:supplier:gemini_set:${supplierId}:max_markup:${val}`);
+  });
+
+  const pOpts = [0.5, 1.0, 2.0];
+  const pButtons = pOpts.map((val) => {
+    const label = val === minProfit ? `✅ +$${val}` : `+$${val}`;
+    return Markup.button.callback(label, `admin:supplier:gemini_set:${supplierId}:min_profit:${val}`);
+  });
+
+  const buttons = [
+    [Markup.button.callback('🎯 Скидка от оф. цены (выбрать):', 'admin:noop')],
+    dButtons,
+    [Markup.button.callback('🛡 Потолок наценки на дорогие (выбрать):', 'admin:noop')],
+    mButtons,
+    [Markup.button.callback('💵 Мин. чистая прибыль (выбрать):', 'admin:noop')],
+    pButtons,
+    [Markup.button.callback('✅ Применить Gemini AI и пересчитать склад', `admin:supplier:gemini_apply:${supplierId}`)],
+    [Markup.button.callback('⬅️ В меню наценки', `admin:supplier:margin_menu:${supplierId}`)],
+  ];
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  await safeEdit(ctx, text, opts);
+};
+
+const setGeminiParam = async (ctx, supplierId, param, value) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const numVal = parseFloat(value);
+  if (isNaN(numVal)) return ctx.answerCbQuery('❌ Ошибка значения', { show_alert: true });
+
+  const update = {};
+  if (param === 'discount') update.geminiTargetDiscountPercent = numVal;
+  if (param === 'max_markup') update.geminiMaxMarkupUsd = numVal;
+  if (param === 'min_profit') update.geminiMinProfitUsd = numVal;
+
+  await SupplierConfig.findOneAndUpdate({ supplierId }, { $set: update });
+  await ctx.answerCbQuery('Параметр обновлён').catch(() => {});
+  await showGeminiAiSettings(ctx, supplierId);
+};
+
+const applyGeminiPreset = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const liveSync = require('../../../services/supplierLiveSync.service');
+
+  await SupplierConfig.findOneAndUpdate(
+    { supplierId },
+    {
+      $set: {
+        smartPricingEnabled: true,
+        smartPricingPreset: 'gemini_ai',
+      },
+    },
+    { new: true, upsert: true }
+  );
+
+  await ctx.answerCbQuery('✨ Gemini AI применён! Пересчитываю склад...', { show_alert: false }).catch(() => {});
+
+  const syncRes = await liveSync.syncSupplierStock(supplierId);
+  const updatedInfo = syncRes.success ? ` (Обновлено товаров: ${syncRes.updatedCount})` : '';
+
+  const text = `✅ <b>Режим Gemini AI успешно активирован!</b>${updatedInfo}\n\nВсе цены в каталоге магазина пересчитаны с учетом ваших настроек и защиты от завышения.`;
+  await safeEdit(ctx, text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ В карточку поставщика', `admin:supplier:view:${supplierId}`)]]),
+  });
+};
+
+/**
+ * Меню настройки уведомлений поставщика
+ */
+const showSupplierNotificationSettings = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const supplier = await SupplierConfig.findOne({ supplierId });
+  if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  const adminNotifStatus = supplier.notifyAdminOnSync !== false ? '🟢 Включены' : '🔴 Выключены';
+  const adminNotifBtn = supplier.notifyAdminOnSync !== false ? '🔔 Отчёты админу: Выкл' : '🔔 Отчёты админу: Вкл';
+
+  const userNotifStatus = supplier.notifyUsersOnRestock ? '🟢 Включены' : '🔴 Выключены';
+  const userNotifBtn = supplier.notifyUsersOnRestock ? '📢 Уведомления клиентам: Выкл' : '📢 Уведомления клиентам: Вкл';
+
+  const channelStr = supplier.userNotificationChannel ? `<code>${escapeHtml(supplier.userNotificationChannel)}</code>` : '<i>не задан</i>';
+  const channelBtn = supplier.userNotificationChannel ? `📢 Сменить канал (${supplier.userNotificationChannel})` : '📢 ✏️ Задать канал Telegram';
+
+  const broadcastStatus = supplier.userNotificationBroadcast ? '🟢 Включена' : '🔴 Выключена';
+  const broadcastBtn = supplier.userNotificationBroadcast ? '👥 Рассылка клиентам в ЛС: Выкл' : '👥 Рассылка клиентам в ЛС: Вкл';
+
+  const text = `🔔 <b>Настройка уведомлений поставщика: ${escapeHtml(supplier.title)}</b>\n\n` +
+    `Здесь настраиваются уведомления о пополнении склада и новых товарах от этого поставщика:\n\n` +
+    `👮 <b>Отчёты администраторам:</b> <b>${adminNotifStatus}</b>\n` +
+    `└ <i>При каждой синхронизации присылает админам подробную сводку: какие товары пополнились (+кол-во), какие добавлены, каких нет на складе.</i>\n\n` +
+    `📢 <b>Уведомления клиентам:</b> <b>${userNotifStatus}</b>\n` +
+    `└ <i>Публикует посты «🆙 Снова в наличии» и «🆕 Новый товар» с кнопкой «🛍 Купить сейчас».</i>\n\n` +
+    `📢 <b>Канал для постов:</b> ${channelStr}\n` +
+    `└ <i>(Бот должен быть назначен администратором в этом канале с правом отправки сообщений)</i>\n\n` +
+    `👥 <b>Рассылка клиентам бота в ЛС:</b> <b>${broadcastStatus}</b>\n` +
+    `└ <i>(Дополнительно отправляет анонсы в личные сообщения активным пользователям бота)</i>`;
+
+  const buttons = [
+    [Markup.button.callback(adminNotifBtn, `admin:supplier:toggle_admin_notif:${supplierId}`)],
+    [Markup.button.callback(userNotifBtn, `admin:supplier:toggle_user_notif:${supplierId}`)],
+    [Markup.button.callback(channelBtn, `admin:supplier:set_channel:${supplierId}`)],
+    [Markup.button.callback(broadcastBtn, `admin:supplier:toggle_broadcast:${supplierId}`)],
+    [Markup.button.callback('🧪 Отправить тестовый пост', `admin:supplier:test_post:${supplierId}`)],
+    [Markup.button.callback('⬅️ К поставщику', `admin:supplier:view:${supplierId}`)],
+  ];
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  await safeEdit(ctx, text, opts);
+};
+
+const toggleAdminNotif = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const supplier = await SupplierConfig.findOne({ supplierId });
+  if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  supplier.notifyAdminOnSync = supplier.notifyAdminOnSync === false ? true : false;
+  await supplier.save();
+
+  const msg = supplier.notifyAdminOnSync ? '🟢 Отчёты администраторам включены' : '🔴 Отчёты администраторам выключены';
+  await ctx.answerCbQuery(msg, { show_alert: true }).catch(() => {});
+  await showSupplierNotificationSettings(ctx, supplierId);
+};
+
+const toggleUserNotif = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const supplier = await SupplierConfig.findOne({ supplierId });
+  if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  supplier.notifyUsersOnRestock = !supplier.notifyUsersOnRestock;
+  await supplier.save();
+
+  const msg = supplier.notifyUsersOnRestock ? '🟢 Уведомления клиентам включены' : '🔴 Уведомления клиентам выключены';
+  await ctx.answerCbQuery(msg, { show_alert: true }).catch(() => {});
+  await showSupplierNotificationSettings(ctx, supplierId);
+};
+
+const toggleBroadcastNotif = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const supplier = await SupplierConfig.findOne({ supplierId });
+  if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  supplier.userNotificationBroadcast = !supplier.userNotificationBroadcast;
+  await supplier.save();
+
+  const msg = supplier.userNotificationBroadcast ? '🟢 Рассылка клиентам в ЛС включена' : '🔴 Рассылка клиентам в ЛС выключена';
+  await ctx.answerCbQuery(msg, { show_alert: true }).catch(() => {});
+  await showSupplierNotificationSettings(ctx, supplierId);
+};
+
+const startSetChannel = async (ctx, supplierId) => {
+  ctx.session = ctx.session || {};
+  ctx.session.adminAction = 'supplier_set_channel';
+  ctx.session.targetSupplierId = supplierId;
+  ctx.session.wizardMsgId = ctx.callbackQuery?.message?.message_id;
+
+  const text = `📢 <b>Канал для публикации пополнений и новинок</b>\n\n` +
+    `Отправьте <b>@username</b> или <b>ID</b> вашего Telegram-канала сообщением в чат.\n\n` +
+    `<i>Пример: <code>@my_shop_news</code> или <code>-1001234567890</code></i>\n\n` +
+    `⚠️ <i>Убедитесь, что бот добавлен в канал администратором с правом публикации сообщений!</i>`;
+
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', `admin:supplier:notif_menu:${supplierId}`)]]);
+  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
+};
+
+const sendTestPost = async (ctx, supplierId) => {
+  const SupplierConfig = require('../../../models/SupplierConfig');
+  const Product = require('../../../models/Product');
+  const notificationService = require('../../../services/notification.service');
+
+  const supplier = await SupplierConfig.findOne({ supplierId });
+  if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
+
+  let sampleProduct = await Product.findOne({ provider: supplierId, isActive: true });
+  if (!sampleProduct) {
+    sampleProduct = {
+      _id: '000000000000000000000001',
+      name: 'Adobe All Apps 7D with [W24H]',
+      icon: '📸',
+      price: 3.90,
+    };
+  }
+
+  const sampleRestocked = [{
+    product: sampleProduct,
+    oldStock: 0,
+    newStock: 15,
+    addedStock: 15,
+    price: sampleProduct.price,
+  }];
+
+  if (supplier.userNotificationChannel) {
+    await notificationService.notifyPublicRestockAndNew(supplier, { restocked: sampleRestocked });
+    await ctx.answerCbQuery(`✅ Тестовый пост отправлен в ${supplier.userNotificationChannel}!`, { show_alert: true }).catch(() => {});
+  } else {
+    let botUsername = ctx.botInfo?.username;
+    if (!botUsername) {
+      const me = await ctx.telegram.getMe().catch(() => null);
+      botUsername = me?.username || '';
+    }
+    const link = botUsername ? `https://t.me/${botUsername}?start=p_${sampleProduct._id}` : '';
+    const name = escapeHtml(sampleProduct.name);
+    const titleLine = link ? `<a href="${link}">${name}</a>` : name;
+
+    const msg =
+      `🧪 <i>[Пример поста для канала/клиентов]</i>\n\n` +
+      `🆙 <b>Снова в наличии</b>\n\n` +
+      `${sampleProduct.icon || '📦'} <b>${titleLine}</b>\n\n` +
+      `💲 <b>Цена:</b> $${sampleProduct.price} USDT\n` +
+      `📦 <b>В наличии:</b> 15\n` +
+      `➕ <b>Добавлено:</b> 15`;
+
+    const keyboard = link
+      ? Markup.inlineKeyboard([[Markup.button.url('🛍 Купить сейчас', link)]])
+      : Markup.inlineKeyboard([[Markup.button.callback('🛍 Купить сейчас', `shop:product:${sampleProduct._id}`)]]);
+
+    await ctx.reply(msg, { parse_mode: 'HTML', disable_web_page_preview: false, ...keyboard });
+    await ctx.answerCbQuery('✅ Пример поста отправлен вам в чат!', { show_alert: true }).catch(() => {});
+  }
+};
+
 module.exports = {
   showSuppliersMain,
   showSupplierDetail,
@@ -308,4 +575,13 @@ module.exports = {
   execSyncStock,
   toggleCurrentOnly,
   toggleAutoImport,
+  showGeminiAiSettings,
+  setGeminiParam,
+  applyGeminiPreset,
+  showSupplierNotificationSettings,
+  toggleAdminNotif,
+  toggleUserNotif,
+  toggleBroadcastNotif,
+  startSetChannel,
+  sendTestPost,
 };

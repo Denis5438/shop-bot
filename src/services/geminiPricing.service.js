@@ -88,8 +88,9 @@ const matchKnownOfficialPrice = (productName) => {
 
 /**
  * Локальный умный эвристический расчёт (Fallback без вызова Gemini API)
+ * С учетом настроек поставщика: целевой скидки от оф. цены и потолка наценки
  */
-const calculateFallbackPrice = (name, costPrice) => {
+const calculateFallbackPrice = (name, costPrice, config = {}) => {
   const cost = parseFloat(costPrice) || 0;
   if (cost <= 0) {
     return {
@@ -104,67 +105,65 @@ const calculateFallbackPrice = (name, costPrice) => {
     };
   }
 
+  const targetDiscount = typeof config.geminiTargetDiscountPercent === 'number'
+    ? config.geminiTargetDiscountPercent
+    : 10;
+  const maxMarkup = typeof config.geminiMaxMarkupUsd === 'number'
+    ? config.geminiMaxMarkupUsd
+    : 15;
+  const minProfit = typeof config.geminiMinProfitUsd === 'number'
+    ? config.geminiMinProfitUsd
+    : 1.0;
+
   const known = matchKnownOfficialPrice(name);
   let officialPrice = known ? known.official : 0;
   const isKnownOfficial = Boolean(officialPrice);
 
-  // Если официальная цена неизвестна, оцениваем ее примерно
+  // Если официальная цена неизвестна, оцениваем ее аккуратно
   if (!officialPrice) {
-    officialPrice = cost > 50 ? Number((cost * 1.15).toFixed(2)) : Number((cost * 1.5).toFixed(2));
+    officialPrice = cost > 50 ? Number((cost * 1.15).toFixed(2)) : Number((cost * 1.35).toFixed(2));
   }
 
   let recommended = cost;
 
   // 1. Если себестоимость меньше официальной цены (например, опт $15 при оф. $20)
   if (officialPrice > cost) {
-    const marginRoom = officialPrice - cost;
+    // Целевая розничная цена с учетом скидки от официальной
+    const targetPrice = officialPrice * (1 - targetDiscount / 100);
+    // Розничная цена должна приносить магазину как минимум minProfit
+    recommended = Math.max(cost + minProfit, targetPrice);
 
-    if (cost < 5) {
-      // Мелкие товары: фиксированная прибавка или +50%
-      const markup = Math.max(0.8, cost * 0.5);
-      recommended = roundToPsychological(cost + markup);
-      if (isKnownOfficial && recommended >= officialPrice) {
-        recommended = roundToPsychological(officialPrice - 0.5);
-      }
-    } else if (cost < 30) {
-      // Средние подписки (ChatGPT $15): делаем привлекательную цену ниже оф. сайта (например $17.99)
-      // Берем ~60% от ценового зазора в прибыль магазина, а 40% даем в виде скидки покупателю
-      const storeProfit = Math.max(1.5, marginRoom * 0.6);
-      recommended = roundToPsychological(cost + storeProfit);
-      if (recommended >= officialPrice) {
-        recommended = roundToPsychological(officialPrice * 0.9);
-      }
-    } else if (cost < 100) {
-      const storeProfit = Math.min(15, Math.max(3, marginRoom * 0.5));
-      recommended = roundToPsychological(cost + storeProfit);
-      if (recommended >= officialPrice) {
-        recommended = roundToPsychological(officialPrice * 0.95);
-      }
-    } else {
-      // Дорогие товары (>100): наценка не более 15-20 USDT
-      const fee = Math.min(20, Math.max(10, cost * 0.08));
-      recommended = roundToPsychological(cost + fee);
+    // Защита: наценка не должна превышать установленный потолок maxMarkup
+    if (recommended - cost > maxMarkup) {
+      recommended = cost + maxMarkup;
+    }
+
+    // Если официальная цена известна, цена магазина не должна быть выше официальной
+    if (isKnownOfficial && recommended >= officialPrice) {
+      recommended = Math.max(cost + minProfit, officialPrice - 0.5);
     }
   } else {
-    // Себестоимость равна или выше официальной (активации заблокированных сервисов, напр. Claude Max $200)
-    if (cost >= 100) {
-      // Ограничение: комиссия за оплату не более 15-20 USDT (никаких 260$!)
-      const fee = Math.min(20, cost * 0.08);
-      recommended = roundToPsychological(cost + fee);
-    } else if (cost >= 30) {
-      recommended = roundToPsychological(cost + Math.min(10, cost * 0.15));
-    } else {
-      recommended = roundToPsychological(cost + Math.max(1.5, cost * 0.25));
-    }
+    // Себестоимость равна или выше официальной (напр. активации, аккаунты, Claude Max x20 за $200)
+    // Строго ограничиваем комиссию потолком maxMarkup (например, не больше $15, а не $260!)
+    const fee = Math.min(maxMarkup, Math.max(minProfit, cost * 0.08));
+    recommended = cost + fee;
   }
 
-  // Защита: розничная цена ВСЕГДА строго выше себестоимости минимум на 0.5 USDT
-  if (recommended <= cost + 0.4) {
-    recommended = roundToPsychological(cost + 0.6);
+  // Психологическое округление розничной цены (.99 / .49)
+  recommended = roundToPsychological(recommended);
+
+  // Гарантируем минимальную прибыль
+  if (recommended < cost + minProfit) {
+    recommended = roundToPsychological(cost + minProfit);
+  }
+
+  // Повторная проверка потолка наценки после округления
+  if (recommended - cost > maxMarkup + 0.99) {
+    recommended = roundToPsychological(cost + maxMarkup);
   }
 
   if (!isKnownOfficial && officialPrice <= recommended) {
-    officialPrice = roundToPsychological(recommended * 1.3);
+    officialPrice = roundToPsychological(recommended * 1.25);
   }
 
   const profit = Number((recommended - cost).toFixed(2));
@@ -175,11 +174,11 @@ const calculateFallbackPrice = (name, costPrice) => {
 
   let reasoning = '';
   if (discountPercent > 0) {
-    reasoning = `Официальная цена: $${officialPrice}. При опте $${cost} розничная цена $${recommended} дает клиенту скидку ${discountPercent}% от оригинала и приносит магазину $${profit} чистой прибыли.`;
-  } else if (cost >= 100) {
-    reasoning = `Премиум-товар ($${cost}). Применена умеренная сервисная комиссия +$${profit} ($${recommended}), чтобы не отпугнуть клиентов завышением.`;
+    reasoning = `Официальная цена: $${officialPrice}. Розничная цена $${recommended} дает клиенту скидку ${discountPercent}% и приносит магазину $${profit} чистой прибыли.`;
+  } else if (cost >= 50) {
+    reasoning = `Премиум-товар ($${cost}). Применена ограниченная сервисная комиссия +$${profit} ($${recommended}) без завышения цен.`;
   } else {
-    reasoning = `Оптовая цена $${cost}. Розничная цена $${recommended} (наценка +${Math.round((profit / cost) * 100)}%, чистая прибыль $${profit}).`;
+    reasoning = `Оптовая цена $${cost}. Розничная цена $${recommended} (наценка +$${profit}, чистая прибыль $${profit}).`;
   }
 
   return {
@@ -195,24 +194,25 @@ const calculateFallbackPrice = (name, costPrice) => {
 };
 
 /**
- * Запрос к Gemini API для пакета товаров
+ * Запрос к Gemini API для пакета товаров с учетом гибких настроек
  */
-const queryGeminiApi = async (items, apiKey) => {
+const queryGeminiApi = async (items, apiKey, config = {}) => {
+  const targetDiscount = typeof config.geminiTargetDiscountPercent === 'number' ? config.geminiTargetDiscountPercent : 10;
+  const maxMarkup = typeof config.geminiMaxMarkupUsd === 'number' ? config.geminiMaxMarkupUsd : 15;
+  const minProfit = typeof config.geminiMinProfitUsd === 'number' ? config.geminiMinProfitUsd : 1.0;
+
   // Используем Gemini 2.0 Flash (или 1.5 Flash)
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
   const prompt =
     `Ты финансовый аналитик Telegram-магазина цифровых товаров. ` +
     `Для каждого товара из списка определи его реальную официальную цену на сайте производителя в USD (officialPrice) ` +
-    `и рассчитай оптимальную цену продажи в магазине в USD (recommendedPrice), исходя из себестоимости (costPrice).\n\n` +
-    `Ключевые правила:\n` +
-    `1. Если товар — известная подписка (ChatGPT Plus=$20, Claude Pro=$20, Telegram Premium, Spotify, Discord Nitro и т.д.): ` +
-    `если costPrice < officialPrice (например опт $15 при оф. $20), цена продажи recommendedPrice ОБЯЗАТЕЛЬНО должна быть ДЕШЕВЛЕ официальной (например $17.49 - $17.99), ` +
-    `чтобы покупатель видел реальную скидку от официальных $20, а магазин заработал прибыль.\n` +
-    `2. Если товар дорогой (costPrice >= 100, например Claude Max x20 за $200): ` +
-    `НЕ делай наценку 30%! Сделай адекватную сервисную комиссию за оплату картой РФ (например +$15..+$20 к опту, итого $215-$219.99), иначе покупатель откажется от покупки.\n` +
-    `3. recommendedPrice ВСЕГДА должна быть строго больше costPrice минимум на 0.50 USD.\n` +
-    `4. Предпочитай психологические окончания .99 или .49.\n\n` +
+    `и рассчитай привлекательную, конкурентную цену продажи в магазине в USD (recommendedPrice), исходя из себестоимости (costPrice).\n\n` +
+    `СТРОГИЕ ПРАВИЛА ЦЕНООБРАЗОВАНИЯ:\n` +
+    `1. Целевая скидка для покупателя от официальной цены: около ${targetDiscount}% (если официальная цена $20, розничная должна быть около $${(20 * (1 - targetDiscount / 100)).toFixed(2)}).\n` +
+    `2. ЖЕСТКИЙ ПОТОЛОК НАЦЕНКИ: максимальная прибыль магазина НЕ ДОЛЖНА превышать +${maxMarkup} USD к оптовой цене даже на очень дорогие товары (Claude Max $200, годовые подписки и т.д.)! Категорически запрещено завышать цены!\n` +
+    `3. Минимальная чистая прибыль магазина: не менее +${minProfit} USD к costPrice.\n` +
+    `4. Психологические окончания: используй окончания цен .99 или .49.\n\n` +
     `Товары для оценки (JSON):\n` +
     JSON.stringify(items.map((it, idx) => ({ id: idx, name: it.name, costPrice: it.costPrice }))) +
     `\n\nВерни СТРОГИЙ JSON массив объектов:\n` +
@@ -250,11 +250,15 @@ const queryGeminiApi = async (items, apiKey) => {
 };
 
 /**
- * Оценка одного товара
+ * Оценка одного товара с учетом параметров конфигурации
  */
-const evaluateProduct = async ({ name, costPrice, category = '' }) => {
+const evaluateProduct = async ({ name, costPrice, category = '' }, config = {}) => {
   const cost = parseFloat(costPrice) || 0;
-  const cacheKey = `${String(name).toLowerCase().trim()}|${cost.toFixed(2)}`;
+  const targetDiscount = typeof config.geminiTargetDiscountPercent === 'number' ? config.geminiTargetDiscountPercent : 10;
+  const maxMarkup = typeof config.geminiMaxMarkupUsd === 'number' ? config.geminiMaxMarkupUsd : 15;
+  const minProfit = typeof config.geminiMinProfitUsd === 'number' ? config.geminiMinProfitUsd : 1.0;
+
+  const cacheKey = `${String(name).toLowerCase().trim()}|${cost.toFixed(2)}|${targetDiscount}|${maxMarkup}|${minProfit}`;
 
   const cached = priceCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
@@ -265,15 +269,18 @@ const evaluateProduct = async ({ name, costPrice, category = '' }) => {
 
   if (apiKey) {
     try {
-      const results = await queryGeminiApi([{ name, costPrice: cost }], apiKey);
+      const results = await queryGeminiApi([{ name, costPrice: cost }], apiKey, config);
       if (results && results.length > 0) {
         const res = results[0];
         const offPrice = parseFloat(res.officialPrice) || cost;
-        let recPrice = parseFloat(res.recommendedPrice) || roundToPsychological(cost + 1);
+        let recPrice = parseFloat(res.recommendedPrice) || roundToPsychological(cost + minProfit);
 
-        // Защита от ошибок API
-        if (recPrice <= cost) {
-          recPrice = Number((cost + 0.5).toFixed(2));
+        // Строгая защита от завышения цен или цен ниже себестоимости
+        if (recPrice - cost > maxMarkup) {
+          recPrice = roundToPsychological(cost + maxMarkup);
+        }
+        if (recPrice < cost + minProfit) {
+          recPrice = roundToPsychological(cost + minProfit);
         }
 
         const profit = Number((recPrice - cost).toFixed(2));
@@ -299,7 +306,7 @@ const evaluateProduct = async ({ name, costPrice, category = '' }) => {
   }
 
   // Fallback
-  const fallback = calculateFallbackPrice(name, cost);
+  const fallback = calculateFallbackPrice(name, cost, config);
   priceCache.set(cacheKey, { timestamp: Date.now(), data: fallback });
   return fallback;
 };
@@ -307,8 +314,12 @@ const evaluateProduct = async ({ name, costPrice, category = '' }) => {
 /**
  * Пакетная оценка товаров (для импорта каталогов от Jaha и других поставщиков)
  */
-const evaluateBatch = async (items) => {
+const evaluateBatch = async (items, config = {}) => {
   if (!Array.isArray(items) || items.length === 0) return [];
+
+  const targetDiscount = typeof config.geminiTargetDiscountPercent === 'number' ? config.geminiTargetDiscountPercent : 10;
+  const maxMarkup = typeof config.geminiMaxMarkupUsd === 'number' ? config.geminiMaxMarkupUsd : 15;
+  const minProfit = typeof config.geminiMinProfitUsd === 'number' ? config.geminiMinProfitUsd : 1.0;
 
   const apiKey = await getGeminiApiKey();
   const results = new Array(items.length);
@@ -317,7 +328,7 @@ const evaluateBatch = async (items) => {
   // 1. Проверяем кэш
   items.forEach((item, index) => {
     const cost = parseFloat(item.costPrice) || 0;
-    const cacheKey = `${String(item.name).toLowerCase().trim()}|${cost.toFixed(2)}`;
+    const cacheKey = `${String(item.name).toLowerCase().trim()}|${cost.toFixed(2)}|${targetDiscount}|${maxMarkup}|${minProfit}`;
     const cached = priceCache.get(cacheKey);
 
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
@@ -342,17 +353,21 @@ const evaluateBatch = async (items) => {
           costPrice: parseFloat(c.item.costPrice) || 0,
         }));
 
-        const geminiRes = await queryGeminiApi(queryItems, apiKey);
+        const geminiRes = await queryGeminiApi(queryItems, apiKey, config);
 
         geminiRes.forEach((res) => {
           const matchedChunkItem = chunk[res.id];
           if (matchedChunkItem) {
             const cost = parseFloat(matchedChunkItem.item.costPrice) || 0;
             const offPrice = parseFloat(res.officialPrice) || cost;
-            let recPrice = parseFloat(res.recommendedPrice) || roundToPsychological(cost + 1);
+            let recPrice = parseFloat(res.recommendedPrice) || roundToPsychological(cost + minProfit);
 
-            if (recPrice <= cost) {
-              recPrice = Number((cost + 0.5).toFixed(2));
+            // Защита от завышения цен
+            if (recPrice - cost > maxMarkup) {
+              recPrice = roundToPsychological(cost + maxMarkup);
+            }
+            if (recPrice < cost + minProfit) {
+              recPrice = roundToPsychological(cost + minProfit);
             }
 
             const profit = Number((recPrice - cost).toFixed(2));
@@ -383,7 +398,7 @@ const evaluateBatch = async (items) => {
   toFetch.forEach(({ item, index, cacheKey }) => {
     if (!results[index]) {
       const cost = parseFloat(item.costPrice) || 0;
-      const fallback = calculateFallbackPrice(item.name, cost);
+      const fallback = calculateFallbackPrice(item.name, cost, config);
       priceCache.set(cacheKey, { timestamp: Date.now(), data: fallback });
       results[index] = fallback;
     }
@@ -392,10 +407,23 @@ const evaluateBatch = async (items) => {
   return results;
 };
 
+/**
+ * Получение наглядного предпросмотра цен (для меню настройки Gemini AI в админке)
+ */
+const getPricingPreview = (config = {}) => {
+  const samples = [
+    { name: '🌐 VPN Pro 1 месяц', costPrice: 2.50 },
+    { name: '🤖 ChatGPT Plus 1 месяц', costPrice: 15.00 },
+    { name: '⚡ Claude Max x20 Accounts', costPrice: 200.00 },
+  ];
+  return samples.map((s) => calculateFallbackPrice(s.name, s.costPrice, config));
+};
+
 module.exports = {
   getGeminiApiKey,
   evaluateProduct,
   evaluateBatch,
   roundToPsychological,
   calculateFallbackPrice,
+  getPricingPreview,
 };

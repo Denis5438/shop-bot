@@ -86,6 +86,48 @@ module.exports = (bot) => {
     await suppliersScene.toggleAutoImport(ctx, ctx.match[1]);
   });
 
+  // Настройка Gemini AI для поставщика
+  bot.action(/^admin:supplier:gemini_menu:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.showGeminiAiSettings(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:gemini_set:(.+):(\w+):(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.setGeminiParam(ctx, ctx.match[1], ctx.match[2], ctx.match[3]);
+  });
+
+  bot.action(/^admin:supplier:gemini_apply:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.applyGeminiPreset(ctx, ctx.match[1]);
+  });
+
+  // Настройка уведомлений поставщика
+  bot.action(/^admin:supplier:notif_menu:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.showSupplierNotificationSettings(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:toggle_admin_notif:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.toggleAdminNotif(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:toggle_user_notif:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.toggleUserNotif(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:toggle_broadcast:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.toggleBroadcastNotif(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:set_channel:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.startSetChannel(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:supplier:test_post:(.+)$/, adminMiddleware, async (ctx) => {
+    await suppliersScene.sendTestPost(ctx, ctx.match[1]);
+  });
+
+  bot.action('admin:noop', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+  });
+
   bot.action('admin:promos', adminMiddleware, async (ctx) => {
     await promosScene.showPromosMain(ctx);
   });
