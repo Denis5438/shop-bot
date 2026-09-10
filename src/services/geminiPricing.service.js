@@ -153,6 +153,14 @@ const calculateFallbackPrice = (name, costPrice, config = {}) => {
     recommended = roundToPsychological(cost + maxMarkup);
   }
 
+  // Финальный жесткий предохранитель: если официальная цена известна, цена магазина ОБЯЗАТЕЛЬНО строго ниже официальной
+  if (isKnownOfficial && officialPrice > cost && recommended >= officialPrice) {
+    recommended = roundToPsychological(officialPrice - 0.5);
+    if (recommended >= officialPrice) {
+      recommended = Number((officialPrice - 0.01).toFixed(2));
+    }
+  }
+
   // Если официальная цена неизвестна, оцениваем ориентировочную для витрины со скидкой
   if (!isKnownOfficial || !officialPrice) {
     officialPrice = roundToPsychological(Math.max(recommended * 1.30, cost * 1.35));
@@ -210,7 +218,8 @@ const queryGeminiApi = async (items, apiKey, config = {}) => {
     `1. Базовая розничная цена рассчитывается ОТ ОПТОВОЙ ЦЕНЫ с наценкой около +${markupPercent}% (costPrice * ${(1 + markupPercent / 100).toFixed(2)}). Например, если оптовая цена $7.39, цена в магазине должна быть около $${(7.39 * (1 + markupPercent / 100)).toFixed(2)} USD!\n` +
     `2. ЖЕСТКИЙ ПОТОЛОК НАЦЕНКИ: максимальная прибыль магазина НЕ ДОЛЖНА превышать +${maxMarkup} USD к оптовой цене даже на очень дорогие товары (Claude Max $200, годовые подписки и т.д.)! Категорически запрещено завышать цены!\n` +
     `3. Минимальная чистая прибыль магазина: не менее +${minProfit} USD к costPrice.\n` +
-    `4. Психологические окончания: используй окончания цен .99 или .49.\n\n` +
+    `4. Психологические окончания: используй окончания цен .99 или .49.\n` +
+    `5. СТРОГО НЕ ВЫШЕ ОФИЦИАЛЬНОЙ ЦЕНЫ: если officialPrice > costPrice, цена продажи recommendedPrice ОБЯЗАТЕЛЬНО должна быть строго меньше officialPrice (покупатель должен видеть выгоду и скидку!).\n\n` +
     `Товары для оценки (JSON):\n` +
     JSON.stringify(items.map((it, idx) => ({ id: idx, name: it.name, costPrice: it.costPrice }))) +
     `\n\nВерни СТРОГИЙ JSON массив объектов:\n` +
@@ -281,6 +290,14 @@ const evaluateProduct = async ({ name, costPrice, category = '' }, config = {}) 
         }
         if (recPrice < cost + minProfit) {
           recPrice = roundToPsychological(cost + minProfit);
+        }
+
+        // Финальный жесткий предохранитель: цена строго ниже официальной
+        if (offPrice > cost && recPrice >= offPrice) {
+          recPrice = roundToPsychological(offPrice - 0.5);
+          if (recPrice >= offPrice) {
+            recPrice = Number((offPrice - 0.01).toFixed(2));
+          }
         }
 
         const profit = Number((recPrice - cost).toFixed(2));
@@ -370,6 +387,14 @@ const evaluateBatch = async (items, config = {}) => {
             }
             if (recPrice < cost + minProfit) {
               recPrice = roundToPsychological(cost + minProfit);
+            }
+
+            // Финальный жесткий предохранитель: цена строго ниже официальной
+            if (offPrice > cost && recPrice >= offPrice) {
+              recPrice = roundToPsychological(offPrice - 0.5);
+              if (recPrice >= offPrice) {
+                recPrice = Number((offPrice - 0.01).toFixed(2));
+              }
             }
 
             const profit = Number((recPrice - cost).toFixed(2));
