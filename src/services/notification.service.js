@@ -737,8 +737,8 @@ const notifyAdminSyncReport = async (supplier, stats = {}) => {
   const newlyImported = stats.newlyImported || [];
   const outOfStock = stats.outOfStock || [];
 
-  // Если ничего не изменилось и нет пополнений/новинок, не спамим если не включен принудительный отчёт
-  if (restocked.length === 0 && newlyImported.length === 0 && outOfStock.length === 0 && stats.totalUpdated === 0) {
+  // Если нет пополнений, новинок или закончившихся товаров — НЕ СПАМИМ администратору!
+  if (restocked.length === 0 && newlyImported.length === 0 && outOfStock.length === 0) {
     return;
   }
 
