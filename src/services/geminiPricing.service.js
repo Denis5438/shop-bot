@@ -14,8 +14,11 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // База известных официальных цен на популярные цифровые товары (USD)
 const KNOWN_OFFICIAL_PRICES = [
-  { pattern: /chatgpt\s*plus/i, official: 20.0, category: 'AI / Нейросети' },
-  { pattern: /chatgpt\s*team/i, official: 30.0, category: 'AI / Нейросети' },
+  { pattern: /(chatgpt|gpt)\s*(plus|\+)/i, official: 20.0, category: 'AI / Нейросети' },
+  { pattern: /(chatgpt|gpt)\s*team/i, official: 30.0, category: 'AI / Нейросети' },
+  { pattern: /(chatgpt|gpt)\s*pro\s*20x/i, official: 200.0, category: 'AI / Нейросети' },
+  { pattern: /(chatgpt|gpt)\s*pro\s*5x/i, official: 100.0, category: 'AI / Нейросети' },
+  { pattern: /(chatgpt|gpt)\s*pro/i, official: 200.0, category: 'AI / Нейросети' },
   { pattern: /claude.*pro/i, official: 20.0, category: 'AI / Нейросети' },
   { pattern: /claude.*(max|team|x20|x5)/i, official: 200.0, category: 'AI / Нейросети' },
   { pattern: /midjourney.*standard/i, official: 30.0, category: 'AI / Дизайн' },

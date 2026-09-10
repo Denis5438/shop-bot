@@ -272,11 +272,14 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     }
   }
 
-  // Сортировка внутри каждой группы
+  // Сортировка внутри каждой группы: по sortOrder, затем по цене от дешёвых к дорогим
   const sortFn = (a, b) => {
     const orderA = a.product.sortOrder || 0;
     const orderB = b.product.sortOrder || 0;
     if (orderA !== orderB) return orderA - orderB;
+    const priceA = typeof a.product.price === 'number' ? a.product.price : 0;
+    const priceB = typeof b.product.price === 'number' ? b.product.price : 0;
+    if (priceA !== priceB) return priceA - priceB;
     return new Date(b.product.createdAt || 0) - new Date(a.product.createdAt || 0);
   };
   allInStock.sort(sortFn);
