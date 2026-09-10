@@ -167,7 +167,7 @@ const importSupplierCatalog = async (supplierId, options = {}) => {
         name: p.name,
         costPrice: parseFloat(p.priceUsdt || 0),
       }));
-      geminiEvaluations = await geminiPricing.evaluateBatch(batchItems);
+      geminiEvaluations = await geminiPricing.evaluateBatch(batchItems, config);
     } catch (e) {
       logger.warn(`Failed to batch evaluate Gemini pricing: ${e.message}`);
     }

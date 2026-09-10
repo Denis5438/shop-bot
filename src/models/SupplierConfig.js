@@ -33,7 +33,8 @@ const supplierConfigSchema = new mongoose.Schema({
   userNotificationBroadcast: { type: Boolean, default: false },
   notifyMinRestockQty: { type: Number, default: 1 },
   // Гибкие настройки Gemini AI для этого поставщика
-  geminiTargetDiscountPercent: { type: Number, default: 10 }, // Целевая скидка от оф. цены (например 10%)
+  geminiMarkupPercent: { type: Number, default: 25 },         // Наценка к оптовой цене в % (напр. 25%)
+  geminiTargetDiscountPercent: { type: Number, default: 10 }, // Для обратной совместимости
   geminiMaxMarkupUsd: { type: Number, default: 15 },          // Потолок наценки на дорогие товары ($)
   geminiMinProfitUsd: { type: Number, default: 1.0 },         // Мин. чистая прибыль магазина ($)
   geminiStrategy: { type: String, enum: ['discount', 'balanced', 'margin'], default: 'balanced' },

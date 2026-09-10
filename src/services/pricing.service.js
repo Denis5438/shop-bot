@@ -102,10 +102,10 @@ const formatPricingDescription = (supplierConfig) => {
 
   const presetKey = supplierConfig.smartPricingPreset || 'standard';
   if (presetKey === 'gemini_ai') {
-    const discount = supplierConfig.geminiTargetDiscountPercent || 10;
-    const maxMarkup = supplierConfig.geminiMaxMarkupUsd || 15;
-    const minProfit = supplierConfig.geminiMinProfitUsd || 1.0;
-    return `✨ <b>Smart: Gemini AI</b>\n  └ Скидка от оф. цены: <b>-${discount}%</b> | Потолок: <b>+$${maxMarkup}</b> | Мин. маржа: <b>+$${minProfit}</b>`;
+    const markup = supplierConfig.geminiMarkupPercent ?? 25;
+    const maxMarkup = supplierConfig.geminiMaxMarkupUsd ?? 15;
+    const minProfit = supplierConfig.geminiMinProfitUsd ?? 1.0;
+    return `✨ <b>Smart: Gemini AI</b>\n  └ Наценка к опту: <b>+${markup}%</b> | Потолок: <b>+$${maxMarkup}</b> | Мин. маржа: <b>+$${minProfit}</b>`;
   }
 
   const preset = PRESETS[presetKey] || { name: 'Кастомная' };

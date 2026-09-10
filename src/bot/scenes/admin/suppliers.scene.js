@@ -311,33 +311,34 @@ const showGeminiAiSettings = async (ctx, supplierId) => {
   const supplier = await SupplierConfig.findOne({ supplierId });
   if (!supplier) return ctx.answerCbQuery('❌ Поставщик не найден', { show_alert: true });
 
-  const discount = supplier.geminiTargetDiscountPercent || 10;
-  const maxMarkup = supplier.geminiMaxMarkupUsd || 15;
-  const minProfit = supplier.geminiMinProfitUsd || 1.0;
+  const markupPercent = supplier.geminiMarkupPercent ?? 25;
+  const maxMarkup = supplier.geminiMaxMarkupUsd ?? 15;
+  const minProfit = supplier.geminiMinProfitUsd ?? 1.0;
 
   const preview = geminiPricing.getPricingPreview(supplier);
   let previewText = '';
   preview.forEach((p) => {
     const profitStr = p.profit >= 0 ? `+$${p.profit}` : `-$${Math.abs(p.profit)}`;
-    const discStr = p.discountPercent > 0 ? ` (скидка ${p.discountPercent}%)` : '';
+    const discStr = p.discountPercent > 0 ? ` (скидка ${p.discountPercent}% от оф.)` : '';
     previewText += `• <b>${escapeHtml(p.name)}</b>:\n  Опт: $${p.costPrice} ➔ <b>Розница: $${p.recommendedPrice} USDT</b> [${profitStr}${discStr}]\n`;
   });
 
-  const text = `✨ <b>Настройка ценообразования Gemini AI: ${escapeHtml(supplier.title)}</b>\n\n` +
-    `Здесь вы точно задаёте правила, по которым ИИ рассчитывает цены для этого поставщика:\n\n` +
-    `🎯 <b>Скидка от официальной цены:</b> <b>-${discount}%</b>\n` +
-    `└ <i>(Покупатель видит реальную скидку от прайса на оф. сайте)</i>\n\n` +
+  const text = `✨ <b>Умное ценообразование Gemini AI: ${escapeHtml(supplier.title)}</b>\n\n` +
+    `Цены рассчитываются <b>от оптовой себестоимости поставщика</b> с защитой от завышения:\n\n` +
+    `📈 <b>Наценка к оптовой цене:</b> <b>+${markupPercent}%</b>\n` +
+    `└ <i>(Например, при опте $7.39 цена составит ~$9.49 USDT, чистая прибыль +$2.10)</i>\n\n` +
     `🛡 <b>Потолок наценки на дорогие товары:</b> <b>+$${maxMarkup} USDT</b>\n` +
-    `└ <i>(Защита от завышения цен: на товарах за $100-$200 наценка строго ограничена!)</i>\n\n` +
-    `💵 <b>Мин. чистая прибыль магазина:</b> <b>+$${minProfit} USDT</b>\n\n` +
-    `👁 <b>Живой предпросмотр цен при этих настройках:</b>\n` +
+    `└ <i>(Защита: на товарах за $50-$200 наценка строго не превысит $${maxMarkup})</i>\n\n` +
+    `💵 <b>Мин. чистая прибыль магазина:</b> <b>+$${minProfit} USDT</b>\n` +
+    `└ <i>(Гарантированная прибыль с каждого дешевого товара)</i>\n\n` +
+    `👁 <b>Живой предпросмотр цен в боте:</b>\n` +
     previewText +
-    `\n<i>Выберите нужные параметры ниже и нажмите «✅ Применить»:</i>`;
+    `\n<i>Выберите процент наценки и ограничения ниже, затем нажмите «✅ Применить»:</i>`;
 
-  const dOpts = [5, 10, 15, 20];
-  const dButtons = dOpts.map((val) => {
-    const label = val === discount ? `✅ -${val}%` : `-${val}%`;
-    return Markup.button.callback(label, `admin:supplier:gemini_set:${supplierId}:discount:${val}`);
+  const mPercOpts = [15, 20, 25, 30, 40];
+  const mPercButtons = mPercOpts.map((val) => {
+    const label = val === markupPercent ? `✅ +${val}%` : `+${val}%`;
+    return Markup.button.callback(label, `admin:supplier:gemini_set:${supplierId}:markup_percent:${val}`);
   });
 
   const mOpts = [10, 15, 20, 30];
@@ -346,15 +347,15 @@ const showGeminiAiSettings = async (ctx, supplierId) => {
     return Markup.button.callback(label, `admin:supplier:gemini_set:${supplierId}:max_markup:${val}`);
   });
 
-  const pOpts = [0.5, 1.0, 2.0];
+  const pOpts = [0.5, 1.0, 1.5, 2.0];
   const pButtons = pOpts.map((val) => {
     const label = val === minProfit ? `✅ +$${val}` : `+$${val}`;
     return Markup.button.callback(label, `admin:supplier:gemini_set:${supplierId}:min_profit:${val}`);
   });
 
   const buttons = [
-    [Markup.button.callback('🎯 Скидка от оф. цены (выбрать):', 'admin:noop')],
-    dButtons,
+    [Markup.button.callback('📈 Наценка к опту (выбрать):', 'admin:noop')],
+    mPercButtons,
     [Markup.button.callback('🛡 Потолок наценки на дорогие (выбрать):', 'admin:noop')],
     mButtons,
     [Markup.button.callback('💵 Мин. чистая прибыль (выбрать):', 'admin:noop')],
@@ -373,6 +374,7 @@ const setGeminiParam = async (ctx, supplierId, param, value) => {
   if (isNaN(numVal)) return ctx.answerCbQuery('❌ Ошибка значения', { show_alert: true });
 
   const update = {};
+  if (param === 'markup_percent') update.geminiMarkupPercent = numVal;
   if (param === 'discount') update.geminiTargetDiscountPercent = numVal;
   if (param === 'max_markup') update.geminiMaxMarkupUsd = numVal;
   if (param === 'min_profit') update.geminiMinProfitUsd = numVal;
