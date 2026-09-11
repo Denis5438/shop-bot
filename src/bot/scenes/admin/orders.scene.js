@@ -9,6 +9,7 @@ const { toRub } = require('../../../services/currency.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../../../services/referral.service');
 const { withTransaction } = require('../../../services/transactionHelper.service');
 const { decryptSecret } = require('../../../services/secretBox.service');
+const supplierManager = require('../../../services/supplierManager.service');
 const {
   buildKeyQueryForProduct,
   getProviderLabel,
@@ -493,18 +494,22 @@ const retryApiOrder = async (ctx, orderId) => {
 
   await ctx.answerCbQuery('🔄 Пробую выкупить через API...', { show_alert: false }).catch(() => {});
 
-  const supplierManager = require('../../services/supplierManager.service');
   const qty = order.qty || 1;
-  if (!order.supplierIdempotencyKey) {
-    order.supplierIdempotencyKey = `ord-${order._id}`;
-    await order.save();
-  }
-  const suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId, {
-    orderId: order._id,
-    idempotencyKey: order.supplierIdempotencyKey,
-  });
+  const retryKey = `ord-${order._id}-${Date.now()}`;
+  order.supplierIdempotencyKey = retryKey;
+  await order.save();
 
-  if (suppRes.success && suppRes.deliveryData) {
+  let suppRes;
+  try {
+    suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId, {
+      orderId: order._id,
+      idempotencyKey: retryKey,
+    });
+  } catch (err) {
+    suppRes = { success: false, error: err.message };
+  }
+
+  if (suppRes && suppRes.success && suppRes.deliveryData) {
     await Order.updateOne(
       { _id: order._id },
       {
@@ -514,23 +519,31 @@ const retryApiOrder = async (ctx, orderId) => {
           deliveryData: String(suppRes.deliveryData),
           supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
           activationResult: 'Повторный выкуп администратором ⚡',
+          supplierIdempotencyKey: retryKey,
         },
       }
     );
 
-    // Уведомляем пользователя об успешной выдаче через notification service
-    const deliveryMsg = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
-      `📦 Товар: ${escapeHtml(product.name)}\n` +
-      `🔑 <b>Ваши данные для доступа:</b>\n<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
-      `<i>Спасибо за ожидание!</i>`;
-    await notif.sendToUser(order.userId.telegramId, deliveryMsg, { parse_mode: 'HTML' }).catch(() => {});
+    const userTgId = order.userId?.telegramId || order.userId;
+    if (userTgId) {
+      // Уведомляем пользователя об успешной выдаче через notification service
+      const deliveryMsg = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
+        `📦 Товар: ${escapeHtml(product.name)}\n` +
+        `🔑 <b>Ваши данные для доступа:</b>\n<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
+        `<i>Спасибо за ожидание!</i>`;
+      await notif.sendToUser(userTgId, deliveryMsg, { parse_mode: 'HTML' }).catch(() => {});
+    }
+
+    if (order.userId?._id) {
+      await grantReferralBonusForFirstCompletedOrder(order.userId._id).catch(() => {});
+    }
 
     await ctx.answerCbQuery('✅ Успешно выкуплено и отправлено клиенту!', { show_alert: true }).catch(() => {});
   } else {
     // Обновляем текст ошибки
-    const errNote = `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}`;
+    const errNote = `Ошибка API поставщика: ${suppRes?.error || 'неизвестно'}`;
     await Order.updateOne({ _id: order._id }, { $set: { notes: errNote } });
-    await ctx.answerCbQuery(`❌ Снова ошибка: ${suppRes.error || 'неизвестно'}`, { show_alert: true }).catch(() => {});
+    await ctx.answerCbQuery(`❌ Ошибка API: ${suppRes?.error || 'неизвестно'}`, { show_alert: true }).catch(() => {});
   }
 
   await showOrderDetail(ctx, orderId);
