@@ -43,6 +43,7 @@ const formatError = (err) => {
     }).join('; ');
   }
   if (data.message) return data.message;
+  if (data.error) return typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
   return err.message || 'Неизвестная ошибка Jaha API';
 };
 
@@ -360,7 +361,7 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
       }
     );
 
-    const orderData = res.data;
+    const orderData = res.data?.order || res.data;
     const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
     const orderNum = orderData?.order_number || orderData?.order_id || orderData?.id;
     const status = orderData?.status || (delivery ? 'completed' : 'processing');
@@ -395,7 +396,7 @@ const getOrder = async (apiKey, orderNumber) => {
       timeout: 15000,
     });
 
-    const orderData = res.data;
+    const orderData = res.data?.order || res.data;
     const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
     const status = orderData?.status || (delivery ? 'completed' : 'processing');
 
