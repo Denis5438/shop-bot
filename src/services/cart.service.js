@@ -8,7 +8,9 @@ const promoService = require('./promo.service');
 const supplierManager = require('./supplierManager.service');
 const { withTransaction } = require('./transactionHelper.service');
 const { getEffectivePrice } = require('./orderPricing.service');
-const { buildKeyQueryForProduct, resolveProductProvider } = require('./provider.service');
+const { buildKeyQueryForProduct, isTransientSupplierError, resolveProductProvider } = require('./provider.service');
+const notif = require('./notification.service');
+const { grantReferralBonusForFirstCompletedOrder } = require('./referral.service');
 const logger = require('../config/logger');
 
 const SUPPLIER_PROVIDERS = new Set(['jaha', 'akunding', 'canboso', 'trumpstore']);
@@ -441,18 +443,50 @@ const checkoutCart = async (ctx) => {
           report.data = String(suppRes.deliveryData);
         }
       } else {
+        const isTransient = isTransientSupplierError(suppRes.error);
         await Order.updateOne(
           { _id: order._id, status: 'pending' },
-          { $set: { notes: `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}` } }
+          {
+            $set: {
+              status: isTransient ? 'retry' : 'pending',
+              nextRetryAt: isTransient ? new Date(Date.now() + 60 * 1000) : null,
+              retryCount: 0,
+              notes: `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}`,
+            },
+          }
         );
       }
     } catch (err) {
       logger.error(`[Cart supplier ${order._id}] ${err.message}`);
+      const isTransient = isTransientSupplierError(err.message);
       await Order.updateOne(
         { _id: order._id, status: 'pending' },
-        { $set: { notes: `Ошибка API поставщика: ${err.message}` } }
+        {
+          $set: {
+            status: isTransient ? 'retry' : 'pending',
+            nextRetryAt: isTransient ? new Date(Date.now() + 60 * 1000) : null,
+            retryCount: 0,
+            notes: `Ошибка API поставщика: ${err.message}`,
+          },
+        }
       ).catch(() => {});
     }
+  }
+
+  // Мгновенные уведомления администраторам о заказах из корзины
+  let anyOrderCompleted = false;
+  for (const order of orders) {
+    const cartItem = cartData.items.find(
+      (it) => String(it.product._id) === String(order.productId)
+    );
+    const prod = cartItem?.product || null;
+    const freshOrder = await Order.findById(order._id).lean();
+    if (freshOrder?.status === 'completed') anyOrderCompleted = true;
+    await notif.notifyAdminNewOrder(freshOrder || order, ctx.user, prod).catch(() => {});
+  }
+
+  if (anyOrderCompleted && ctx.user?._id) {
+    await grantReferralBonusForFirstCompletedOrder(ctx.user._id).catch(() => {});
   }
 
   return {

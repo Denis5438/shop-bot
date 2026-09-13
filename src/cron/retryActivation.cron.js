@@ -11,7 +11,7 @@ const User = require('../models/User');
 const logger = require('../config/logger');
 const notif = require('../services/notification.service');
 const { retryActivation } = require('../services/activation.service');
-const { resolveOrderProvider } = require('../services/provider.service');
+const { resolveOrderProvider, isSupplierProvider } = require('../services/provider.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../services/referral.service');
 const { failOrderWithRefund } = require('../services/refund.service');
 const { decryptSecret } = require('../services/secretBox.service');
@@ -53,6 +53,11 @@ const start = (bot) => {
         ).select('+tokenRaw').populate('productId');
         if (!fresh) continue;
         const provider = resolveOrderProvider(fresh, fresh.productId);
+
+        if (isSupplierProvider(provider)) {
+          await handleSupplierRetry(fresh, provider, bot);
+          continue;
+        }
 
         const key = await Key.findById(fresh.keyId);
 
@@ -181,6 +186,116 @@ const start = (bot) => {
   }, INTERVAL_MS);
 
   return handle;
+};
+
+const handleSupplierRetry = async (order, provider, bot) => {
+  const supplierManager = require('../services/supplierManager.service');
+  const { isTransientSupplierError } = require('../services/provider.service');
+  const { formatDigitalItem, escapeHtml } = require('../bot/utils/ui');
+  const notif = require('../services/notification.service');
+
+  const currentAttempt = (order.retryCount || 0) + 1;
+  logger.info(`[Supplier Retry] Попытка ${currentAttempt}/${MAX_RETRIES} для заказа #${order._id} (провайдер: ${provider})`);
+
+  let suppRes;
+  try {
+    suppRes = await supplierManager.fulfillSupplierOrder(
+      order.productId,
+      order.qty || 1,
+      order.userId,
+      { orderId: order._id, idempotencyKey: order.supplierIdempotencyKey }
+    );
+  } catch (err) {
+    suppRes = { success: false, error: err.message };
+  }
+
+  if (suppRes.success && suppRes.deliveryData) {
+    const completed = await Order.findOneAndUpdate(
+      { _id: order._id, status: 'retry' },
+      {
+        $set: {
+          status: 'completed',
+          confirmedAt: new Date(),
+          deliveryData: String(suppRes.deliveryData),
+          supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
+          activationResult: `Автовыдача через API (retry попытка ${currentAttempt} OK) ⚡`,
+          nextRetryAt: null,
+        },
+      },
+      { new: true }
+    ).populate('userId').populate('productId');
+
+    if (!completed) {
+      logger.warn(`[Supplier Retry] Заказ #${order._id} уже был обработан параллельно.`);
+      return;
+    }
+
+    const user = completed.userId;
+    const product = completed.productId;
+    const userLang = user?.language || 'ru';
+    const keysText = formatDigitalItem(suppRes.deliveryData, userLang);
+
+    if (user?.telegramId) {
+      const msg = userLang === 'en'
+        ? `✅ <b>Order completed automatically! ⚡</b>\n\n` +
+          `📦 <b>Product:</b> ${escapeHtml(product?.icon || '📦')} ${escapeHtml(product?.nameEn || product?.name || 'Item')}\n` +
+          `🔑 <b>Your access data:</b>\n${keysText}\n\n` +
+          `🛡 <i>Warranty: ${product?.warrantyDays ?? 5} days.</i>\n<i>Thank you for your patience!</i>`
+        : `✅ <b>Заказ выполнен автоматически! ⚡</b>\n\n` +
+          `📦 <b>Товар:</b> ${escapeHtml(product?.icon || '📦')} ${escapeHtml(product?.name || 'Товар')}\n` +
+          `🔑 <b>Ваши данные для доступа:</b>\n${keysText}\n\n` +
+          `🛡 <i>Гарантия: ${product?.warrantyDays ?? 5} дн.</i>\n<i>Спасибо за ожидание!</i>`;
+
+      await bot.telegram.sendMessage(user.telegramId, msg, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${order._id}` }]],
+        },
+      }).catch(() => {});
+    }
+
+    if (user?._id) {
+      await grantReferralBonusForFirstCompletedOrder(user._id).catch(() => {});
+    }
+
+    await notif.notifyAdminNewOrder(completed, user, product).catch(() => {});
+    return;
+  }
+
+  const isTransient = isTransientSupplierError(suppRes.error);
+  if (isTransient && currentAttempt < MAX_RETRIES) {
+    await Order.updateOne(
+      { _id: order._id, status: 'retry' },
+      {
+        $set: {
+          retryCount: currentAttempt,
+          nextRetryAt: new Date(Date.now() + 2 * 60 * 1000),
+          notes: `Retry #${currentAttempt} не удался: ${suppRes.error || 'неизвестно'}`,
+        },
+      }
+    );
+  } else {
+    const finalNote = `Сбой API поставщика (${currentAttempt} попыток): ${suppRes.error || 'неизвестно'}`;
+    const pendingOrder = await Order.findOneAndUpdate(
+      { _id: order._id, status: 'retry' },
+      {
+        $set: {
+          status: 'pending',
+          nextRetryAt: null,
+          retryCount: currentAttempt,
+          notes: finalNote,
+        },
+      },
+      { new: true }
+    ).populate('userId').populate('productId');
+
+    if (pendingOrder) {
+      logger.warn(`[Supplier Retry] Заказ #${order._id} переведён в pending: ${finalNote}`);
+      const user = pendingOrder.userId;
+      const product = pendingOrder.productId;
+      await notif.notifyAdminNewOrder(pendingOrder, user, product).catch(() => {});
+    }
+  }
 };
 
 module.exports = { start };

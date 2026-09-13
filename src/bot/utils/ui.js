@@ -245,40 +245,148 @@ const escapeHtml = (value) => {
  */
 const formatDigitalItem = (rawValue, lang = 'ru') => {
   if (!rawValue) return '';
-  const val = String(rawValue).trim();
-  
+  const rawStr = String(rawValue).trim();
+  if (!rawStr) return '';
+
+  // 1. Попытка распарсить JSON, если пришёл структурированный объект от поставщика
+  if ((rawStr.startsWith('{') && rawStr.endsWith('}')) || (rawStr.startsWith('[') && rawStr.endsWith(']'))) {
+    try {
+      const parsed = JSON.parse(rawStr);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item, idx) => {
+            const itemText = typeof item === 'object' ? formatObjectItem(item, lang) : formatSingleItem(String(item), lang);
+            return parsed.length > 1 ? `<b>#${idx + 1}</b>\n${itemText}` : itemText;
+          })
+          .join('\n\n');
+      } else if (typeof parsed === 'object' && parsed !== null) {
+        if (parsed.content) return formatDigitalItem(parsed.content, lang);
+        if (parsed.delivery) return formatDigitalItem(parsed.delivery, lang);
+        if (Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+          return parsed.accounts
+            .map((acc, idx) => {
+              const accText = formatObjectItem(acc, lang);
+              return parsed.accounts.length > 1 ? `<b>#${idx + 1}</b>\n${accText}` : accText;
+            })
+            .join('\n\n');
+        }
+        if (Array.isArray(parsed.keys) && parsed.keys.length > 0) {
+          return parsed.keys
+            .map((k, idx) => {
+              const kVal = typeof k === 'object' ? (k.value || k.key || k.content || JSON.stringify(k)) : String(k);
+              const kText = formatSingleItem(kVal, lang);
+              return parsed.keys.length > 1 ? `<b>#${idx + 1}</b>\n${kText}` : kText;
+            })
+            .join('\n\n');
+        }
+        return formatObjectItem(parsed, lang);
+      }
+    } catch (_) {
+      // Игнорируем ошибку JSON-парсинга и переходим к строковому разбору
+    }
+  }
+
+  // 2. Обработка многострочного текста (несколько товаров/аккаунтов)
+  const lines = rawStr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length > 1) {
+    return lines
+      .map((line, idx) => {
+        const itemText = formatSingleItem(line, lang);
+        return `<b>#${idx + 1}</b>\n${itemText}`;
+      })
+      .join('\n\n');
+  }
+
+  return formatSingleItem(rawStr, lang);
+};
+
+const formatObjectItem = (obj, lang = 'ru') => {
+  const login = obj.login || obj.user || obj.username || obj.account || obj.email;
+  const pass = obj.password || obj.pass || obj.pwd;
+  const fa = obj.twoFactor || obj.code || obj['2fa'] || obj.secret || obj.totp;
+  const rec = obj.verifyEmail || obj.recovery || obj.recoveryEmail || obj.backup;
+  const token = obj.token || obj.key;
+
+  const labels = {
+    login: lang === 'en' ? '👤 <b>Login:</b>' : '👤 <b>Логин:</b>',
+    pass: lang === 'en' ? '🔑 <b>Password:</b>' : '🔑 <b>Пароль:</b>',
+    fa: lang === 'en' ? '🛡 <b>2FA / Code:</b>' : '🛡 <b>2FA / Код:</b>',
+    rec: lang === 'en' ? '📧 <b>Recovery:</b>' : '📧 <b>Резервная почта:</b>',
+    token: lang === 'en' ? '🎟 <b>Token:</b>' : '🎟 <b>Токен:</b>',
+  };
+
+  const lines = [];
+  if (login) lines.push(`${labels.login} <code>${escapeHtml(String(login).trim())}</code>`);
+  if (pass) lines.push(`${labels.pass} <code>${escapeHtml(String(pass).trim())}</code>`);
+  if (fa) lines.push(`${labels.fa} <code>${escapeHtml(String(fa).trim())}</code>`);
+  if (rec) lines.push(`${labels.rec} <code>${escapeHtml(String(rec).trim())}</code>`);
+  if (token && !login && !pass) lines.push(`${labels.token} <code>${escapeHtml(String(token).trim())}</code>`);
+
+  if (lines.length > 0) return lines.join('\n');
+  return `<code>${escapeHtml(JSON.stringify(obj))}</code>`;
+};
+
+const formatSingleItem = (rawStr, lang = 'ru') => {
+  const val = String(rawStr).trim();
+  if (!val) return '';
+
   if (/^https?:\/\//i.test(val)) {
-    const linkLbl = lang === 'en' ? '🔗 <b>Link / URL:</b>' : '🔗 <b>Ссылка:</b>';
+    const linkLbl = lang === 'en' ? '🔗 <b>Link:</b>' : '🔗 <b>Ссылка:</b>';
     return `${linkLbl}\n<code>${escapeHtml(val)}</code>`;
   }
 
   let parts = [];
   if (val.includes('|')) {
-    parts = val.split('|').map(s => s.trim());
+    parts = val.split('|').map((s) => s.trim()).filter(Boolean);
   } else if (val.includes('\t')) {
-    parts = val.split('\t').map(s => s.trim());
+    parts = val.split('\t').map((s) => s.trim()).filter(Boolean);
   } else if (val.includes(';')) {
-    parts = val.split(';').map(s => s.trim());
+    parts = val.split(';').map((s) => s.trim()).filter(Boolean);
   } else if (val.includes(':')) {
-    parts = val.split(':').map(s => s.trim());
+    parts = val.split(':').map((s) => s.trim()).filter(Boolean);
   }
 
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    const login = parts[0];
-    const pass = parts[1];
-    const extra2fa = parts.slice(2).join(' : ');
+  const cleanPrefix = (s, regex) => s.replace(regex, '').trim();
 
-    const loginLbl = lang === 'en' ? '👤 <b>Login:</b>' : '👤 <b>Логин:</b>';
-    const passLbl = lang === 'en' ? '🔑 <b>Password:</b>' : '🔑 <b>Пароль:</b>';
-    const faLbl = lang === 'en' ? '🛡 <b>2FA / Code:</b>' : '🛡 <b>2FA / Код:</b>';
+  const labels = {
+    login: lang === 'en' ? '👤 <b>Login:</b>' : '👤 <b>Логин:</b>',
+    pass: lang === 'en' ? '🔑 <b>Password:</b>' : '🔑 <b>Пароль:</b>',
+    fa: lang === 'en' ? '🛡 <b>2FA / Code:</b>' : '🛡 <b>2FA / Код:</b>',
+    rec: lang === 'en' ? '📧 <b>Recovery:</b>' : '📧 <b>Резервная почта:</b>',
+  };
 
-    let res = `${loginLbl} <code>${escapeHtml(login)}</code>\n` +
-              `${passLbl} <code>${escapeHtml(pass)}</code>`;
+  if (parts.length >= 2) {
+    let login = '';
+    let pass = '';
+    let fa = '';
+    let rec = '';
+    const extra = [];
 
-    if (extra2fa) {
-      res += `\n${faLbl} <code>${escapeHtml(extra2fa)}</code>`;
-    }
-    return res;
+    parts.forEach((p, idx) => {
+      if (/^(?:login|user|username|аккаунт|account|email|логин|почта)\s*[:=]/i.test(p)) {
+        login = cleanPrefix(p, /^(?:login|user|username|аккаунт|account|email|логин|почта)\s*[:=]\s*/i);
+      } else if (/^(?:password|pass|пароль|pwd)\s*[:=]/i.test(p)) {
+        pass = cleanPrefix(p, /^(?:password|pass|пароль|pwd)\s*[:=]\s*/i);
+      } else if (/^(?:2fa|code|код|secret|totp|twofactor)\s*[:=]/i.test(p)) {
+        fa = cleanPrefix(p, /^(?:2fa|code|код|secret|totp|twofactor)\s*[:=]\s*/i);
+      } else if (/^(?:recovery|backup|verifyemail|резерв|доп)\s*[:=]/i.test(p)) {
+        rec = cleanPrefix(p, /^(?:recovery|backup|verifyemail|резерв|доп)\s*[:=]\s*/i);
+      } else {
+        if (idx === 0 && !login) login = cleanPrefix(p, /^(?:login|user|email|логин|почта)\s*[:=]\s*/i);
+        else if (idx === 1 && !pass) pass = cleanPrefix(p, /^(?:pass|password|пароль)\s*[:=]\s*/i);
+        else if (idx === 2 && !fa) fa = cleanPrefix(p, /^(?:2fa|код|code)\s*[:=]\s*/i);
+        else extra.push(p);
+      }
+    });
+
+    const lines = [];
+    if (login) lines.push(`${labels.login} <code>${escapeHtml(login)}</code>`);
+    if (pass) lines.push(`${labels.pass} <code>${escapeHtml(pass)}</code>`);
+    if (fa) lines.push(`${labels.fa} <code>${escapeHtml(fa)}</code>`);
+    if (rec) lines.push(`${labels.rec} <code>${escapeHtml(rec)}</code>`);
+    if (extra.length > 0) lines.push(`ℹ️ <code>${escapeHtml(extra.join(' | '))}</code>`);
+
+    if (lines.length > 0) return lines.join('\n');
   }
 
   return `<code>${escapeHtml(val)}</code>`;

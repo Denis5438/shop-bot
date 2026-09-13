@@ -12,6 +12,7 @@ const { getEffectivePrice } = require('../../services/orderPricing.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../../services/referral.service');
 const {
   buildKeyQueryForProduct,
+  isTransientSupplierError,
   resolveProductProvider,
 } = require('../../services/provider.service');
 const notif = require('../../services/notification.service');
@@ -1286,13 +1287,14 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       orders[0].status = 'completed';
       orders[0].deliveryData = String(suppRes.deliveryData);
 
+      const keysText = formatDigitalItem(suppRes.deliveryData, lang);
       const text =
         `✅ <b>${lang === 'en' ? 'Order delivered automatically ⚡' : 'Товар выдан моментально через API ⚡'}</b>\n\n` +
         `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
         `📊 ${qtyLbl}: <b>${qty}</b>\n` +
         `💰 ${chargedLbl}: <b>${totalCost} USDT</b>\n\n` +
         `🔑 <b>Ваши данные для доступа:</b>\n` +
-        `<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
+        `${keysText}\n\n` +
         `🛡 <i>Гарантия на заказ: ${product.warrantyDays ?? 5} дн.</i>`;
 
       const opts = {
@@ -1309,21 +1311,40 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       }
       await ctx.answerCbQuery().catch(() => {});
     } else {
-      // Если у поставщика сбой или 0 остатков - заказ ставится в очередь ручной выдачи
       const errNote = `Ошибка API поставщика: ${suppRes.error || 'неизвестно'}`;
-      await Order.updateOne(
-        { _id: orders[0]._id },
-        { $set: { status: 'pending', notes: errNote } }
-      );
-      orders[0].status = 'pending';
-      orders[0].notes = errNote;
+      const isTransient = isTransientSupplierError(suppRes.error);
+
+      if (isTransient) {
+        const nextRetry = new Date(Date.now() + 60 * 1000);
+        await Order.updateOne(
+          { _id: orders[0]._id },
+          { $set: { status: 'retry', nextRetryAt: nextRetry, retryCount: 0, notes: errNote } }
+        );
+        orders[0].status = 'retry';
+        orders[0].notes = errNote;
+      } else {
+        await Order.updateOne(
+          { _id: orders[0]._id },
+          { $set: { status: 'pending', notes: errNote } }
+        );
+        orders[0].status = 'pending';
+        orders[0].notes = errNote;
+      }
+
+      const waitMsg = isTransient
+        ? (lang === 'en'
+            ? '⏳ The order is being processed by the provider and will be delivered automatically in 1-2 minutes!'
+            : '⏳ Товар обрабатывается у поставщика и будет выдан автоматически в течение 1-2 минут!')
+        : (lang === 'en'
+            ? '⏳ The product will be delivered by an operator shortly!'
+            : '⏳ Товар будет выдан оператором в течение нескольких минут!');
 
       const text =
         `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ принят в обработку'}</b>\n\n` +
         `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
         `📊 ${qtyLbl}: <b>${qty}</b>\n` +
         `💰 ${chargedLbl}: ${totalCost} USDT\n\n` +
-        `⏳ Товар будет выдан оператором в течение нескольких минут!`;
+        waitMsg;
 
       const opts = {
         parse_mode: 'HTML',

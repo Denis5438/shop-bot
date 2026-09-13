@@ -4,7 +4,7 @@ const User = require('../../models/User');
 const { getRate, toRub } = require('../../services/currency.service');
 const notif = require('../../services/notification.service');
 const { parseAmount, copyHint, escapeHtml, fmtUSDT } = require('../utils/ui');
-const { SLA } = require('../constants/ux');
+const { SLA, TEXTS } = require('../constants/ux');
 const { startProgress } = require('../utils/progress');
 const { getSettings } = require('../../services/settingsCache.service');
 
@@ -948,8 +948,33 @@ const handleTopupProof = async (ctx) => {
   if (txidIsReal) {
     requestData.txid = finalTxid;
   }
-  const request = new TopupRequest(requestData);
-  await request.save();
+  let request;
+  try {
+    request = new TopupRequest(requestData);
+    await request.save();
+  } catch (saveErr) {
+    if (saveErr && saveErr.code === 11000) {
+      const logger = require('../../config/logger');
+      logger.warn(`[Topup] Дубликат заявки txid=${requestData.txid} (E11000): ${saveErr.message}`);
+      const dupText = lang === 'en'
+        ? '⚠️ <b>This transaction has already been registered or processed earlier.</b>\n\nIf you have any questions, please contact our support.'
+        : '⚠️ <b>Эта транзакция уже была зарегистрирована или обработана ранее.</b>\n\nЕсли у вас возникли вопросы, пожалуйста, обратитесь в поддержку.';
+      const dupOpts = {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url(lang === 'en' ? '💬 Support' : '💬 Поддержка', TEXTS.SUPPORT_URL)],
+          [Markup.button.callback(lang === 'en' ? '⬅️ Main menu' : '⬅️ В главное меню', 'menu:main')],
+        ]),
+      };
+      if (checkingMsgId) {
+        await ctx.telegram.editMessageText(ctx.chat.id, checkingMsgId, null, dupText, dupOpts).catch(() => ctx.reply(dupText, dupOpts));
+      } else {
+        await ctx.reply(dupText, dupOpts);
+      }
+      return true;
+    }
+    throw saveErr;
+  }
 
   let replyText = '';
   const opts = {

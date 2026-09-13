@@ -126,13 +126,13 @@ const createOrder = async (apiKey, { productCode, quantity = 1, idempotencyKey }
     let deliveryData = '';
     if (Array.isArray(data.deliveredAccounts) && data.deliveredAccounts.length > 0) {
       deliveryData = data.deliveredAccounts
-        .map((acc, i) => {
+        .map((acc) => {
           const parts = [];
           if (acc.user) parts.push(`Login: ${acc.user}`);
           if (acc.password) parts.push(`Password: ${acc.password}`);
           if (acc.verifyEmail) parts.push(`Recovery: ${acc.verifyEmail}`);
-          const prefix = data.deliveredAccounts.length > 1 ? `#${i + 1}: ` : '';
-          return prefix + parts.join(' | ');
+          if (acc.token) parts.push(`Token: ${acc.token}`);
+          return parts.join(' | ');
         })
         .join('\n');
     } else if (data.orderCode) {

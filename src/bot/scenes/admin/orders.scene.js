@@ -526,10 +526,12 @@ const retryApiOrder = async (ctx, orderId) => {
 
     const userTgId = order.userId?.telegramId || order.userId;
     if (userTgId) {
-      // Уведомляем пользователя об успешной выдаче через notification service
+      const { formatDigitalItem } = require('../../utils/ui');
+      const userLang = order.userId?.language || 'ru';
+      const formattedKeys = formatDigitalItem(suppRes.deliveryData, userLang);
       const deliveryMsg = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
         `📦 Товар: ${escapeHtml(product.name)}\n` +
-        `🔑 <b>Ваши данные для доступа:</b>\n<code>${escapeHtml(String(suppRes.deliveryData))}</code>\n\n` +
+        `🔑 <b>Ваши данные для доступа:</b>\n${formattedKeys}\n\n` +
         `<i>Спасибо за ожидание!</i>`;
       await notif.sendToUser(userTgId, deliveryMsg, { parse_mode: 'HTML' }).catch(() => {});
     }

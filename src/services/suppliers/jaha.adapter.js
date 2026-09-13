@@ -364,12 +364,28 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
     const orderData = res.data?.order || res.data;
     const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
     const orderNum = orderData?.order_number || orderData?.order_id || orderData?.id;
-    const status = orderData?.status || (delivery ? 'completed' : 'processing');
+
+    let deliveryStr = null;
+    if (delivery) {
+      if (typeof delivery === 'string') {
+        deliveryStr = delivery;
+      } else if (Array.isArray(delivery)) {
+        deliveryStr = delivery
+          .map((d) => (typeof d === 'object' ? (d.key || d.content || d.value || JSON.stringify(d)) : String(d)))
+          .join('\n');
+      } else if (typeof delivery === 'object') {
+        deliveryStr = delivery.content || delivery.key || delivery.keys || JSON.stringify(delivery);
+      } else {
+        deliveryStr = String(delivery);
+      }
+    }
+
+    const status = orderData?.status || (deliveryStr ? 'completed' : 'processing');
 
     return {
       success: true,
       orderNumber: orderNum,
-      deliveryData: delivery ? String(delivery) : (orderNum ? `Заказ поставщика: #${orderNum}` : null),
+      deliveryData: deliveryStr || (orderNum ? `Заказ поставщика: #${orderNum}` : null),
       status,
       raw: orderData,
     };
@@ -398,13 +414,29 @@ const getOrder = async (apiKey, orderNumber) => {
 
     const orderData = res.data?.order || res.data;
     const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
-    const status = orderData?.status || (delivery ? 'completed' : 'processing');
+
+    let deliveryStr = null;
+    if (delivery) {
+      if (typeof delivery === 'string') {
+        deliveryStr = delivery;
+      } else if (Array.isArray(delivery)) {
+        deliveryStr = delivery
+          .map((d) => (typeof d === 'object' ? (d.key || d.content || d.value || JSON.stringify(d)) : String(d)))
+          .join('\n');
+      } else if (typeof delivery === 'object') {
+        deliveryStr = delivery.content || delivery.key || delivery.keys || JSON.stringify(delivery);
+      } else {
+        deliveryStr = String(delivery);
+      }
+    }
+
+    const status = orderData?.status || (deliveryStr ? 'completed' : 'processing');
 
     return {
       success: true,
       orderNumber: orderData?.order_number || orderNumber,
       status,
-      deliveryData: delivery ? String(delivery) : null,
+      deliveryData: deliveryStr,
       raw: orderData,
     };
   } catch (err) {

@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const cartService = require('../../services/cart.service');
-const { escapeHtml, safeEdit } = require('../utils/ui');
+const { escapeHtml, formatDigitalItem, safeEdit } = require('../utils/ui');
 const { toRub } = require('../../services/currency.service');
 
 /**
@@ -161,10 +161,12 @@ const handleCheckout = async (ctx) => {
     `────────────────────\n` +
     `<b>🔑 ВЫДАЧА ТОВАРОВ:</b>\n\n`;
 
+  const userLang = ctx.user?.language || 'ru';
   res.deliveryReports.forEach((rep, i) => {
     const icon = rep.isInstant ? '⚡' : '⏳';
+    const itemData = rep.isInstant ? formatDigitalItem(rep.data, userLang) : `<code>${escapeHtml(rep.data)}</code>`;
     successText += `${i + 1}. ${icon} <b>${escapeHtml(rep.name)}</b> (x${rep.qty})\n` +
-      `<code>${escapeHtml(rep.data)}</code>\n\n`;
+      `${itemData}\n\n`;
   });
 
   successText += `<i>Все данные также сохранены в разделе «📜 Мои покупки» в вашем профиле.</i>`;

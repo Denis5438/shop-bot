@@ -90,12 +90,33 @@ const buildKeyQueryForProduct = (product, extra = {}) => ({
 const providerRequiresUserConfirmation = (provider) => provider === 'u1traby';
 const providerSupportsActivation = (provider) => provider === 'u1traby';
 
+const isSupplierProvider = (provider) => ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider);
+
+const isTransientSupplierError = (errMessage) => {
+  if (!errMessage) return false;
+  const msg = String(errMessage).toLowerCase();
+  return (
+    msg.includes('timeout') ||
+    msg.includes('econnaborted') ||
+    msg.includes('etimedout') ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
+    msg.includes('eai_again') ||
+    msg.includes('network') ||
+    msg.includes('502') ||
+    msg.includes('503') ||
+    msg.includes('504')
+  );
+};
+
 module.exports = {
   PROVIDERS,
   buildKeyQueryForProduct,
   getProviderLabel,
   getProviderShortLabel,
   getProvidersForProductType,
+  isSupplierProvider,
+  isTransientSupplierError,
   normalizeProviderForType,
   providerRequiresUserConfirmation,
   providerSupportsActivation,

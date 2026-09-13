@@ -101,11 +101,39 @@ const createOrder = async (apiKey, { productCode, quantity = 1, idempotencyKey }
       }
     );
 
+    const payload = res.data?.data || res.data;
+    let deliveryData = '';
+    if (res.data?.content || payload?.content) {
+      deliveryData = String(res.data?.content || payload?.content);
+    } else if (Array.isArray(payload?.keys) && payload.keys.length > 0) {
+      deliveryData = payload.keys
+        .map((k) => (typeof k === 'object' ? (k.value || k.key || k.content || JSON.stringify(k)) : String(k)))
+        .join('\n');
+    } else if (payload?.keys) {
+      deliveryData = String(payload.keys);
+    } else if (Array.isArray(payload?.accounts) && payload.accounts.length > 0) {
+      deliveryData = payload.accounts
+        .map((acc) => {
+          const parts = [];
+          if (acc.login || acc.user || acc.email) parts.push(`Login: ${acc.login || acc.user || acc.email}`);
+          if (acc.password || acc.pass) parts.push(`Password: ${acc.password || acc.pass}`);
+          if (acc.code || acc.twoFactor || acc.token) parts.push(`2FA: ${acc.code || acc.twoFactor || acc.token}`);
+          return parts.join(' | ');
+        })
+        .join('\n');
+    } else if (typeof payload === 'string') {
+      deliveryData = payload;
+    } else if (payload?.order_id || payload?.id) {
+      deliveryData = `Заказ #${payload.order_id || payload.id} принят. Ожидайте выдачи.`;
+    } else {
+      deliveryData = JSON.stringify(payload);
+    }
+
     return {
       success: true,
-      orderNumber: res.data?.id || res.data?.order_id,
-      deliveryData: res.data?.content || res.data?.keys || res.data?.data || JSON.stringify(res.data),
-      status: res.data?.status || 'completed',
+      orderNumber: res.data?.id || res.data?.order_id || payload?.id,
+      deliveryData,
+      status: res.data?.status || payload?.status || 'completed',
       raw: res.data,
     };
   } catch (err) {
