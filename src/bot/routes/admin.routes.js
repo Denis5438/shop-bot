@@ -529,18 +529,21 @@ module.exports = (bot) => {
       no_purchases: 'Без покупок',
     };
 
-    const rows = notif.SEGMENTS.map((s, i) => [
-      Markup.button.callback(
-        `${s.icon} ${SEGMENT_LABELS[s.key]} - ${counts[i]}`,
-        `admin:p_broadcast:${productId}:${s.key}`
-      ),
-    ]);
-    rows.push([Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)]);
+    const rows = [
+      [Markup.button.callback('🧪 Отправить тест себе', `admin:p_broadcast:${productId}:test_self`)],
+      ...notif.SEGMENTS.map((s, i) => [
+        Markup.button.callback(
+          `${s.icon} ${SEGMENT_LABELS[s.key]} - ${counts[i]}`,
+          `admin:p_broadcast:${productId}:${s.key}`
+        ),
+      ]),
+      [Markup.button.callback('❌ Отмена', `admin:product:edit:${productId}`)],
+    ];
 
     const text =
       `📢 <b>Рассылка товара</b>\n\n` +
       `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b>\n\n` +
-      `<blockquote>Выберите сегмент получателей. Число рядом - это сколько людей в сегменте.</blockquote>`;
+      `<blockquote>Выберите сегмент получателей или отправьте тест себе для проверки. Число рядом - это сколько людей в сегменте.</blockquote>`;
 
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
@@ -575,9 +578,6 @@ module.exports = (bot) => {
 
   // Запуск рассылки на конкретный сегмент (после выбора в предыдущем хэндлере).
   bot.action(/^admin:p_broadcast:([a-f0-9]{24}):(\w+)$/, adminMiddleware, async (ctx) => {
-    await ctx.answerCbQuery('📢 Запускаю рассылку...');
-    await ctx.editMessageReplyMarkup(null).catch(() => {});
-
     const productId = ctx.match[1];
     const segment = ctx.match[2];
     const Product = require('../../models/Product');
@@ -590,6 +590,25 @@ module.exports = (bot) => {
     const stock = autoKeys > 0
       ? autoKeys
       : (product.type === 'manual' ? (product.manualStock === -1 ? '∞' : product.manualStock) : 0);
+
+    if (segment === 'test_self') {
+      await ctx.answerCbQuery('🧪 Отправляю тест...');
+      await notif.sendTestBroadcast(ctx.from.id, product, stock);
+      await ctx.reply(
+        '✅ <b>Тестовое сообщение отправлено вам в чат выше!</b>\n\nПроверьте внешний вид, цену и работу кнопки, после чего можете запускать общую рассылку.',
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('📢 Выбрать сегмент для рассылки', `admin:product:broadcast:${productId}`)],
+            [Markup.button.callback('⬅️ К товару', `admin:product:edit:${productId}`)],
+          ]),
+        }
+      );
+      return;
+    }
+
+    await ctx.answerCbQuery('📢 Запускаю рассылку...');
+    await ctx.editMessageReplyMarkup(null).catch(() => {});
 
     const { label } = await notif.buildSegmentQuery(segment);
     const totalInSegment = await notif.countSegment(segment);

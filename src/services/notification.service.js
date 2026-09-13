@@ -369,6 +369,120 @@ const SEGMENTS = [
   { key: 'no_purchases', icon: '🆕' },
 ];
 
+/**
+ * Формирует текст и клавиатуру для рассылки товара с учётом Flash Sale и мультиязычности
+ */
+const buildProductBroadcastMessage = (product, stock, lang = 'ru') => {
+  const now = Date.now();
+  const isFlashSale = Boolean(
+    product.flashSale?.enabled &&
+    product.flashSale.expiresAt &&
+    new Date(product.flashSale.expiresAt).getTime() > now &&
+    product.flashSale.discountPercent > 0
+  );
+
+  const productName = (lang === 'en' && product.nameEn) ? product.nameEn : product.name;
+  const productDesc = (lang === 'en' && product.descriptionEn) ? product.descriptionEn : (product.description || '');
+
+  // Stock line
+  let stockLine = '';
+  if (stock === '∞' || stock === null || product.manualStock === -1) {
+    stockLine = `\n${i18n.translate(lang, 'broadcast_stock_unlimited')}`;
+  } else if (Number(stock) > 0) {
+    stockLine = `\n${i18n.translate(lang, 'broadcast_stock_count', { count: stock })}`;
+  } else if (stock === 0 || stock === '0') {
+    stockLine = `\n${i18n.translate(lang, 'broadcast_stock_soon')}`;
+  }
+
+  // Warranty line
+  let warrantyLine = '';
+  if (product.warrantyDays) {
+    warrantyLine = lang === 'en'
+      ? `\n🛡 <b>Warranty:</b> ${product.warrantyDays} days`
+      : `\n🛡 <b>Гарантия:</b> ${product.warrantyDays} дн.`;
+  }
+
+  // Description block (expandable in Telegram)
+  let descriptionBlock = '';
+  if (productDesc && productDesc.trim()) {
+    const cleanDesc = h(productDesc.trim());
+    descriptionBlock = `<blockquote expandable>📝 <b>${lang === 'en' ? 'Description' : 'Описание'}:</b>\n${cleanDesc}</blockquote>\n\n`;
+  }
+
+  let text = '';
+  let buyBtnText = '';
+
+  if (isFlashSale) {
+    const discountPercent = product.flashSale.discountPercent;
+    const origPrice = Number(product.price).toFixed(2);
+    const salePrice = Math.max(0.01, product.price * (1 - discountPercent / 100)).toFixed(2);
+    const salePriceRub = toRub(salePrice);
+
+    const diffMs = Math.max(0, new Date(product.flashSale.expiresAt).getTime() - now);
+    const totalSecs = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const timeLeft = hours > 0 ? `${hours}ч ${mins}м` : `${mins}м`;
+
+    text = i18n.translate(lang, 'broadcast_flash_sale', {
+      icon: h(product.icon || '📦'),
+      name: h(productName),
+      discountPercent,
+      price: origPrice,
+      salePrice,
+      salePriceRub,
+      timeLeft,
+      stockLine,
+      warrantyLine,
+      descriptionBlock,
+    });
+
+    buyBtnText = i18n.translate(lang, 'broadcast_btn_buy_flash', { price: salePrice });
+  } else {
+    const price = Number(product.price).toFixed(2);
+    const priceRub = toRub(price);
+
+    text = i18n.translate(lang, 'broadcast_new_product', {
+      icon: h(product.icon || '📦'),
+      name: h(productName),
+      price,
+      priceRub,
+      stockLine,
+      warrantyLine,
+      descriptionBlock,
+    });
+
+    buyBtnText = i18n.translate(lang, 'broadcast_btn_buy', { price });
+  }
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: buyBtnText, callback_data: `shop:product:${product._id}` }],
+      [{ text: i18n.translate(lang, 'broadcast_btn_catalog'), callback_data: 'menu:shop' }],
+    ],
+  };
+
+  return { text, keyboard };
+};
+
+// ─── Тестовая отправка рассылки администратору ──────────────────────────────
+const sendTestBroadcast = async (adminTelegramId, product, stock) => {
+  if (!botInstance || !adminTelegramId) return false;
+  const adminUser = await User.findOne({ telegramId: adminTelegramId }).select('language').lean();
+  const lang = adminUser?.language || 'ru';
+  const { text, keyboard } = buildProductBroadcastMessage(product, stock, lang);
+
+  const testHeader = lang === 'en'
+    ? '<b>[🧪 TEST BROADCAST PREVIEW]</b>\n\n'
+    : '<b>[🧪 ТЕСТОВЫЙ ПРЕДПРОСМОТР РАССЫЛКИ]</b>\n\n';
+
+  await botInstance.telegram.sendMessage(adminTelegramId, testHeader + text, {
+    parse_mode: 'HTML',
+    reply_markup: keyboard,
+  });
+  return true;
+};
+
 // ─── Рассылка нового товара пользователям (опционально - сегменту) ───────────
 const broadcastNewProduct = async (product, stock, segment = 'all') => {
   if (!botInstance) return { sent: 0, failed: 0 };
@@ -383,26 +497,7 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
     items: cursor,
     sendFn: async (user) => {
       const lang = user.language || 'ru';
-      const stockLine = stock === '∞' || stock === null
-        ? i18n.translate(lang, 'broadcast_stock_unlimited')
-        : stock > 0
-          ? i18n.translate(lang, 'broadcast_stock_count', { count: stock })
-          : i18n.translate(lang, 'broadcast_stock_soon');
-
-      const text = i18n.translate(lang, 'broadcast_new_product', {
-        icon: h(product.icon || '📦'),
-        name: h(product.name),
-        description: product.description ? `📝 ${h(product.description)}` : '',
-        price: product.price,
-        priceRub: toRub(product.price),
-        stockLine,
-      });
-
-      const keyboard = {
-        inline_keyboard: [
-          [{ text: i18n.translate(lang, 'broadcast_btn_buy', { icon: product.icon || '📦', price: product.price }), callback_data: `menu:shop` }],
-        ],
-      };
+      const { text, keyboard } = buildProductBroadcastMessage(product, stock, lang);
 
       await botInstance.telegram.sendMessage(user.telegramId, text, {
         parse_mode: 'HTML',
@@ -904,6 +999,8 @@ module.exports = {
   notifyUserTopupRejected,
   notifyAdminLowStock,
   broadcastNewProduct,
+  buildProductBroadcastMessage,
+  sendTestBroadcast,
   // Seller-система
   notifySellerNewOrder,
   notifySellerWithdrawalResult,
