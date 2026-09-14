@@ -1288,6 +1288,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       );
       orders[0].status = 'completed';
       orders[0].deliveryData = String(suppRes.deliveryData);
+      await grantReferralBonusForFirstCompletedOrder(orders[0].userId).catch(() => {});
 
       const keysText = formatDigitalItem(suppRes.deliveryData, lang);
       const text =
@@ -1305,6 +1306,42 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           [Markup.button.callback('🛒 Купить ещё', `shop:product:${product._id}`)],
           [Markup.button.callback(t('back_to_menu'), 'menu:main')],
         ]),
+      };
+      try {
+        await ctx.editMessageText(text, opts);
+      } catch (_) {
+        await ctx.reply(text, opts).catch(() => {});
+      }
+      await ctx.answerCbQuery().catch(() => {});
+    } else if (suppRes.success) {
+      const suppOrderId = String(suppRes.orderNumber || suppRes.orderId || '');
+      await Order.updateOne(
+        { _id: orders[0]._id },
+        {
+          $set: {
+            status: 'activating',
+            supplierOrderId: suppOrderId,
+            notes: 'Заказ принят поставщиком, ожидается выдача товара',
+          },
+        }
+      );
+      orders[0].status = 'activating';
+      orders[0].supplierOrderId = suppOrderId;
+
+      const waitMsg = lang === 'en'
+        ? '⏳ The order is being processed by the provider and will be delivered automatically in 1-2 minutes!'
+        : '⏳ Товар обрабатывается у поставщика и будет выдан автоматически в течение 1-2 минут!';
+
+      const text =
+        `✅ <b>${lang === 'en' ? 'Order created' : 'Заказ принят в обработку'}</b>\n\n` +
+        `📦 ${productLbl}: ${escapeHtml(product.icon || '📦')} ${escapeHtml(productDisplayName)}\n` +
+        `📊 ${qtyLbl}: <b>${qty}</b>\n` +
+        `💰 ${chargedLbl}: ${totalCost} USDT\n\n` +
+        waitMsg;
+
+      const opts = {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback(t('back_to_menu'), 'menu:main')]]),
       };
       try {
         await ctx.editMessageText(text, opts);

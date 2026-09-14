@@ -442,6 +442,17 @@ const checkoutCart = async (ctx) => {
           report.isInstant = true;
           report.data = String(suppRes.deliveryData);
         }
+      } else if (suppRes.success) {
+        await Order.updateOne(
+          { _id: order._id, status: 'pending' },
+          {
+            $set: {
+              status: 'activating',
+              supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
+              notes: 'Заказ принят поставщиком, ожидается выдача товара',
+            },
+          }
+        );
       } else {
         const isTransient = isTransientSupplierError(suppRes.error);
         await Order.updateOne(

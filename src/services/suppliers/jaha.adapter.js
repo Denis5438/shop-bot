@@ -380,12 +380,26 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
       }
     }
 
-    const status = orderData?.status || (deliveryStr ? 'completed' : 'processing');
+    if (!deliveryStr && orderNum) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      let orderRes = await getOrder(apiKey, orderNum);
+      if (orderRes && orderRes.success && orderRes.deliveryData) {
+        deliveryStr = orderRes.deliveryData;
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        orderRes = await getOrder(apiKey, orderNum);
+        if (orderRes && orderRes.success && orderRes.deliveryData) {
+          deliveryStr = orderRes.deliveryData;
+        }
+      }
+    }
+
+    const status = deliveryStr ? (orderData?.status || 'completed') : 'processing';
 
     return {
       success: true,
       orderNumber: orderNum,
-      deliveryData: deliveryStr || (orderNum ? `Заказ поставщика: #${orderNum}` : null),
+      deliveryData: deliveryStr || null,
       status,
       raw: orderData,
     };

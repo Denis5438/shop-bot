@@ -485,28 +485,45 @@ const completeOrderManually = async (ctx, orderId) => {
 const retryApiOrder = async (ctx, orderId) => {
   const order = await Order.findById(orderId).populate('productId').populate('userId');
   if (!order) return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
-  if (order.status !== 'pending') return ctx.answerCbQuery('⚠️ Заказ больше не в ожидании', { show_alert: true });
+  if (!['pending', 'activating', 'retry'].includes(order.status)) {
+    return ctx.answerCbQuery('⚠️ Заказ больше не в ожидании', { show_alert: true });
+  }
 
   const product = order.productId;
-  if (!['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product?.provider || order.provider)) {
+  const provider = product?.provider || order.provider;
+  if (!['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
     return ctx.answerCbQuery('❌ Этот заказ не привязан к API поставщику', { show_alert: true });
   }
 
-  await ctx.answerCbQuery('🔄 Пробую выкупить через API...', { show_alert: false }).catch(() => {});
-
-  const qty = order.qty || 1;
-  const retryKey = `ord-${order._id}-${Date.now()}`;
-  order.supplierIdempotencyKey = retryKey;
-  await order.save();
+  await ctx.answerCbQuery('🔄 Проверяю статус / запрашиваю у поставщика...', { show_alert: false }).catch(() => {});
 
   let suppRes;
-  try {
-    suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId, {
-      orderId: order._id,
-      idempotencyKey: retryKey,
-    });
-  } catch (err) {
-    suppRes = { success: false, error: err.message };
+  let retryKey = order.supplierIdempotencyKey;
+
+  // Если у заказа уже есть supplierOrderId — сначала опрашиваем getOrder, чтобы не выкупать повторно
+  if (order.supplierOrderId) {
+    try {
+      suppRes = await supplierManager.getSupplierOrder(provider, order.supplierOrderId);
+    } catch (err) {
+      suppRes = { success: false, error: err.message };
+    }
+  }
+
+  // Если товара ещё нет или нет supplierOrderId — пробуем выкупить
+  if (!suppRes || (!suppRes.deliveryData && !order.supplierOrderId)) {
+    const qty = order.qty || 1;
+    retryKey = `ord-${order._id}-${Date.now()}`;
+    order.supplierIdempotencyKey = retryKey;
+    await order.save();
+
+    try {
+      suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId, {
+        orderId: order._id,
+        idempotencyKey: retryKey,
+      });
+    } catch (err) {
+      suppRes = { success: false, error: err.message };
+    }
   }
 
   if (suppRes && suppRes.success && suppRes.deliveryData) {
@@ -541,6 +558,20 @@ const retryApiOrder = async (ctx, orderId) => {
     }
 
     await ctx.answerCbQuery('✅ Успешно выкуплено и отправлено клиенту!', { show_alert: true }).catch(() => {});
+  } else if (suppRes && suppRes.success) {
+    const suppOrderId = String(suppRes.orderNumber || suppRes.orderId || '');
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          status: 'activating',
+          supplierOrderId: suppOrderId,
+          notes: 'Заказ принят поставщиком, ожидается выдача товара',
+          supplierIdempotencyKey: retryKey,
+        },
+      }
+    );
+    await ctx.answerCbQuery('⏳ Заказ принят поставщиком, ожидается выдача товара', { show_alert: true }).catch(() => {});
   } else {
     // Обновляем текст ошибки
     const errNote = `Ошибка API поставщика: ${suppRes?.error || 'неизвестно'}`;

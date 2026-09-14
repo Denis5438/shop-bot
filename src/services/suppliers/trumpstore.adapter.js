@@ -141,37 +141,87 @@ const createOrder = async (apiKey, { productCode, quantity = 1, idempotencyKey, 
     }
 
     // Формируем текст выдачи
-    let deliveryData = '';
+    let deliveryData = null;
 
     const payload = data?.data || data;
 
     // Если в ответе есть аккаунты / ключи
     if (Array.isArray(payload?.accounts) && payload.accounts.length > 0) {
       deliveryData = payload.accounts
-        .map((acc, i) => {
+        .map((acc) => {
           const parts = [];
           if (acc.login || acc.user || acc.email) parts.push(`Login: ${acc.login || acc.user || acc.email}`);
           if (acc.password || acc.pass) parts.push(`Password: ${acc.password || acc.pass}`);
+          if (acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp) {
+            parts.push(`2FA: ${acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp}`);
+          }
+          if (acc.verifyEmail || acc.recovery) parts.push(`Recovery: ${acc.verifyEmail || acc.recovery}`);
           if (acc.token) parts.push(`Token: ${acc.token}`);
-          const prefix = payload.accounts.length > 1 ? `#${i + 1}: ` : '';
-          return prefix + parts.join(' | ');
+          return parts.join(' | ');
         })
         .join('\n');
     } else if (payload?.key || payload?.account || payload?.result || payload?.content) {
       deliveryData = String(payload.key || payload.account || payload.result || payload.content);
-    } else if (payload?.data) {
-      deliveryData = typeof payload.data === 'string' ? payload.data : JSON.stringify(payload.data);
-    } else if (payload?.order_id || payload?.id) {
-      deliveryData = `Заказ #${payload.order_id || payload.id} принят. Ожидайте выдачи.`;
-    } else {
-      deliveryData = JSON.stringify(payload);
+    } else if (payload?.data && typeof payload.data === 'string') {
+      deliveryData = payload.data;
     }
+
+    const status = deliveryData ? (payload?.status || 'completed') : 'processing';
 
     return {
       success: true,
       orderNumber: payload?.order_id || payload?.id || payload?.orderCode,
-      deliveryData,
-      status: payload?.status || 'completed',
+      deliveryData: deliveryData || null,
+      status,
+      raw: data,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.response?.data?.message || err.response?.data?.error || err.message,
+    };
+  }
+};
+
+/**
+ * Проверка статуса заказа у Trump Store
+ */
+const getOrder = async (apiKey, orderNumber) => {
+  try {
+    const res = await axios.get(`${BASE_URL}/orders/${encodeURIComponent(orderNumber)}`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      timeout: 15000,
+    });
+    const data = res.data;
+    const payload = data?.data || data;
+    let deliveryData = null;
+    if (Array.isArray(payload?.accounts) && payload.accounts.length > 0) {
+      deliveryData = payload.accounts
+        .map((acc) => {
+          const parts = [];
+          if (acc.login || acc.user || acc.email) parts.push(`Login: ${acc.login || acc.user || acc.email}`);
+          if (acc.password || acc.pass) parts.push(`Password: ${acc.password || acc.pass}`);
+          if (acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp) {
+            parts.push(`2FA: ${acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp}`);
+          }
+          if (acc.verifyEmail || acc.recovery) parts.push(`Recovery: ${acc.verifyEmail || acc.recovery}`);
+          if (acc.token) parts.push(`Token: ${acc.token}`);
+          return parts.join(' | ');
+        })
+        .join('\n');
+    } else if (payload?.key || payload?.account || payload?.result || payload?.content) {
+      deliveryData = String(payload.key || payload.account || payload.result || payload.content);
+    } else if (payload?.data && typeof payload.data === 'string') {
+      deliveryData = payload.data;
+    }
+    return {
+      success: true,
+      orderNumber: payload?.order_id || payload?.id || payload?.orderCode || orderNumber,
+      deliveryData: deliveryData || null,
+      status: deliveryData ? (payload?.status || 'completed') : 'processing',
       raw: data,
     };
   } catch (err) {
@@ -186,4 +236,5 @@ module.exports = {
   getBalance,
   getProducts,
   createOrder,
+  getOrder,
 };

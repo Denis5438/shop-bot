@@ -123,30 +123,78 @@ const createOrder = async (apiKey, { productCode, quantity = 1, idempotencyKey }
     }
 
     // Формируем текст выдачи из deliveredAccounts
-    let deliveryData = '';
+    let deliveryData = null;
     if (Array.isArray(data.deliveredAccounts) && data.deliveredAccounts.length > 0) {
       deliveryData = data.deliveredAccounts
         .map((acc) => {
           const parts = [];
-          if (acc.user) parts.push(`Login: ${acc.user}`);
-          if (acc.password) parts.push(`Password: ${acc.password}`);
-          if (acc.verifyEmail) parts.push(`Recovery: ${acc.verifyEmail}`);
+          if (acc.user || acc.login || acc.email) parts.push(`Login: ${acc.user || acc.login || acc.email}`);
+          if (acc.password || acc.pass) parts.push(`Password: ${acc.password || acc.pass}`);
+          if (acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp) {
+            parts.push(`2FA: ${acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp}`);
+          }
+          if (acc.verifyEmail || acc.recovery) parts.push(`Recovery: ${acc.verifyEmail || acc.recovery}`);
           if (acc.token) parts.push(`Token: ${acc.token}`);
           return parts.join(' | ');
         })
         .join('\n');
-    } else if (data.orderCode) {
-      // Слот/manual — аккаунт ещё не выдан, только код заказа
-      deliveryData = `Заказ ${data.orderCode} принят. Ожидайте выдачи.`;
-    } else {
-      deliveryData = JSON.stringify(data);
+    } else if (data.key || data.account || data.delivery || data.content) {
+      deliveryData = String(data.key || data.account || data.delivery || data.content);
     }
+
+    const status = deliveryData
+      ? (data.autoCompleted ? 'completed' : (data.status || 'completed'))
+      : (data.status || 'processing');
 
     return {
       success: true,
       orderNumber: data.orderCode || data.orderId,
-      deliveryData,
-      status: data.autoCompleted ? 'completed' : (data.status || 'completed'),
+      deliveryData: deliveryData || null,
+      status,
+      raw: data,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.response?.data?.message || err.message,
+    };
+  }
+};
+
+/**
+ * Проверка статуса заказа у Canboso
+ */
+const getOrder = async (apiKey, orderNumber) => {
+  try {
+    const res = await axios.get(`${BASE_URL}/orders/${encodeURIComponent(orderNumber)}`, {
+      params: { key: apiKey },
+      headers: { Accept: 'application/json' },
+      timeout: 15000,
+    });
+    const data = res.data;
+    let deliveryData = null;
+    if (Array.isArray(data?.deliveredAccounts) && data.deliveredAccounts.length > 0) {
+      deliveryData = data.deliveredAccounts
+        .map((acc) => {
+          const parts = [];
+          if (acc.user || acc.login || acc.email) parts.push(`Login: ${acc.user || acc.login || acc.email}`);
+          if (acc.password || acc.pass) parts.push(`Password: ${acc.password || acc.pass}`);
+          if (acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp) {
+            parts.push(`2FA: ${acc.twoFactor || acc.code || acc.secret || acc['2fa'] || acc.totp}`);
+          }
+          if (acc.verifyEmail || acc.recovery) parts.push(`Recovery: ${acc.verifyEmail || acc.recovery}`);
+          if (acc.token) parts.push(`Token: ${acc.token}`);
+          return parts.join(' | ');
+        })
+        .join('\n');
+    } else if (data?.key || data?.account || data?.delivery || data?.content) {
+      deliveryData = String(data.key || data.account || data.delivery || data.content);
+    }
+    return {
+      success: true,
+      orderNumber: data?.orderCode || data?.orderId || orderNumber,
+      deliveryData: deliveryData || null,
+      status: deliveryData ? 'completed' : (data?.status || 'processing'),
       raw: data,
     };
   } catch (err) {
@@ -161,4 +209,5 @@ module.exports = {
   getBalance,
   getProducts,
   createOrder,
+  getOrder,
 };

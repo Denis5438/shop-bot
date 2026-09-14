@@ -164,7 +164,7 @@ const handleCheckout = async (ctx) => {
   const userLang = ctx.user?.language || 'ru';
   res.deliveryReports.forEach((rep, i) => {
     const icon = rep.isInstant ? '⚡' : '⏳';
-    const itemData = rep.isInstant ? formatDigitalItem(rep.data, userLang) : `<code>${escapeHtml(rep.data)}</code>`;
+    const itemData = rep.isInstant ? formatDigitalItem(rep.data, userLang) : `<i>${escapeHtml(rep.data)}</i>`;
     successText += `${i + 1}. ${icon} <b>${escapeHtml(rep.name)}</b> (x${rep.qty})\n` +
       `${itemData}\n\n`;
   });

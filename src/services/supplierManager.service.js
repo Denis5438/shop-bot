@@ -303,6 +303,23 @@ const fulfillSupplierOrder = async (product, quantity, user, options = {}) => {
   return res;
 };
 
+/**
+ * Проверка статуса заказа у поставщика через адаптер
+ */
+const getSupplierOrder = async (supplierId, supplierOrderId) => {
+  const config = await SupplierConfig.findOne({ supplierId, isEnabled: true });
+  if (!config || !config.apiKey) {
+    return { success: false, error: 'Поставщик временно недоступен (API-ключ не настроен)' };
+  }
+
+  const adapter = ADAPTERS[supplierId];
+  if (!adapter || typeof adapter.getOrder !== 'function') {
+    return { success: false, error: `Адаптер ${supplierId} не поддерживает getOrder` };
+  }
+
+  return adapter.getOrder(config.apiKey, supplierOrderId);
+};
+
 module.exports = {
   initSuppliers,
   getAllSuppliers,
@@ -310,4 +327,5 @@ module.exports = {
   refreshSupplierBalance,
   importSupplierCatalog,
   fulfillSupplierOrder,
+  getSupplierOrder,
 };

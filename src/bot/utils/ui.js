@@ -327,8 +327,9 @@ const formatObjectItem = (obj, lang = 'ru') => {
 };
 
 const formatSingleItem = (rawStr, lang = 'ru') => {
-  const val = String(rawStr).trim();
+  let val = String(rawStr).trim();
   if (!val) return '';
+  val = val.replace(/^(?:#\d+[:.]?\s*|\d+[:.)]\s*)/, '').trim();
 
   if (/^https?:\/\//i.test(val)) {
     const linkLbl = lang === 'en' ? '🔗 <b>Link:</b>' : '🔗 <b>Ссылка:</b>';
@@ -375,6 +376,7 @@ const formatSingleItem = (rawStr, lang = 'ru') => {
         if (idx === 0 && !login) login = cleanPrefix(p, /^(?:login|user|email|логин|почта)\s*[:=]\s*/i);
         else if (idx === 1 && !pass) pass = cleanPrefix(p, /^(?:pass|password|пароль)\s*[:=]\s*/i);
         else if (idx === 2 && !fa) fa = cleanPrefix(p, /^(?:2fa|код|code)\s*[:=]\s*/i);
+        else if (idx === 3 && !rec && p.includes('@')) rec = cleanPrefix(p, /^(?:recovery|backup|verifyemail|резерв|доп)\s*[:=]\s*/i);
         else extra.push(p);
       }
     });
