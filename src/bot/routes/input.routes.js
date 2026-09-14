@@ -32,6 +32,7 @@ module.exports = (bot) => {
         ctx.session.tokenCheck = null;
         ctx.session.promoReturnTo = null;
         ctx.session.promoCheckoutProductId = null;
+        ctx.session.customerSearchMsgId = null;
       }
       return next();
     }
@@ -65,6 +66,20 @@ module.exports = (bot) => {
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
       }
+      return;
+    }
+
+    // ─── ПОИСК ТОВАРА ПОЛЬЗОВАТЕЛЕМ В МАГАЗИНЕ ───
+    if (session.userAction === 'customer_shop_search') {
+      const shopScene = require('../scenes/shop.scene');
+      const userText = ctx.message?.text || '';
+
+      // Удаляем текстовое сообщение пользователя, чтобы не замусоривать чат
+      if (ctx.message?.message_id) {
+        ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+      }
+
+      await shopScene.handleCustomerSearch(ctx, userText, 1);
       return;
     }
 

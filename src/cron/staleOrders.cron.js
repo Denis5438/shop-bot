@@ -49,6 +49,16 @@ const start = (bot) => {
           ).catch(() => {});
         }
       }
+
+      // Автоматическое отключение истёкших акций Flash Sale («Горящие часы»)
+      const Product = require('../models/Product');
+      const expiredSales = await Product.updateMany(
+        { 'flashSale.enabled': true, 'flashSale.expiresAt': { $lte: new Date() } },
+        { $set: { 'flashSale.enabled': false } }
+      );
+      if (expiredSales.modifiedCount > 0) {
+        logger.info(`[Flash Sale] Автоматически деактивировано ${expiredSales.modifiedCount} истёкших акций`);
+      }
     } catch (err) {
       if (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN') {
         logger.warn(`Пропуск авто-отмены: временная проблема с сетью (ошибка DNS).`);

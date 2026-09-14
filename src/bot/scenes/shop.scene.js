@@ -237,9 +237,10 @@ const showShopPage = async (ctx) => {
     }
   }
 
+  buttons.push([Markup.button.callback(t('btn_search_product') || '🔍 Поиск товара', 'shop:search')]);
   buttons.push([Markup.button.callback(t('btn_back') || '⬅️ Назад', 'menu:main')]);
 
-  const text = t('shop_title') || '🛒 Магазин';
+  const text = t('shop_title') || '🛍 <b>Каталог товаров</b>\n\nВыберите интересующую категорию или товар:';
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);
 };
@@ -349,6 +350,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   if (navButtons.length) buttons.push(navButtons);
 
   buttons.push([
+    Markup.button.callback(lang === 'en' ? '🔍 Search' : '🔍 Поиск', 'shop:search'),
     Markup.button.callback(lang === 'en' ? '🔄 Refresh' : '🔄 Обновить', `shop:category:${categoryId}:${safePage}`),
     Markup.button.callback(lang === 'en' ? '⬅️ To Categories' : '⬅️ К категориям', 'shop:main'),
   ]);
@@ -1735,6 +1737,142 @@ const processPreorder = async (ctx, productId, qty = 1) => {
   ).catch(() => {});
 };
 
+const startCustomerSearch = async (ctx) => {
+  const t = ctx.t || ((k) => k);
+  ctx.session = ctx.session || {};
+  ctx.session.userAction = 'customer_shop_search';
+
+  const text = t('search_prompt') ||
+    '🔍 <b>Поиск товара в каталоге</b>\n\n' +
+    'Введите название или часть названия товара:\n' +
+    '<i>(Например: ChatGPT, Telegram, Canva, VPN, Claude)</i>';
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(t('btn_search_cancel') || '❌ Отмена', 'menu:shop')],
+  ]);
+
+  const targetMsgId = ctx.callbackQuery?.message?.message_id;
+  if (targetMsgId) {
+    ctx.session.customerSearchMsgId = targetMsgId;
+    return safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
+  }
+
+  const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  if (sent?.message_id) ctx.session.customerSearchMsgId = sent.message_id;
+};
+
+const handleCustomerSearch = async (ctx, queryText = '', page = 1) => {
+  const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
+  ctx.session = ctx.session || {};
+
+  const query = (queryText || ctx.session.lastCustomerSearchQuery || '').trim();
+  if (!query) {
+    return startCustomerSearch(ctx);
+  }
+
+  ctx.session.lastCustomerSearchQuery = query;
+  ctx.session.userAction = null;
+
+  const escapeRegex = (s) => s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const reg = new RegExp(escapeRegex(query), 'i');
+
+  const products = await Product.find({
+    isActive: true,
+    $or: [{ name: reg }, { nameEn: reg }],
+  })
+    .select('name nameEn icon price costPrice type manualStock provider flashSale officialPrice officialDiscountPercent categoryId')
+    .sort({ sortOrder: 1, createdAt: -1 })
+    .lean();
+
+  const targetMsgId = ctx.session.customerSearchMsgId || ctx.callbackQuery?.message?.message_id;
+
+  if (products.length === 0) {
+    const emptyPattern = t('search_empty') || '🔍 По запросу «<b>{query}</b>» ничего не найдено.\n\nПопробуйте изменить поисковый запрос или выберите категорию в каталоге.';
+    const emptyText = emptyPattern.replace('{query}', escapeHtml(query));
+
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback(t('btn_search_again') || '🔍 Искать снова', 'shop:search')],
+      [Markup.button.callback(lang === 'en' ? '🛍 Browse Catalog' : '🛍 В каталог', 'menu:shop')],
+      [Markup.button.callback(t('btn_back') || '⬅️ В главное меню', 'menu:main')],
+    ]);
+
+    if (targetMsgId) {
+      try {
+        await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, emptyText, { parse_mode: 'HTML', ...keyboard });
+        return;
+      } catch (_) {}
+    }
+    return ctx.reply(emptyText, { parse_mode: 'HTML', ...keyboard });
+  }
+
+  const stockMap = await getStockMap(products);
+
+  const SEARCH_PER_PAGE = 6;
+  const totalPages = Math.ceil(products.length / SEARCH_PER_PAGE);
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const pageProducts = products.slice((safePage - 1) * SEARCH_PER_PAGE, safePage * SEARCH_PER_PAGE);
+
+  const buttons = [];
+  for (const p of pageProducts) {
+    const stock = stockMap.get(String(p._id));
+    const inStock = stock === '∞' || (typeof stock === 'number' && stock > 0);
+    const stockBadge = inStock ? '' : (lang === 'en' ? ' (out of stock)' : ' (нет)');
+    const pName = (lang === 'en' && p.nameEn ? p.nameEn : p.name) || 'Товар';
+
+    const isFlashSale = Boolean(
+      p.flashSale?.enabled &&
+      p.flashSale.expiresAt &&
+      new Date(p.flashSale.expiresAt) > new Date() &&
+      p.flashSale.discountPercent > 0
+    );
+
+    let displayPrice = p.price;
+    let saleBadge = '';
+    if (isFlashSale) {
+      displayPrice = Number((p.price * (1 - p.flashSale.discountPercent / 100)).toFixed(2));
+      saleBadge = '🔥 ';
+    }
+
+    const label = `${saleBadge}${p.icon || '📦'} ${pName} — ${displayPrice} USDT${stockBadge}`;
+    buttons.push([Markup.button.callback(label, `shop:product:${p._id}:1`)]);
+  }
+
+  if (totalPages > 1) {
+    const navRow = [];
+    if (safePage > 1) {
+      navRow.push(Markup.button.callback('⬅️', `shop:search_page:${safePage - 1}`));
+    }
+    navRow.push(Markup.button.callback(`${safePage}/${totalPages}`, 'shop:noop'));
+    if (safePage < totalPages) {
+      navRow.push(Markup.button.callback('➡️', `shop:search_page:${safePage + 1}`));
+    }
+    buttons.push(navRow);
+  }
+
+  buttons.push([
+    Markup.button.callback(t('btn_search_again') || '🔍 Другой поиск', 'shop:search'),
+    Markup.button.callback(lang === 'en' ? '🛍 Catalog' : '🛍 В каталог', 'menu:shop'),
+  ]);
+
+  const resultsPattern = t('search_results') || '🔍 <b>Результаты поиска по запросу «{query}»</b> (найдено: {count}):\n\nНажмите на товар ниже для просмотра и покупки:';
+  const text = resultsPattern
+    .replace('{query}', escapeHtml(query))
+    .replace('{count}', products.length);
+
+  const keyboard = Markup.inlineKeyboard(buttons);
+
+  if (targetMsgId) {
+    try {
+      await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, { parse_mode: 'HTML', ...keyboard });
+      return;
+    } catch (_) {}
+  }
+
+  const sent = await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  if (sent?.message_id) ctx.session.customerSearchMsgId = sent.message_id;
+};
+
 const toggleShopMainOutOfStock = async (ctx) => {
   ctx.session = ctx.session || {};
   ctx.session.shopMainOutOfStockCollapsed = !ctx.session.shopMainOutOfStockCollapsed;
@@ -1761,4 +1899,6 @@ module.exports = {
   showTermsInfo,
   showProductDescInfo,
   startCheckoutPromo,
+  startCustomerSearch,
+  handleCustomerSearch,
 };

@@ -13,6 +13,21 @@ module.exports = (bot) => {
     await shopScene.showShopPage(ctx);
   });
 
+  bot.action('shop:search', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await shopScene.startCustomerSearch(ctx);
+  });
+
+  bot.action(/^shop:search_page:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    const page = parseInt(ctx.match[1], 10) || 1;
+    await shopScene.handleCustomerSearch(ctx, undefined, page);
+  });
+
+  bot.action('shop:noop', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+  });
+
   bot.action(/^shop:category:([^:]+)(?::(\d+))?$/, async (ctx) => {
     const categoryId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;

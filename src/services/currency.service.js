@@ -18,14 +18,14 @@ const loadFromDB = async () => {
   }
 };
 
-// Получает актуальный курс из API
+// Получает актуальный курс из API (с резервным источником ЦБ РФ)
 const fetchRate = async () => {
   try {
     const res = await axios.get('https://open.er-api.com/v6/latest/USD', {
       timeout: 8000,
     });
     const rubRate = res.data?.rates?.RUB;
-    if (!rubRate) throw new Error('RUB rate not found in response');
+    if (!rubRate || typeof rubRate !== 'number') throw new Error('RUB rate not found in response');
 
     // Обновляем в БД
     const updated = await ExchangeRate.findOneAndUpdate(
@@ -34,22 +34,45 @@ const fetchRate = async () => {
       { upsert: true, new: true }
     );
     cachedRate = updated;
-    logger.info(`💱 Курс обновлён: 1 USD = ${rubRate} ₽`);
+    logger.info(`💱 Курс обновлён (OpenER API): 1 USD = ${rubRate} ₽`);
     return rubRate;
-  } catch (err) {
-    logger.warn(`⚠️ Не удалось обновить курс: ${err.message}. Используем кэш.`);
-    return cachedRate?.rub || 90; // Фолбэк
+  } catch (primaryErr) {
+    logger.warn(`⚠️ Не удалось обновить курс из первичного API (${primaryErr.message}). Запрашиваем резервный API ЦБ РФ...`);
+    try {
+      const cbrRes = await axios.get('https://www.cbr-xml-daily.ru/daily_json.js', { timeout: 8000 });
+      const cbrUsd = cbrRes.data?.Valute?.USD?.Value;
+      if (cbrUsd && typeof cbrUsd === 'number') {
+        const roundedRate = Math.round(cbrUsd * 100) / 100;
+        const updated = await ExchangeRate.findOneAndUpdate(
+          { base: 'USD' },
+          { rub: roundedRate, updatedAt: new Date() },
+          { upsert: true, new: true }
+        );
+        cachedRate = updated;
+        logger.info(`💱 Курс обновлён из резервного источника (ЦБ РФ): 1 USD = ${roundedRate} ₽`);
+        return roundedRate;
+      }
+    } catch (cbrErr) {
+      logger.warn(`⚠️ Резервный источник курса ЦБ РФ также недоступен: ${cbrErr.message}`);
+    }
+
+    if (cachedRate?.rub) {
+      logger.info(`💱 Используем сохранённый ранее в БД курс: 1 USD = ${cachedRate.rub} ₽`);
+      return cachedRate.rub;
+    }
+
+    return 95; // Фолбэк при пустой БД
   }
 };
 
 // Конвертация USD → RUB
 const toRub = (usdAmount) => {
-  const rate = cachedRate?.rub || 90;
+  const rate = cachedRate?.rub || 95;
   return (usdAmount * rate).toFixed(0);
 };
 
 // Получить текущий курс
-const getRate = () => cachedRate?.rub || 90;
+const getRate = () => cachedRate?.rub || 95;
 
 // Время последнего обновления
 const getUpdatedAt = () => {
