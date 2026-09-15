@@ -714,6 +714,12 @@ module.exports = (bot) => {
     await usersScene.showAllUsers(ctx, parseInt(ctx.match[1]));
   });
 
+  // Пользователи с положительным балансом (>0 USDT)
+  bot.action(/^admin:users:with_balance(?::(\d+))?$/, adminMiddleware, async (ctx) => {
+    const page = ctx.match[1] ? parseInt(ctx.match[1], 10) : 1;
+    await usersScene.showUsersWithBalance(ctx, page);
+  });
+
   // Глобальный поиск (отдельная кнопка)
   bot.action('admin:search', adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
@@ -741,6 +747,14 @@ module.exports = (bot) => {
   bot.action(/^admin:user:balance:(.+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     await usersScene.startChangeBalance(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:user:zero_balance:(.+)$/, adminMiddleware, async (ctx) => {
+    await usersScene.confirmZeroBalance(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:user:zero_balance_confirm:(.+)$/, adminMiddleware, async (ctx) => {
+    await usersScene.executeZeroBalance(ctx, ctx.match[1]);
   });
 
   bot.action(/^admin:user:(ban|unban):(.+)$/, adminMiddleware, async (ctx) => {

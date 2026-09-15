@@ -8,6 +8,8 @@ const { escapeHtml, formatDateTimeMSK, formatDateMSK, fmtUSDT, safeEdit } = requ
 const i18n = require('../../middlewares/i18n');
 const logger = require('../../../config/logger');
 const { runBroadcastQueue } = require('../../../services/rateLimiter.service');
+const currencyService = require('../../../services/currency.service');
+const { invalidateUserCache } = require('../../middlewares/user');
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -59,6 +61,7 @@ const showAllUsers = async (ctx, page = 1) => {
   if (safePage < totalPages) navRow.push(Markup.button.callback('➡️', `admin:users:page:${safePage + 1}`));
   if (navRow.length) buttons.push(navRow);
 
+  buttons.push([Markup.button.callback('💰 Проверить балансы (>0 USDT)', 'admin:users:with_balance:1')]);
   buttons.push([Markup.button.callback('📢 Массовая рассылка всем', 'admin:custom_broadcast:start')]);
   buttons.push([
     Markup.button.callback('🔍 Поиск', 'admin:search'),
@@ -70,6 +73,82 @@ const showAllUsers = async (ctx, page = 1) => {
     await ctx.editMessageText(text, opts);
   } catch (_) {
     await ctx.reply(text, opts).catch(() => {});
+  }
+};
+
+// ─── Список пользователей с положительным балансом ─────────────────────────
+const showUsersWithBalance = async (ctx, page = 1) => {
+  try {
+    const PAGE_SIZE_BALANCE = 10;
+    const pageNum = parseInt(page, 10) || 1;
+
+    // Подсчет общего числа таких пользователей и суммы их балансов
+    const [count, aggregateResult] = await Promise.all([
+      User.countDocuments({ balance: { $gt: 0 } }),
+      User.aggregate([
+        { $match: { balance: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: '$balance' } } },
+      ]),
+    ]);
+
+    const totalSum = aggregateResult[0]?.total || 0;
+    const totalRub = currencyService.toRub(totalSum);
+    const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE_BALANCE));
+    const safePage = Math.min(Math.max(1, pageNum), totalPages);
+
+    const users = count > 0
+      ? await User.find({ balance: { $gt: 0 } })
+          .sort({ balance: -1 })
+          .skip((safePage - 1) * PAGE_SIZE_BALANCE)
+          .limit(PAGE_SIZE_BALANCE)
+          .select('telegramId username firstName isBanned role balance')
+          .lean()
+      : [];
+
+    const pageStr = totalPages > 1 ? ` (стр. ${safePage}/${totalPages})` : '';
+    let text =
+      `💰 <b>Пользователи с балансом (> 0 USDT)</b>${pageStr}\n\n` +
+      `<blockquote>👥 Всего пользователей: ${count} чел.\n` +
+      `💵 Общий баланс на счетах: ${totalSum.toFixed(2)} USDT (~${totalRub} ₽)</blockquote>\n\n`;
+
+    if (users.length === 0) {
+      text += '<i>Пользователей с положительным балансом не найдено.</i>';
+    }
+
+    const buttons = [];
+
+    for (const user of users) {
+      const statusIcon = user.isBanned ? '🚫' : user.role === 'admin' ? '🔧' : '👤';
+      const cleanName = (user.firstName || '').replace(/[\r\n\t]+/g, ' ').trim();
+      const namePart = cleanName + (user.username ? ` (@${user.username})` : ` [${user.telegramId}]`);
+      const displayName = (namePart.trim() || `ID: ${user.telegramId}`).substring(0, 24);
+      buttons.push([
+        Markup.button.callback(
+          `${statusIcon} 💰 ${displayName} — ${fmtUSDT(user.balance)}`,
+          `admin:user:view:${user._id}`
+        ),
+      ]);
+    }
+
+    // Пагинация
+    const navRow = [];
+    if (safePage > 1) {
+      navRow.push(Markup.button.callback('⬅️', `admin:users:with_balance:${safePage - 1}`));
+    }
+    if (safePage < totalPages) {
+      navRow.push(Markup.button.callback('➡️', `admin:users:with_balance:${safePage + 1}`));
+    }
+    if (navRow.length) {
+      buttons.push(navRow);
+    }
+
+    buttons.push([Markup.button.callback('⬅️ Все пользователи', 'admin:users')]);
+
+    const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+    await safeEdit(ctx, text, opts);
+  } catch (err) {
+    logger.error(`Error in showUsersWithBalance: ${err.message}`);
+    await answerCbSafe(ctx, '❌ Ошибка при загрузке списка балансов', { show_alert: true });
   }
 };
 
@@ -247,6 +326,13 @@ const showUserProfile = async (ctx, userId) => {
 
     const buttons = [
       [Markup.button.callback('💰 Изменить баланс', `admin:user:balance:${user._id}`)],
+    ];
+
+    if (userBalance > 0) {
+      buttons.push([Markup.button.callback('🧹 Списать всё (Обнулить)', `admin:user:zero_balance:${user._id}`)]);
+    }
+
+    buttons.push(
       [
         user.isBanned
           ? Markup.button.callback('✅ Разбанить', `admin:user:unban:${user._id}`)
@@ -262,14 +348,15 @@ const showUserProfile = async (ctx, userId) => {
       ],
       [Markup.button.callback('🕹 Перехватить управление', `admin:takeover:start:${user._id}`)],
       [Markup.button.callback('🛡 Управление гарантией', `admin:user:warranty:${user._id}`)],
-      [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)],
-    ];
+      [Markup.button.callback('📋 История транзакций', `admin:user:txs:${user._id}`)]
+    );
 
     if (cleanUsername) {
       buttons.push([Markup.button.url(`👤 Открыть @${cleanUsername} в Telegram`, `https://t.me/${encodeURIComponent(cleanUsername)}`)]);
     }
 
     buttons.push([Markup.button.callback('📨 Написать в боте', `admin:msg:user:${user.telegramId}`)]);
+    buttons.push([Markup.button.callback('💰 К списку балансов', 'admin:users:with_balance:1')]);
     buttons.push([Markup.button.callback('⬅️ К пользователям', 'admin:users')]);
 
     const opts = { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard(buttons) };
@@ -357,6 +444,94 @@ const handleBalanceChange = async (ctx) => {
     }
   );
   return true;
+};
+
+// Подтверждение полного списания (обнуления) баланса
+const confirmZeroBalance = async (ctx, userId) => {
+  try {
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
+    }
+
+    const user = await User.findById(userId).lean();
+    if (!user) return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
+
+    const userBalance = typeof user.balance === 'number' ? user.balance : (parseFloat(user.balance) || 0);
+    if (userBalance <= 0) {
+      await answerCbSafe(ctx, 'ℹ️ У пользователя нет положительного баланса', { show_alert: true });
+      return showUserProfile(ctx, userId);
+    }
+
+    const cleanUsername = user.username ? String(user.username).replace(/^@+/, '').trim() : '';
+    const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').replace(/[\r\n\t]+/g, ' ').trim() || 'Пользователь';
+    const displayName = cleanUsername
+      ? `${escapeHtml(fullName)} (@${escapeHtml(cleanUsername)})`
+      : `${escapeHtml(fullName)} [${user.telegramId}]`;
+
+    const text =
+      `⚠️ Вы действительно хотите полностью списать баланс <b>${fmtUSDT(user.balance)}</b> у пользователя ${displayName}?\n\n` +
+      `Деньги будут списаны со счёта, а операция записана в журнал транзакций.`;
+
+    const buttons = [
+      [Markup.button.callback('✅ Да, обнулить баланс', `admin:user:zero_balance_confirm:${user._id}`)],
+      [Markup.button.callback('❌ Отмена', `admin:user:view:${user._id}`)],
+    ];
+
+    await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  } catch (err) {
+    logger.error(`Error in confirmZeroBalance: ${err.message}`);
+    await answerCbSafe(ctx, '❌ Ошибка при подготовке списания баланса', { show_alert: true });
+  }
+};
+
+// Выполнение списания баланса в ноль
+const executeZeroBalance = async (ctx, userId) => {
+  try {
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return answerCbSafe(ctx, '❌ Пользователь не найден', { show_alert: true });
+
+    const oldBalance = typeof user.balance === 'number' ? user.balance : (parseFloat(user.balance) || 0);
+    if (oldBalance <= 0) {
+      await answerCbSafe(ctx, 'ℹ️ У пользователя нет положительного баланса', { show_alert: true });
+      return showUserProfile(ctx, userId);
+    }
+
+    // Атомарно обнуляем баланс только если он всё ещё > 0
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: userId, balance: { $gt: 0 } },
+      { $set: { balance: 0 } },
+      { new: false }
+    );
+
+    if (!updatedUser) {
+      await answerCbSafe(ctx, '⚠️ Баланс уже был изменён или списан', { show_alert: true });
+      return showUserProfile(ctx, userId);
+    }
+
+    const debitedAmount = typeof updatedUser.balance === 'number'
+      ? updatedUser.balance
+      : (parseFloat(updatedUser.balance) || oldBalance);
+
+    await new Transaction({
+      userId: updatedUser._id,
+      type: 'manual_debit',
+      amount: -debitedAmount,
+      description: 'Полное списание баланса администратором',
+    }).save();
+
+    invalidateUserCache(updatedUser.telegramId);
+
+    await answerCbSafe(ctx, `✅ Баланс (${debitedAmount.toFixed(2)} USDT) успешно обнулён!`, { show_alert: true });
+    await showUserProfile(ctx, userId);
+  } catch (err) {
+    logger.error(`Error in executeZeroBalance: ${err.message}`);
+    await answerCbSafe(ctx, '❌ Ошибка при списании баланса', { show_alert: true });
+    await showUserProfile(ctx, userId).catch(() => {});
+  }
 };
 
 // Бан / разбан / повышение / понижение
@@ -747,6 +922,9 @@ const execUserWarrantyReset = async (ctx, orderId, page = 1) => {
 
 module.exports = {
   showAllUsers,
+  showUsersWithBalance,
+  confirmZeroBalance,
+  executeZeroBalance,
   showGlobalSearch,
   handleGlobalSearch,
   showUserProfile,

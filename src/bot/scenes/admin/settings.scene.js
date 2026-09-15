@@ -121,6 +121,7 @@ const showSettings = async (ctx) => {
     [Markup.button.callback('⏰ Интервал сводки (мин)', 'admin:settings:edit:adminDigestIntervalMinutes')],
     [Markup.button.callback('🔄 Обновить курс вручную', 'admin:settings:refresh_rate')],
     [Markup.button.callback('📜 Сбросить согласие Оферты у всех', 'admin:settings:reset_tos')],
+    [Markup.button.callback('💰 Балансы пользователей', 'admin:users:with_balance:1')],
     [Markup.button.callback(modeBtnStr, 'admin:settings:toggle_maintenance')],
     [Markup.button.callback('⬅️ В панель', 'admin:main')]
   ];
