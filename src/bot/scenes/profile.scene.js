@@ -1,6 +1,5 @@
 const { Markup } = require('telegraf');
 const Order = require('../../models/Order');
-const Transaction = require('../../models/Transaction');
 const User = require('../../models/User');
 const TopupRequest = require('../../models/TopupRequest');
 const { toRub } = require('../../services/currency.service');
@@ -10,6 +9,19 @@ const { getAllWithProgress, renderAchievementsText } = require('../../services/a
 
 const PER_PAGE = 5;
 const ACTIVE_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmation', 'activating', 'retry', 'preorder_pending'];
+
+const STATUS_EMOJIS = {
+  preorder_pending:      '⏳',
+  pending:               '⏳',
+  awaiting_token:        '🔑',
+  awaiting_confirmation: '👁',
+  activating:            '⚙️',
+  completed:             '✅',
+  cancelled:             '❌',
+  failed:                '💔',
+  retry:                 '🔄',
+  disputed:              '⚖️',
+};
 
 // Уровень пользователя по сумме потраченного.
 // Возвращает { emoji, labelKey } - вызывающий код использует ctx.t(labelKey)
@@ -33,19 +45,19 @@ const localizedOrderStatus = (ctx, status) => {
 const showProfile = async (ctx) => {
   const user = ctx.user;
 
-  // Оба запроса параллельно
-  const [ordersCount, activeOrder] = await Promise.all([
+  // Все запросы параллельно
+  const [ordersCount, activeOrder, referralsCount] = await Promise.all([
     Order.countDocuments({ userId: user._id }),
     // Незавершённый заказ (awaiting_token)
     Order.findOne({ userId: user._id, status: 'awaiting_token' })
       .populate('productId', 'name icon')
       .lean(),
+    User.countDocuments({ referredBy: user._id }),
   ]);
-  const createdAt = new Date(user.createdAt).toLocaleDateString('ru-RU');
-  const level = getLevel(user.totalSpent);
-
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
+  const createdAt = new Date(user.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU');
+  const level = getLevel(user.totalSpent);
   const levelLabel = t(level.labelKey).replace(/^[^\s]+\s/, ''); // убираем эмодзи в начале для подписи
 
   let bannerText = '';
@@ -65,6 +77,7 @@ const showProfile = async (ctx) => {
     `📦 ${t('profile_orders')}: ${ordersCount}\n` +
     `💸 ${t('profile_spent')}: ${user.totalSpent.toFixed(2)} USDT\n\n` +
     `🔗 ${t('profile_ref_code')}: <code>${escapeHtml(user.referralCode)}</code>\n` +
+    `👥 ${lang === 'en' ? 'Invited friends' : 'Приглашено друзей'}: <b>${referralsCount}</b>\n` +
     `📅 ${t('profile_joined')}: ${createdAt}</blockquote>`;
 
   const btnStyleLabel = user.btnStyle === 'classic'
@@ -84,9 +97,10 @@ const showProfile = async (ctx) => {
   ]);
   buttons.push([
     Markup.button.callback(lang === 'en' ? '🎟 Promo Code' : '🎟 Промокод', 'user:activate_promo'),
-    Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements'),
+    Markup.button.callback(t('btn_referral'), 'profile:referral'),
   ]);
   buttons.push([
+    Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements'),
     Markup.button.callback(btnStyleLabel, 'profile:toggle_btn_style'),
   ]);
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
@@ -146,20 +160,25 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
     return await safeEdit(ctx, emptyMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) });
   }
 
+  const lang = ctx.user?.language || 'ru';
   let text = `${filterLabel}  ·  ${t('orders_page')} ${page}/${totalPages}\n\n`;
   for (const order of orders) {
-    const date = new Date(order.createdAt).toLocaleDateString('ru-RU');
+    const date = new Date(order.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU');
     const status = localizedOrderStatus(ctx, order.status);
-    const productName = escapeHtml(order.productId?.name || 'Товар удалён');
+    const rawName = (lang === 'en' && order.productId?.nameEn ? order.productId.nameEn : order.productId?.name) || (lang === 'en' ? 'Deleted item' : 'Товар удалён');
+    const productName = escapeHtml(rawName);
     const qtyText = order.qty > 1 ? ` (x${order.qty})` : '';
     text += `<blockquote>${escapeHtml(order.productId?.icon || '📦')} <b>${productName}${qtyText}</b>\n`;
     text += `   ${status}  ·  ${order.price} USDT  ·  ${date}\n`;
     text += `   <code>${order._id}</code></blockquote>\n\n`;
   }
-
-  const detailBtns = orders.map(o => [
-    Markup.button.callback(`🔍 Заказ #${o._id.toString().slice(-6)}: ${escapeHtml(o.productId?.name || 'Товар').slice(0, 20)}`, `profile:order:detail:${o._id}`)
-  ]);
+  const detailBtns = orders.map((o) => {
+    const rawName = (lang === 'en' && o.productId?.nameEn ? o.productId.nameEn : o.productId?.name) || (lang === 'en' ? 'Deleted item' : 'Товар удалён');
+    const statusEmoji = STATUS_EMOJIS[o.status] || '📦';
+    const trimmedName = rawName.length > 18 ? rawName.slice(0, 17) + '…' : rawName;
+    const btnLabel = `🧾 ${trimmedName} · ${o.price} USDT · ${statusEmoji}`;
+    return [Markup.button.callback(btnLabel, `profile:order:detail:${o._id}`)];
+  });
 
   // Кнопки депо/деталей и фильтра
   const buttons = [...detailBtns];
@@ -198,20 +217,28 @@ const showAchievements = async (ctx) => {
 };
 
 const showOrderDetail = async (ctx, orderId) => {
+  const mongoose = require('mongoose');
+  const lang = ctx.user?.language || 'ru';
+
+  if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+    return ctx.answerCbQuery(lang === 'en' ? '❌ Order not found' : '❌ Заказ не найден', { show_alert: true });
+  }
+
   const order = await Order.findById(orderId)
     .populate('productId')
     .populate('keyId')
     .populate('replacedKeyId');
 
-  if (!order || order.userId.toString() !== ctx.user._id.toString()) {
-    return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
+  if (!order || !ctx.user?._id || order.userId.toString() !== ctx.user._id.toString()) {
+    return ctx.answerCbQuery(lang === 'en' ? '❌ Order not found' : '❌ Заказ не найден', { show_alert: true });
   }
 
-  const lang = ctx.user?.language || 'ru';
-
   const product = order.productId;
-  const productName = escapeHtml(product?.name || 'Товар');
-  const date = new Date(order.createdAt).toLocaleDateString('ru-RU');
+  const productName = escapeHtml(
+    (lang === 'en' && product?.nameEn ? product.nameEn : product?.name) ||
+    (lang === 'en' ? 'Product' : 'Товар')
+  );
+  const date = new Date(order.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU');
   const statusLbl = localizedOrderStatus(ctx, order.status);
 
   const warrantyDays = order.warrantyDays ?? product?.warrantyDays ?? 5;
@@ -222,53 +249,85 @@ const showOrderDetail = async (ctx, orderId) => {
 
   let warrantyStr = '';
   if (order.status === 'completed' && warrantyDays > 0) {
+    const warrantyTitle = lang === 'en' ? 'Warranty' : 'Гарантия';
     if (isWarrantyActive) {
       const diffMs = warrantyExpiresAt.getTime() - now.getTime();
       const daysLeft = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-      warrantyStr = `🛡 <b>Гарантия:</b> ${lang === 'en' ? `Active (${daysLeft} of ${warrantyDays} days left)` : `Активна (осталось ${daysLeft} дн. из ${warrantyDays})`}`;
+      warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Active (${daysLeft} of ${warrantyDays} days left)` : `Активна (осталось ${daysLeft} дн. из ${warrantyDays})`}`;
     } else {
-      warrantyStr = `🛡 <b>Гарантия:</b> ${lang === 'en' ? `Expired (${warrantyDays} days)` : `Истёкла (${warrantyDays} дн.)`}`;
+      warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Expired (${warrantyDays} days)` : `Истёкла (${warrantyDays} дн.)`}`;
     }
   }
 
   const subscriptionDays = order.subscriptionDays ?? product?.subscriptionDays ?? 0;
   let subscriptionStr = '';
   if (order.status === 'completed' && subscriptionDays > 0) {
+    const subscriptionTitle = lang === 'en' ? 'Subscription' : 'Подписка';
     const subscriptionExpiresAt = new Date(confirmedBase.getTime() + subscriptionDays * 24 * 60 * 60 * 1000);
     const isSubActive = now < subscriptionExpiresAt;
+    const untilDate = subscriptionExpiresAt.toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU');
     if (isSubActive) {
       const subDiffMs = subscriptionExpiresAt.getTime() - now.getTime();
       const subDaysLeft = Math.max(1, Math.ceil(subDiffMs / (1000 * 60 * 60 * 24)));
-      const untilDate = subscriptionExpiresAt.toLocaleDateString('ru-RU');
-      subscriptionStr = `⏳ <b>Подписка:</b> ${lang === 'en' ? `Active (${subDaysLeft} of ${subscriptionDays} days left, until ${untilDate})` : `Активна (осталось ${subDaysLeft} дн. из ${subscriptionDays}, до ${untilDate})`}`;
+      subscriptionStr = `⏳ <b>${subscriptionTitle}:</b> ${lang === 'en' ? `Active (${subDaysLeft} of ${subscriptionDays} days left, until ${untilDate})` : `Активна (осталось ${subDaysLeft} дн. из ${subscriptionDays}, до ${untilDate})`}`;
     } else {
-      subscriptionStr = `⏳ <b>Подписка:</b> ${lang === 'en' ? `Expired (${subscriptionDays} days)` : `Истёкла (${subscriptionDays} дн.)`}`;
+      subscriptionStr = `⏳ <b>${subscriptionTitle}:</b> ${lang === 'en' ? `Expired (${subscriptionDays} days)` : `Истёкла (${subscriptionDays} дн.)`}`;
     }
   }
 
   let replacementStr = '';
+  const repTitle = lang === 'en' ? 'Replacement status' : 'Статус замены';
   if (order.replacementStatus === 'pending') {
-    replacementStr = `\n⏳ <b>Статус замены:</b> На рассмотрении модератором`;
+    replacementStr = `\n⏳ <b>${repTitle}:</b> ${lang === 'en' ? 'Under moderator review' : 'На рассмотрении модератором'}`;
   } else if (order.replacementStatus === 'approved') {
-    replacementStr = `\n✅ <b>Статус замены:</b> Заявка одобрена (новый аккаунт выдан)`;
+    replacementStr = `\n✅ <b>${repTitle}:</b> ${lang === 'en' ? 'Request approved (new account issued)' : 'Заявка одобрена (новый аккаунт выдан)'}`;
   } else if (order.replacementStatus === 'rejected') {
     const reason = order.replacementRejectReason ? ` (${escapeHtml(order.replacementRejectReason)})` : '';
-    replacementStr = `\n❌ <b>Статус замены:</b> Отклонена${reason}`;
+    replacementStr = `\n❌ <b>${repTitle}:</b> ${lang === 'en' ? 'Rejected' : 'Отклонена'}${reason}`;
   }
 
   let issuedDataStr = '';
   const itemValue = order.replacedKeyId?.value || order.deliveryData || order.keyId?.value;
+  const isCompleted = order.status === 'completed';
+
   if (itemValue) {
     const { formatDigitalItem } = require('../utils/ui');
-    issuedDataStr = `\n\n📦 <b>Выданные данные товара:</b>\n${formatDigitalItem(itemValue, lang)}`;
+    const formattedData = formatDigitalItem(itemValue, lang);
+
+    if (isCompleted) {
+      const dataHeader = lang === 'en' ? '🔐 <b>Account access details:</b>' : '🔐 <b>Данные для доступа к аккаунту:</b>';
+      const fullHeader = lang === 'en' ? '📋 <b>Full credentials (tap to copy all):</b>' : '📋 <b>Вся связка (нажмите для копирования целиком):</b>';
+      const copyTip = lang === 'en'
+        ? '💡 <i>Tap any field above to copy it, or tap the block below to copy full credentials.</i>'
+        : '💡 <i>Нажмите на нужное поле выше для копирования или на блок ниже, чтобы скопировать всю связку целиком.</i>';
+
+      const maxPreLen = 1500;
+      const safeCopyVal = itemValue.length > maxPreLen ? `${itemValue.slice(0, maxPreLen)}...` : itemValue;
+
+      issuedDataStr =
+        `\n\n${dataHeader}\n` +
+        `${formattedData}\n\n` +
+        `${fullHeader}\n` +
+        `<pre><code>${escapeHtml(safeCopyVal)}</code></pre>\n` +
+        `${copyTip}`;
+    } else {
+      const genericHeader = lang === 'en' ? '📦 <b>Issued data:</b>' : '📦 <b>Выданные данные товара:</b>';
+      issuedDataStr = `\n\n${genericHeader}\n${formattedData}`;
+    }
   }
 
+  const orderTitle = lang === 'en' ? 'Order Details' : 'Детали заказа';
+  const itemLabel = lang === 'en' ? 'Product' : 'Товар';
+  const sumLabel = lang === 'en' ? 'Amount' : 'Сумма';
+  const dateLabel = lang === 'en' ? 'Date' : 'Дата';
+  const statusLabel = lang === 'en' ? 'Status' : 'Статус';
+
   const text =
-    `📋 <b>Детали заказа</b> <code>${order._id}</code>\n\n` +
-    `📦 <b>Товар:</b> ${escapeHtml(product?.icon || '📦')} ${productName}\n` +
-    `💰 <b>Сумма:</b> ${order.price} USDT\n` +
-    `📅 <b>Дата:</b> ${date}\n` +
-    `🔘 <b>Статус:</b> ${statusLbl}\n` +
+    `📋 <b>${orderTitle}</b> <code>${order._id}</code>\n\n` +
+    `📦 <b>${itemLabel}:</b> ${escapeHtml(product?.icon || '📦')} ${productName}\n` +
+    `💰 <b>${sumLabel}:</b> ${order.price} USDT\n` +
+    `📅 <b>${dateLabel}:</b> ${date}\n` +
+    `🔘 <b>${statusLabel}:</b> ${statusLbl}\n` +
     (warrantyStr ? `${warrantyStr}\n` : '') +
     (subscriptionStr ? `${subscriptionStr}\n` : '') +
     replacementStr +
@@ -276,15 +335,25 @@ const showOrderDetail = async (ctx, orderId) => {
 
   const buttons = [];
 
+  // Кнопка "Прислать данные в чат" для выполненных заказов с выданными данными
+  if (isCompleted && itemValue) {
+    buttons.push([
+      Markup.button.callback(
+        lang === 'en' ? '📨 Send data to chat' : '📨 Прислать данные в чат',
+        `profile:order:send_data:${order._id}`
+      ),
+    ]);
+  }
+
   if (order.status === 'preorder_pending') {
-    buttons.push([Markup.button.callback('❌ Отменить предзаказ (вернуть деньги)', `profile:cancel_preorder:${order._id}`)]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '❌ Cancel pre-order (refund)' : '❌ Отменить предзаказ (вернуть деньги)', `profile:cancel_preorder:${order._id}`)]);
   }
 
   if (isWarrantyActive && order.replacementStatus === 'none') {
-    buttons.push([Markup.button.callback('🔄 Запросить замену по гарантии', `profile:warranty:claim:${order._id}`)]);
+    buttons.push([Markup.button.callback(lang === 'en' ? '🔄 Request warranty replacement' : '🔄 Запросить замену по гарантии', `profile:warranty:claim:${order._id}`)]);
   }
 
-  buttons.push([Markup.button.callback('⬅️ К заказам', 'profile:orders:all:1')]);
+  buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ To orders' : '⬅️ К заказам', 'profile:orders:all:1')]);
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);
@@ -492,4 +561,5 @@ module.exports = {
   showAchievements,
   cancelPreorder,
   toggleBtnStyle,
+  STATUS_EMOJIS,
 };

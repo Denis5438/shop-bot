@@ -94,6 +94,71 @@ const stockIndicator = (stock, t) => {
   return t ? t('shop_out_of_stock') : '⛔ Out of stock';
 };
 
+/**
+ * Бейджи товара для каталога и карточки товара:
+ * 1. 🔥 -X% — активен Flash Sale (flashSale.enabled && expiresAt > now && discountPercent > 0)
+ * 2. ⚡      — моментальная выдача (type: key, deliveryMethod: ready_account, поставщики jaha/canboso/akunding/trumpstore)
+ * 3. 🆕     — новинка (добавлен за последние 7 дней)
+ */
+const getProductBadges = (product) => {
+  if (!product) return { badges: [], badgeStr: '', isFlash: false, isInstant: false, isNew: false };
+
+  const now = Date.now();
+  const badges = [];
+
+  const isFlash = Boolean(
+    product.flashSale?.enabled &&
+    product.flashSale.expiresAt &&
+    new Date(product.flashSale.expiresAt).getTime() > now &&
+    product.flashSale.discountPercent > 0
+  );
+  if (isFlash) {
+    badges.push({
+      type: 'flash',
+      badge: `🔥 -${product.flashSale.discountPercent}%`,
+      tagRu: `🔥 Скидка -${product.flashSale.discountPercent}%`,
+      tagEn: `🔥 Sale -${product.flashSale.discountPercent}%`,
+    });
+  }
+
+  const isInstant = Boolean(
+    product.type === 'key' ||
+    product.deliveryMethod === 'ready_account' ||
+    ['jaha', 'canboso', 'akunding', 'trumpstore'].includes(product.provider)
+  );
+  if (isInstant) {
+    badges.push({
+      type: 'instant',
+      badge: '⚡',
+      tagRu: '⚡ Моментально',
+      tagEn: '⚡ Instant delivery',
+    });
+  }
+
+  const isNew = Boolean(
+    product.createdAt &&
+    new Date(product.createdAt).getTime() >= (now - 7 * 24 * 60 * 60 * 1000)
+  );
+  if (isNew) {
+    badges.push({
+      type: 'new',
+      badge: '🆕',
+      tagRu: '🆕 Новинка',
+      tagEn: '🆕 New',
+    });
+  }
+
+  const badgeStr = badges.length > 0 ? badges.map((b) => b.badge).join(' ') + ' ' : '';
+
+  return {
+    badges,
+    badgeStr,
+    isFlash,
+    isInstant,
+    isNew,
+  };
+};
+
 const getStock = async (product, autoKeysPrecomputed = null) => {
   const autoKeys = autoKeysPrecomputed !== null
     ? autoKeysPrecomputed
@@ -253,7 +318,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   }
 
   const products = await Product.find({ categoryId, isActive: true })
-    .select('name nameEn icon price costPrice type manualStock provider sortOrder lastSoldAt createdAt flashSale officialPrice officialDiscountPercent')
+    .select('name nameEn icon price costPrice type manualStock provider sortOrder lastSoldAt createdAt flashSale officialPrice officialDiscountPercent deliveryMethod')
     .lean();
 
   if (products.length === 0) {
@@ -318,17 +383,12 @@ const showCategory = async (ctx, categoryId, page = 1) => {
       priceLabelStr = `̶$̶${product.price} ➔ $${effectivePrice}`;
     }
 
-    const isFlash = Boolean(
-      product.flashSale?.enabled &&
-      product.flashSale.expiresAt &&
-      new Date(product.flashSale.expiresAt) > new Date() &&
-      product.flashSale.discountPercent > 0
-    );
-    const flashPrefix = isFlash ? '⚡ ' : '';
+    const badgeInfo = getProductBadges(product);
+    const badgeStr = badgeInfo.badgeStr;
 
-    const maxNameLen = 18;
+    const maxNameLen = badgeStr.length > 8 ? 13 : (badgeStr.length > 0 ? 15 : 18);
     const shortName = displayName.length > maxNameLen ? displayName.substring(0, maxNameLen - 1) + '…' : displayName;
-    const label = `${flashPrefix}${product.icon || '📦'} ${shortName} · ${priceLabelStr} · 📦 ${stockBadge}`;
+    const label = `${badgeStr}${product.icon || '📦'} ${shortName} · ${priceLabelStr} · 📦 ${stockBadge}`;
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
     if (!isClassicTheme) btn.style = hasStock ? 'success' : 'danger';
     buttons.push([btn]);
@@ -450,12 +510,25 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     priceDisplay = `<s>${product.price} USDT</s> ➔ <b>${effectivePrice} USDT</b>${flashNote}${promoNote} (~${toRub(effectivePrice)} ₽)`;
   }
 
+  const badgeInfo = getProductBadges(product);
+  let badgesLine = '';
+  if (badgeInfo.badges.length > 0) {
+    const tagList = badgeInfo.badges.map((b) => {
+      if (b.type === 'flash') return lang === 'en' ? `🔥 Sale -${product.flashSale.discountPercent}%` : `🔥 Скидка -${product.flashSale.discountPercent}%`;
+      if (b.type === 'instant') return t('badge_instant') || (lang === 'en' ? '⚡ Instant' : '⚡ Моментально');
+      if (b.type === 'new') return t('badge_new') || (lang === 'en' ? '🆕 New' : '🆕 Новинка');
+      return lang === 'en' ? b.tagEn : b.tagRu;
+    }).join(' · ');
+    const tagTitle = t('badge_tags') || (lang === 'en' ? 'Tags' : 'Метки');
+    badgesLine = `\n🏷 <b>${tagTitle}:</b> ${tagList}`;
+  }
+
   const text =
     balanceHeader(ctx.user) +
     `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(name)}</b>\n\n` +
     `<blockquote>${priceLabel}: ${priceDisplay}${alertLine}\n` +
     `${stockLabel}: ${stockIndicator(stock, t)}\n` +
-    `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}${durationLine}</blockquote>` +
+    `${statusIcon} ${statusLabel}: <b>${originText}</b>${warrantyLine}${durationLine}${badgesLine}</blockquote>` +
     `${flashSaleBlock}\n\n` +
     `${description ? `<blockquote expandable>📝 ${escapeHtml(description)}</blockquote>\n` : ''}`;
 
@@ -1818,7 +1891,7 @@ const handleCustomerSearch = async (ctx, queryText = '', page = 1) => {
     isActive: true,
     $or: [{ name: reg }, { nameEn: reg }],
   })
-    .select('name nameEn icon price costPrice type manualStock provider flashSale officialPrice officialDiscountPercent categoryId')
+    .select('name nameEn icon price costPrice type manualStock provider flashSale officialPrice officialDiscountPercent categoryId createdAt deliveryMethod')
     .sort({ sortOrder: 1, createdAt: -1 })
     .lean();
 
@@ -1857,21 +1930,15 @@ const handleCustomerSearch = async (ctx, queryText = '', page = 1) => {
     const stockBadge = inStock ? '' : (lang === 'en' ? ' (out of stock)' : ' (нет)');
     const pName = (lang === 'en' && p.nameEn ? p.nameEn : p.name) || 'Товар';
 
-    const isFlashSale = Boolean(
-      p.flashSale?.enabled &&
-      p.flashSale.expiresAt &&
-      new Date(p.flashSale.expiresAt) > new Date() &&
-      p.flashSale.discountPercent > 0
-    );
-
+    const badgeInfo = getProductBadges(p);
     let displayPrice = p.price;
-    let saleBadge = '';
-    if (isFlashSale) {
+    if (badgeInfo.isFlash) {
       displayPrice = Number((p.price * (1 - p.flashSale.discountPercent / 100)).toFixed(2));
-      saleBadge = '🔥 ';
     }
 
-    const label = `${saleBadge}${p.icon || '📦'} ${pName} — ${displayPrice} USDT${stockBadge}`;
+    const maxNameLen = badgeInfo.badgeStr.length > 8 ? 14 : (badgeInfo.badgeStr.length > 0 ? 17 : 20);
+    const shortName = pName.length > maxNameLen ? pName.substring(0, maxNameLen - 1) + '…' : pName;
+    const label = `${badgeInfo.badgeStr}${p.icon || '📦'} ${shortName} · ${displayPrice} USDT${stockBadge}`;
     buttons.push([Markup.button.callback(label, `shop:product:${p._id}:1`)]);
   }
 
@@ -1938,4 +2005,5 @@ module.exports = {
   startCheckoutPromo,
   startCustomerSearch,
   handleCustomerSearch,
+  getProductBadges,
 };

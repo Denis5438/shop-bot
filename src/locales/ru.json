@@ -225,5 +225,17 @@
   "orders_tab_all": "☑️ Все",
   "orders_tab_active": "🔄 Активные",
   "seller_new_order_title": "📦 <b>Новый заказ!</b>\n\n{icon} <b>{productName}</b>\n📋 Заказ: <code>{orderId}</code>\n👤 Покупатель: {buyerTag}\n💰 Ваш доход: <b>+{payout} USDT</b>\n\n<blockquote>Выполните заказ и нажмите кнопку ниже.</blockquote>",
-  "seller_new_order_btn_complete": "✅ Выполнил заказ"
+  "seller_new_order_btn_complete": "✅ Выполнил заказ",
+  "btn_send_order_data": "📨 Прислать данные в чат",
+  "order_data_sent_alert": "✅ Данные аккаунта отправлены в чат!",
+  "order_data_not_available": "⚠️ Данные товара пока недоступны",
+  "order_data_full_line": "📋 Вся связка (нажмите для копирования целиком):",
+  "order_data_copy_tip": "💡 Нажмите на нужное поле выше для копирования или на блок ниже, чтобы скопировать всю связку целиком.",
+  "badge_instant": "⚡ Моментально",
+  "badge_new": "🆕 Новинка",
+  "badge_tags": "Метки",
+  "referral_active_buyers": "Совершили покупки",
+  "referral_conversion": "Конверсия в заказы",
+  "referral_earned_total": "Заработано с рефералов",
+  "referral_current_balance": "Ваш текущий баланс"
 }

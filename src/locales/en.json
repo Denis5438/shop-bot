@@ -225,5 +225,17 @@
   "orders_tab_all": "☑️ All",
   "orders_tab_active": "🔄 Active",
   "seller_new_order_title": "📦 <b>New order!</b>\n\n{icon} <b>{productName}</b>\n📋 Order: <code>{orderId}</code>\n👤 Buyer: {buyerTag}\n💰 Your income: <b>+{payout} USDT</b>\n\n<blockquote>Fulfill the order and click the button below.</blockquote>",
-  "seller_new_order_btn_complete": "✅ Order fulfilled"
+  "seller_new_order_btn_complete": "✅ Order fulfilled",
+  "btn_send_order_data": "📨 Send data to chat",
+  "order_data_sent_alert": "✅ Account data sent to chat!",
+  "order_data_not_available": "⚠️ Product data is not available yet",
+  "order_data_full_line": "📋 Full credentials (tap to copy all):",
+  "order_data_copy_tip": "💡 Tap any field above to copy it, or tap the block below to copy full credentials.",
+  "badge_instant": "⚡ Instant",
+  "badge_new": "🆕 New",
+  "badge_tags": "Tags",
+  "referral_active_buyers": "Active buyers",
+  "referral_conversion": "Order conversion",
+  "referral_earned_total": "Total earned from referrals",
+  "referral_current_balance": "Your current balance"
 }
