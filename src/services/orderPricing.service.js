@@ -6,7 +6,7 @@ const promoService = require('./promo.service');
  * Keeping this in one service prevents the cart from silently bypassing
  * smart-pricing and markdown rules used by the single-product checkout.
  */
-const getEffectivePrice = async (product, stockCount, activePromo = null) => {
+const getEffectivePrice = async (product, stockCount, activePromo = null, options = {}) => {
   const settings = await getSettings();
   let price = Number(product.price) || 0;
 
@@ -44,8 +44,10 @@ const getEffectivePrice = async (product, stockCount, activePromo = null) => {
   }
 
   if (activePromo) {
-    const discountRes = promoService.calculateDiscount(activePromo, price, product._id);
-    if (discountRes.valid) price = discountRes.finalPrice;
+    const qty = Math.max(1, parseInt(options?.qty, 10) || 1);
+    const totalAmount = price * qty;
+    const discountRes = await promoService.calculateDiscount(activePromo, totalAmount, product._id, options);
+    if (discountRes.valid) price = discountRes.finalPrice / qty;
   }
 
   return Number(price.toFixed(2));

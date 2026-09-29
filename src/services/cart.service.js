@@ -84,6 +84,7 @@ const getCart = async (user) => {
 
   let activePromo = null;
   let discountAmount = 0;
+  let promoReason = null;
   if (dbUser.activePromoCode) {
     activePromo = await PromoCode.findById(dbUser.activePromoCode).lean();
     if (
@@ -110,11 +111,23 @@ const getCart = async (user) => {
       ? validCart.filter((item) => String(item.productId) === String(activePromo.productId))
       : validCart;
     const eligibleSubtotal = roundMoney(eligibleItems.reduce((sum, item) => sum + item.baseTotal, 0));
-    const discountRes = promoService.calculateDiscount(
-      activePromo,
-      activePromo.productId ? eligibleSubtotal : subtotal,
-      activePromo.productId || null
-    );
+    const eligibleQty = eligibleItems.reduce((sum, item) => sum + item.qty, 0);
+
+    let discountRes = { valid: false };
+    const lang = dbUser.language || 'ru';
+    if (eligibleItems.length > 0) {
+      discountRes = await promoService.calculateDiscount(
+        activePromo,
+        eligibleSubtotal,
+        activePromo.productId || null,
+        { qty: eligibleQty, userId: dbUser._id, lang }
+      );
+      if (!discountRes.valid) promoReason = discountRes.reason;
+    } else {
+      promoReason = lang === 'en'
+        ? '❌ Promo code is not applicable to items in your cart'
+        : '❌ Промокод не распространяется на товары в вашей корзине';
+    }
 
     if (discountRes.valid && discountRes.discountAmount > 0 && eligibleSubtotal > 0) {
       discountAmount = Math.min(subtotal, roundMoney(discountRes.discountAmount));
@@ -143,6 +156,7 @@ const getCart = async (user) => {
     discountAmount,
     finalTotal,
     activePromo,
+    promoReason: typeof promoReason !== 'undefined' ? promoReason : null,
     hasStockIssue,
     cartVersion: dbUser.cartVersion || 0,
   };
@@ -253,6 +267,7 @@ const checkoutCart = async (ctx) => {
       supplierItems.length = 0;
       deliveryReports.length = 0;
 
+      const promoWasApplied = Boolean(cartData.activePromo && cartData.discountAmount > 0);
       const userFilter = {
         _id: initialUser._id,
         cartVersion,
@@ -263,7 +278,10 @@ const checkoutCart = async (ctx) => {
         userFilter,
         {
           $inc: { balance: -totalCost, totalSpent: totalCost, cartVersion: 1 },
-          $set: { cart: [], activePromoCode: null },
+          $set: {
+            cart: [],
+            ...(promoWasApplied ? { activePromoCode: null } : {}),
+          },
         },
         { new: true, ...opts }
       );

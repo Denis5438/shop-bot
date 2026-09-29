@@ -52,6 +52,8 @@ const showCart = async (ctx) => {
 
   if (cartData.discountAmount > 0 && cartData.activePromo) {
     text += `🎟 ${lang === 'en' ? 'Promo Discount' : 'Скидка по промокоду'} (<code>${escapeHtml(cartData.activePromo.code)}</code>): <b>-$${cartData.discountAmount.toFixed(2)}</b>\n`;
+  } else if (cartData.promoReason) {
+    text += `🎟 <i>${escapeHtml(cartData.promoReason)}</i>\n`;
   }
 
   text += `💰 <b>${lang === 'en' ? 'Total to pay' : 'Итого к оплате'}: $${cartData.finalTotal.toFixed(2)} USDT</b> (≈ ${toRub(cartData.finalTotal)})\n`;

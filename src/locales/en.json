@@ -237,5 +237,18 @@
   "referral_active_buyers": "Active buyers",
   "referral_conversion": "Order conversion",
   "referral_earned_total": "Total earned from referrals",
-  "referral_current_balance": "Your current balance"
+  "referral_current_balance": "Your current balance",
+  "promo_err_not_found": "❌ Promo code not found, inactive or expired",
+  "promo_err_product_mismatch": "❌ Promo code is not valid for this product",
+  "promo_err_min_qty": "❌ Promo code requires ordering at least {qty} pcs",
+  "promo_err_second_item_min": "❌ Promo code applies to 2nd item (please order at least 2 pcs)",
+  "promo_err_repeat_only": "❌ This promo code is available only from your second purchase!",
+  "promo_err_first_only": "❌ This promo code is valid only for your first order!",
+  "promo_bound_product": "📦 Bound to: {product}",
+  "promo_bound_all": "🌐 All products",
+  "promo_cond_standard": "🛒 Standard (from 1 pc)",
+  "promo_cond_second_item": "🎁 1+1 (discount on 2nd item)",
+  "promo_aud_all": "👥 For everyone",
+  "promo_aud_repeat_only": "🔄 From 2nd purchase (repeat orders)",
+  "promo_aud_first_only": "🆕 First order only"
 }

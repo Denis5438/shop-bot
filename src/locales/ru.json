@@ -237,5 +237,18 @@
   "referral_active_buyers": "Совершили покупки",
   "referral_conversion": "Конверсия в заказы",
   "referral_earned_total": "Заработано с рефералов",
-  "referral_current_balance": "Ваш текущий баланс"
+  "referral_current_balance": "Ваш текущий баланс",
+  "promo_err_not_found": "❌ Промокод не найден, неактивен или истёк",
+  "promo_err_product_mismatch": "❌ Промокод не распространяется на данный товар",
+  "promo_err_min_qty": "❌ Промокод действует при заказе от {qty} шт.",
+  "promo_err_second_item_min": "❌ Промокод действует на 2-ю единицу товара (добавьте от 2 шт.)",
+  "promo_err_repeat_only": "❌ Этот промокод доступен только со второй покупки!",
+  "promo_err_first_only": "❌ Этот промокод действует только на первый заказ!",
+  "promo_bound_product": "📦 Привязка: {product}",
+  "promo_bound_all": "🌐 Все товары",
+  "promo_cond_standard": "🛒 Стандартный (от 1 шт.)",
+  "promo_cond_second_item": "🎁 1+1 (скидка на 2-ю шт.)",
+  "promo_aud_all": "👥 Для всех",
+  "promo_aud_repeat_only": "🔄 Со 2-й покупки (повторные заказы)",
+  "promo_aud_first_only": "🆕 Только на первый заказ"
 }

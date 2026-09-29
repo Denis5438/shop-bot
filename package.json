@@ -8,6 +8,7 @@
     "dev": "nodemon index.js",
     "lint": "eslint src index.js",
     "lint:fix": "eslint src index.js --fix",
+    "test:promo": "node scripts/test_promo_features.js",
     "migrate:token-raw": "node scripts/migrate-token-raw.js"
   },
   "dependencies": {

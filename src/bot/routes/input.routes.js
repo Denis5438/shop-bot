@@ -147,9 +147,43 @@ module.exports = (bot) => {
       } else {
         ctx.session.activePromo = res;
         const valStr = res.type === 'percent' ? `-${res.value}%` : `-${res.value} USDT`;
-        const text = `🎉 <b>Промокод <code>${res.code}</code> успешно активирован!</b>\n\n` +
-          `🏷 Ваша скидка: <b>${valStr}</b> при покупке товара!\n` +
-          `Скидка автоматически применится при следующем заказе.`;
+        const lang = ctx.user?.language || 'ru';
+        const isRu = lang === 'ru';
+
+        let targetLine = '';
+        if (res.productName) {
+          targetLine = isRu ? `📦 Товар: <b>${escapeHtml(res.productName)}</b>\n` : `📦 Product: <b>${escapeHtml(res.productName)}</b>\n`;
+        } else {
+          targetLine = isRu ? `🌐 Действует: <b>на все товары</b>\n` : `🌐 Scope: <b>all products</b>\n`;
+        }
+
+        let condLine = '';
+        if (res.discountTarget === 'second_item') {
+          condLine = isRu ? `🎁 Механика: <b>1+1 (скидка на 2-ю шт.)</b>\n` : `🎁 Deal: <b>1+1 (discount on 2nd item)</b>\n`;
+        } else if (res.minQuantity > 1) {
+          condLine = isRu ? `🛍 Условие: <b>от ${res.minQuantity} шт. в заказе</b>\n` : `🛍 Condition: <b>from ${res.minQuantity} pcs</b>\n`;
+        }
+
+        let audLine = '';
+        if (res.audienceCondition === 'repeat_only') {
+          audLine = isRu ? `🔄 Доступен: <b>со 2-й покупки</b>\n` : `🔄 Eligibility: <b>from 2nd purchase</b>\n`;
+        } else if (res.audienceCondition === 'first_only') {
+          audLine = isRu ? `🆕 Доступен: <b>только на первый заказ</b>\n` : `🆕 Eligibility: <b>first order only</b>\n`;
+        }
+
+        const text = isRu
+          ? `🎉 <b>Промокод <code>${escapeHtml(res.code)}</code> успешно активирован!</b>\n\n` +
+            `🏷 Ваша скидка: <b>${valStr}</b>\n` +
+            targetLine +
+            condLine +
+            audLine +
+            `\nСкидка применится при оформлении подходящего заказа.`
+          : `🎉 <b>Promo code <code>${escapeHtml(res.code)}</code> activated!</b>\n\n` +
+            `🏷 Your discount: <b>${valStr}</b>\n` +
+            targetLine +
+            condLine +
+            audLine +
+            `\nThe discount will be applied during checkout.`;
 
         const isFromCart = session.promoReturnTo === 'cart';
         session.promoReturnTo = null;
@@ -231,16 +265,34 @@ module.exports = (bot) => {
     // ─── СОЗДАНИЕ ПРОМОКОДА АДМИНОМ ───
     if (session.userAction === 'promo_create_code' && ctx.user.role === 'admin') {
       const code = ctx.message.text.trim().toUpperCase();
-      session.newPromo.code = code;
-      session.userAction = null;
       const targetMsgId = session.wizardMsgId;
 
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
       }
 
+      const PromoCode = require('../../models/PromoCode');
+      const existing = await PromoCode.findOne({ code });
+      if (existing) {
+        const errText = `❌ Промокод <code>${escapeHtml(code)}</code> уже существует!\n\n` +
+          `Пожалуйста, введите другое название (или нажмите «Отмена»):`;
+        const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]);
+        if (targetMsgId) {
+          try {
+            await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, errText, { parse_mode: 'HTML', ...keyboard });
+            return;
+          } catch (_) {}
+        }
+        const sent = await ctx.reply(errText, { parse_mode: 'HTML', ...keyboard });
+        if (sent?.message_id) session.wizardMsgId = sent.message_id;
+        return;
+      }
+
+      session.newPromo.code = code;
+      session.userAction = null;
+
       const text = `🎟 <b>Создание промокода:</b> <code>${code}</code>\n\n` +
-        `Шаг 2 из 4: Выберите тип промокода:`;
+        `<b>Шаг 2 из 7:</b> Выберите тип промокода:`;
 
       const keyboard = Markup.inlineKeyboard([
         [
@@ -289,8 +341,10 @@ module.exports = (bot) => {
       session.newPromo.value = val;
       session.userAction = 'promo_create_max';
 
+      const isBalance = session.newPromo.type === 'balance';
+      const stepText = isBalance ? 'Шаг 4 из 5' : 'Шаг 4 из 7';
       const text = `🎟 <b>Создание промокода</b>\n\n` +
-        `Шаг 4 из 4: Напишите макс. число активаций всего (например <code>100</code> или <code>-1</code> для безлимита):`;
+        `<b>${stepText}:</b> Напишите макс. число активаций всего (например <code>100</code> или <code>-1</code> для безлимита):`;
 
       const keyboard = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]);
 
@@ -327,22 +381,18 @@ module.exports = (bot) => {
         return ctx.reply(errText);
       }
 
-      const PromoCode = require('../../models/PromoCode');
-      const promosScene = require('../scenes/admin/promos.scene');
-
-      await PromoCode.create({
-        ...session.newPromo,
-        maxActivations: max,
-        currentActivations: 0,
-        maxPerUser: 1,
-        isActive: true,
-      });
-
+      session.newPromo.maxActivations = max;
       session.userAction = null;
-      session.newPromo = null;
-      session.wizardMsgId = null;
 
-      return promosScene.showPromosMain(ctx);
+      const promosScene = require('../scenes/admin/promos.scene');
+      if (session.newPromo.type === 'balance') {
+        session.newPromo.productId = null;
+        session.newPromo.minQuantity = 1;
+        session.newPromo.discountTarget = 'all';
+        return promosScene.showPromoAudienceStep(ctx);
+      }
+
+      return promosScene.showPromoScopeStep(ctx);
     }
 
     // ─── МАССОВОЕ НАЧИСЛЕНИЕ БАЛАНСА ───

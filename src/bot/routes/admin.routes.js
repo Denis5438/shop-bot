@@ -155,11 +155,17 @@ module.exports = (bot) => {
   bot.action(/^admin:promo:quick_code:(.+)$/, adminMiddleware, async (ctx) => {
     ctx.session = ctx.session || {};
     ctx.session.newPromo = ctx.session.newPromo || {};
-    ctx.session.newPromo.code = ctx.match[1].toUpperCase();
+    const PromoCode = require('../../models/PromoCode');
+    let code = ctx.match[1].toUpperCase();
+    const existing = await PromoCode.findOne({ code });
+    if (existing) {
+      code = `PROMO${Math.floor(10000 + Math.random() * 90000)}`;
+    }
+    ctx.session.newPromo.code = code;
     ctx.session.userAction = null;
 
     const text = `🎟 <b>Создание промокода:</b> <code>${ctx.session.newPromo.code}</code>\n\n` +
-      `<b>Шаг 2 из 4:</b> Выберите тип промокода:`;
+      `<b>Шаг 2 из 7:</b> Выберите тип промокода:`;
 
     const keyboard = Markup.inlineKeyboard([
       [
@@ -183,11 +189,95 @@ module.exports = (bot) => {
     ctx.session.userAction = 'promo_create_value';
 
     const typeLabel = ctx.match[1] === 'balance' ? 'USDT на баланс' : ctx.match[1] === 'percent' ? '% скидки' : 'USDT скидки';
+    const isBalance = ctx.match[1] === 'balance';
+    const stepLabel = isBalance ? 'Шаг 3 из 5' : 'Шаг 3 из 7';
     const text = `🎟 <b>Создание промокода</b>\n\n` +
       `Тип: <b>${typeLabel}</b>\n\n` +
-      `<b>Шаг 3 из 4:</b> Введите значение (например: <code>10</code> для ${typeLabel}):`;
+      `<b>${stepLabel}:</b> Введите значение (например: <code>10</code> для ${typeLabel}):`;
 
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'admin:promos')]]) }).catch(() => {});
+  });
+
+  bot.action('admin:promo:step:scope', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await promosScene.showPromoScopeStep(ctx);
+  });
+
+  bot.action('admin:promo:scope:all', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    ctx.session = ctx.session || {};
+    ctx.session.newPromo = ctx.session.newPromo || {};
+    ctx.session.newPromo.productId = null;
+    await promosScene.showPromoQuantityStep(ctx, null);
+  });
+
+  bot.action('admin:promo:scope:product', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await promosScene.showPromoProductCategories(ctx);
+  });
+
+  bot.action(/^admin:promo:sel_cat:(.+):(\d+)$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await promosScene.showPromoCategoryProducts(ctx, ctx.match[1], parseInt(ctx.match[2], 10));
+  });
+
+  bot.action(/^admin:promo:set_product:(.+)$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    ctx.session = ctx.session || {};
+    ctx.session.newPromo = ctx.session.newPromo || {};
+    ctx.session.newPromo.productId = ctx.match[1];
+    const Product = require('../../models/Product');
+    const prod = await Product.findById(ctx.match[1]).lean();
+    await promosScene.showPromoQuantityStep(ctx, prod?.name || null);
+  });
+
+  bot.action('admin:promo:step:qty', adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await promosScene.showPromoQuantityStep(ctx);
+  });
+
+  bot.action(/^admin:promo:qty:(standard|min2|second_item)$/, adminMiddleware, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    ctx.session = ctx.session || {};
+    ctx.session.newPromo = ctx.session.newPromo || {};
+    const choice = ctx.match[1];
+    if (choice === 'second_item') {
+      ctx.session.newPromo.minQuantity = 2;
+      ctx.session.newPromo.discountTarget = 'second_item';
+    } else if (choice === 'min2') {
+      ctx.session.newPromo.minQuantity = 2;
+      ctx.session.newPromo.discountTarget = 'all';
+    } else {
+      ctx.session.newPromo.minQuantity = 1;
+      ctx.session.newPromo.discountTarget = 'all';
+    }
+    await promosScene.showPromoAudienceStep(ctx);
+  });
+
+  bot.action(/^admin:promo:aud:(all|repeat_only|first_only)$/, adminMiddleware, async (ctx) => {
+    ctx.session = ctx.session || {};
+    if (!ctx.session.newPromo) {
+      await ctx.answerCbQuery().catch(() => {});
+      return promosScene.showPromosMain(ctx);
+    }
+    ctx.session.newPromo.audienceCondition = ctx.match[1];
+    const PromoCode = require('../../models/PromoCode');
+    try {
+      const created = await PromoCode.create({
+        ...ctx.session.newPromo,
+        currentActivations: 0,
+        maxPerUser: 1,
+        isActive: true,
+      });
+      ctx.session.userAction = null;
+      ctx.session.newPromo = null;
+      ctx.session.wizardMsgId = null;
+      await ctx.answerCbQuery('✅ Промокод успешно создан!', { show_alert: true }).catch(() => {});
+      await promosScene.showPromoDetail(ctx, created._id);
+    } catch (err) {
+      await ctx.answerCbQuery('❌ Ошибка при создании промокода (возможно, код уже занят)', { show_alert: true }).catch(() => {});
+      await promosScene.showPromosMain(ctx);
+    }
   });
 
   // ─── ADMIN: Массовые операции ───
