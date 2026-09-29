@@ -1,5 +1,5 @@
 const { Markup } = require('telegraf');
-const { getRate, getUpdatedAt, fetchRate } = require('../../../services/currency.service');
+const { getRate, getBaseRate, getUpdatedAt, fetchRate } = require('../../../services/currency.service');
 const Settings = require('../../../models/Settings');
 const { getSettings: getCachedSettings, invalidateCache } = require('../../../services/settingsCache.service');
 const { TOPUP_WALLET, TOPUP_NETWORK, MIN_TOPUP, REFERRAL_BONUS } = require('../../../config');
@@ -34,6 +34,9 @@ const getLiveSettings = async () => {
       topupNetwork: TOPUP_NETWORK,
       minTopup: MIN_TOPUP,
       referralBonus: REFERRAL_BONUS,
+      currencyMode: 'bybit_p2p',
+      manualRate: 95,
+      currencyOffset: 0,
     });
   }
   return settings;
@@ -57,6 +60,13 @@ const showSettings = async (ctx) => {
   const bybitBtnStr = settings.bybitEnabled !== false ? '📊 Bybit: Выкл' : '📊 Bybit: Вкл';
   const cleanChatStatusText = settings.cleanChatEnabled ? '🟢 Вкл' : '🔴 Выкл';
   const cleanChatBtnStr = settings.cleanChatEnabled ? '🧹 Чистый чат: Выкл' : '🧹 Чистый чат: Вкл';
+
+  const baseBybitRate = getBaseRate();
+  const effectiveRate = getRate(settings);
+  const currencyMode = settings.currencyMode || 'bybit_p2p';
+  const modeLabel = currencyMode === 'manual' ? '✋ Ручной' : '🟢 Авто (Bybit)';
+  const offsetVal = typeof settings.currencyOffset === 'number' ? settings.currencyOffset : 0;
+  const offsetSign = offsetVal >= 0 ? '+' : '';
 
   const webhookDomain = process.env.RENDER_EXTERNAL_HOSTNAME || process.env.DOMAIN || 'shop-bot-62dd.onrender.com';
   const plategaWebhookUrl = `https://${webhookDomain}/webhook/platega`;
@@ -86,8 +96,13 @@ const showSettings = async (ctx) => {
     `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n` +
     `🧹 Чистый чат (удаление старых сообщений): <b>${cleanChatStatusText}</b>\n\n` +
     `✨ API Gemini AI: <code>${settings.geminiApiKey ? '••••••••' + String(settings.geminiApiKey).slice(-4) : 'не задан'}</code>\n\n` +
-    `💱 Текущий курс: 1 USD = <b>${getRate()} ₽</b>\n` +
-    `🕐 Обновлён: ${getUpdatedAt()}\n\n` +
+    `💱 <b>Курс валют (USDT ➔ RUB):</b>\n` +
+    `• Режим: <b>${currencyMode === 'manual' ? '✋ Ручной' : '🟢 Авто (Bybit P2P)'}</b>\n` +
+    `• Базовый Bybit P2P: <b>${baseBybitRate.toFixed(2)} ₽</b>\n` +
+    `• Наценка к курсу: <b>${offsetSign}${offsetVal.toFixed(2)} ₽</b>\n` +
+    `• Фикс-курс: <b>${(settings.manualRate || 95).toFixed(2)} ₽</b>\n` +
+    `• Итоговый расчётный курс: <b>${effectiveRate.toFixed(2)} ₽</b>\n` +
+    `• Обновлено: ${getUpdatedAt()}\n\n` +
     `🛡 Тех. обслуживание: <b>${modeText}</b>`;
 
   const buttons = [
@@ -95,6 +110,14 @@ const showSettings = async (ctx) => {
       Markup.button.callback(plategaBtnStr, 'admin:settings:toggle_platega'),
       Markup.button.callback(cardBtnStr, 'admin:settings:toggle_card'),
       Markup.button.callback(bybitBtnStr, 'admin:settings:toggle_bybit'),
+    ],
+    [
+      Markup.button.callback(`🔄 Режим: ${modeLabel}`, 'admin:settings:toggle_currency_mode'),
+      Markup.button.callback('🔄 Обновить курс Bybit', 'admin:settings:refresh_rate'),
+    ],
+    [
+      Markup.button.callback('➕ Наценка к курсу (+X ₽)', 'admin:settings:edit:currencyOffset'),
+      Markup.button.callback('✏️ Ручной фикс-курс', 'admin:settings:edit:manualRate'),
     ],
     [Markup.button.callback(cleanChatBtnStr, 'admin:settings:toggle_clean_chat')],
     [Markup.button.callback('✨ API GEMINI', 'admin:settings:edit:geminiApiKey')],
@@ -119,7 +142,6 @@ const showSettings = async (ctx) => {
       'admin:settings:toggle_digest'
     )],
     [Markup.button.callback('⏰ Интервал сводки (мин)', 'admin:settings:edit:adminDigestIntervalMinutes')],
-    [Markup.button.callback('🔄 Обновить курс вручную', 'admin:settings:refresh_rate')],
     [Markup.button.callback('📜 Сбросить согласие Оферты у всех', 'admin:settings:reset_tos')],
     [Markup.button.callback('💰 Балансы пользователей', 'admin:users:with_balance:1')],
     [Markup.button.callback(modeBtnStr, 'admin:settings:toggle_maintenance')],
@@ -134,7 +156,7 @@ const showSettings = async (ctx) => {
 };
 
 const refreshRate = async (ctx) => {
-  await ctx.answerCbQuery('⏳ Обновляю курс...');
+  await ctx.answerCbQuery('⏳ Обновляю курс Bybit P2P...').catch(() => {});
   await fetchRate();
   await showSettings(ctx);
 };
@@ -228,6 +250,16 @@ const toggleCleanChat = async (ctx) => {
   await showSettings(ctx);
 };
 
+const toggleCurrencyMode = async (ctx) => {
+  const settings = await getLiveSettings();
+  settings.currencyMode = settings.currencyMode === 'manual' ? 'bybit_p2p' : 'manual';
+  await settings.save();
+  invalidateCache(settings);
+  const label = settings.currencyMode === 'manual' ? '✋ Ручной' : '🟢 Авто (Bybit P2P)';
+  await ctx.answerCbQuery(`Режим курса: ${label}`).catch(() => {});
+  await showSettings(ctx);
+};
+
 // Запрос на редактирование поля
 const startEditSetting = async (ctx, field) => {
   const fieldNames = {
@@ -248,6 +280,8 @@ const startEditSetting = async (ctx, field) => {
     minSellerWithdraw: 'минимальную сумму вывода для продавцов (в USDT, например: 5)',
     autoConfirmHours: 'кол-во часов на проверку заказа (после чего деньги уходят продавцу)',
     geminiApiKey: 'API-ключ Google Gemini (из Google AI Studio https://aistudio.google.com/)',
+    currencyOffset: 'наценку к авто-курсу в рублях (например: 2, 0 или 2.5)',
+    manualRate: 'ручной фиксированный курс USDT к рублю (например: 95 или 92)',
   };
   
   ctx.session = ctx.session || {};
@@ -273,12 +307,20 @@ const handleSettingsInput = async (ctx) => {
   const value = ctx.message.text.trim();
   const update = {};
 
-  const numericFields = ['minTopup', 'referralBonus', 'autoMarkdownDays', 'autoMarkdownPercent', 'adminDigestIntervalMinutes', 'minSellerWithdraw', 'autoConfirmHours'];
+  const numericFields = [
+    'minTopup', 'referralBonus', 'autoMarkdownDays', 'autoMarkdownPercent',
+    'adminDigestIntervalMinutes', 'minSellerWithdraw', 'autoConfirmHours',
+    'currencyOffset', 'manualRate'
+  ];
   
   if (numericFields.includes(field)) {
     const num = parseFloat(value.replace(',', '.'));
     if (isNaN(num) || num < 0) {
       await ctx.reply('❌ Неверное числовое значение. Введите положительное число:');
+      return true;
+    }
+    if (field === 'manualRate' && num <= 0) {
+      await ctx.reply('❌ Курс должен быть больше 0. Введите положительное число:');
       return true;
     }
     // Для интервала сводки - ограничиваем разумным диапазоном (5 мин - 24 ч).
@@ -294,7 +336,7 @@ const handleSettingsInput = async (ctx) => {
   const settings = await getLiveSettings();
   Object.assign(settings, update);
   await settings.save();
-  invalidateCache();
+  invalidateCache(settings);
 
   // Если меняли интервал и digest включён - перезапускаем auto-flush с новым значением.
   if (field === 'adminDigestIntervalMinutes' && settings.adminDigestEnabled) {
@@ -330,6 +372,7 @@ module.exports = {
   toggleCard,
   toggleBybit,
   toggleCleanChat,
+  toggleCurrencyMode,
   startEditSetting,
   handleSettingsInput,
   resetAllUserToS,

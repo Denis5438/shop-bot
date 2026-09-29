@@ -56,7 +56,7 @@ const showCart = async (ctx) => {
     text += `🎟 <i>${escapeHtml(cartData.promoReason)}</i>\n`;
   }
 
-  text += `💰 <b>${lang === 'en' ? 'Total to pay' : 'Итого к оплате'}: $${cartData.finalTotal.toFixed(2)} USDT</b> (≈ ${toRub(cartData.finalTotal)})\n`;
+  text += `💰 <b>${lang === 'en' ? 'Total to pay' : 'Итого к оплате'}: $${cartData.finalTotal.toFixed(2)} USDT</b> (≈ ${toRub(cartData.finalTotal)} ₽)\n`;
   text += `💳 ${lang === 'en' ? 'Your balance' : 'Ваш баланс'}: <b>${user.balance.toFixed(2)} USDT</b>\n`;
 
   if (cartData.hasStockIssue) {

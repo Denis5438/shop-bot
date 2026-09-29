@@ -571,7 +571,13 @@ module.exports = (bot) => {
     // редактирование чужих балансов.
     const isAdminUser = ctx.user?.role === 'admin';
 
-    // Редактирование настроек (admin)
+    // Редактирование курса валют и наценки (admin)
+    if (isAdminUser && (session.adminAction === 'edit_currency_offset' || session.adminAction === 'edit_manual_rate')) {
+      session.settingField = session.adminAction === 'edit_currency_offset' ? 'currencyOffset' : 'manualRate';
+      session.adminAction = 'edit_setting';
+    }
+
+    // Редактирование настроек (admin, включая currencyOffset и manualRate)
     if (isAdminUser && await settingsScene.handleSettingsInput(ctx)) return;
 
     // Поиск (admin)

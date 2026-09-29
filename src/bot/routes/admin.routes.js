@@ -4,7 +4,6 @@
  * скорректированы только пути require).
  */
 
-const Key = require('../../models/Key');
 const adminScene = require('../scenes/admin/admin.scene');
 const disputesScene = require('../scenes/admin/disputes.scene');
 const keysScene = require('../scenes/admin/keys.scene');
@@ -1028,7 +1027,11 @@ module.exports = (bot) => {
 
   // ─── ADMIN: Настройки ───
   bot.action('admin:settings', adminMiddleware, async (ctx) => {
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery().catch(() => {});
+    if (ctx.session) {
+      ctx.session.adminAction = null;
+      ctx.session.settingField = null;
+    }
     await settingsScene.showSettings(ctx);
   });
 
@@ -1059,6 +1062,10 @@ module.exports = (bot) => {
   });
   bot.action('admin:settings:toggle_clean_chat', adminMiddleware, async (ctx) => {
     await settingsScene.toggleCleanChat(ctx);
+  });
+
+  bot.action('admin:settings:toggle_currency_mode', adminMiddleware, async (ctx) => {
+    await settingsScene.toggleCurrencyMode(ctx);
   });
 
   bot.action(/^admin:settings:edit:(\w+)$/, adminMiddleware, async (ctx) => {

@@ -38,6 +38,10 @@ const settingsSchema = new mongoose.Schema({
   bybitEnabled: { type: Boolean, default: true },
   // Чистый чат (автоудаление старых сообщений бота)
   cleanChatEnabled: { type: Boolean, default: false },
+  // Курс валют (Bybit P2P vs Ручной + наценка)
+  currencyMode: { type: String, enum: ['bybit_p2p', 'manual'], default: 'bybit_p2p' },
+  manualRate: { type: Number, default: 95 },
+  currencyOffset: { type: Number, default: 0 },
 }, {
   timestamps: true
 });

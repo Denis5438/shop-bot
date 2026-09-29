@@ -1,9 +1,9 @@
 const { Markup } = require('telegraf');
 const TopupRequest = require('../../models/TopupRequest');
 const User = require('../../models/User');
-const { getRate, toRub } = require('../../services/currency.service');
+const { getRate } = require('../../services/currency.service');
 const notif = require('../../services/notification.service');
-const { parseAmount, copyHint, escapeHtml, fmtUSDT } = require('../utils/ui');
+const { parseAmount, copyHint, escapeHtml } = require('../utils/ui');
 const { SLA, TEXTS } = require('../constants/ux');
 const { startProgress } = require('../utils/progress');
 const { getSettings } = require('../../services/settingsCache.service');
@@ -38,13 +38,6 @@ const editOrReply = async (ctx, text, extra) => {
   return sent;
 };
 
-// Форматирование суммы: fmtUSDT теперь общий (из utils/ui)
-const fmtRUB = (rub) => {
-  const rate = getRate();
-  const usdt = rub / rate;
-  return `${rub.toFixed(0)} ₽ (~${usdt.toFixed(2)} USDT)`;
-};
-
 // ─── Шаг 1: Выбор суммы (пресеты + своя сумма) ──────────────────────────────
 const startTopup = async (ctx) => {
   ctx.session = ctx.session || {};
@@ -52,7 +45,8 @@ const startTopup = async (ctx) => {
   ctx.session.topup = { step: 'amount', currency: 'usdt', msgId: currentMsgId };
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
-  const rate = getRate();
+  const settings = await getSettings();
+  const rate = getRate(settings);
 
   const currencyLine = lang === 'en'
     ? `💱 Rate: <b>1 USDT = ${rate.toFixed(2)} ₽</b>`
@@ -109,8 +103,8 @@ const showCustomAmountPrompt = async (ctx) => {
   ctx.session.topup.currency = 'usdt';
   ctx.session.topup.msgId = currentMsgId;
   const lang = ctx.user?.language || 'ru';
-  const rate = getRate();
   const settings = await getSettings();
+  const rate = getRate(settings);
   const minTopup = settings?.minTopup || 1;
 
   const text = lang === 'en'
@@ -152,6 +146,8 @@ const showPaymentMethods = async (ctx) => {
   topup.step = 'method';
 
   const settings = await getSettings();
+  const rate = getRate(settings);
+  topup.amountRUB = topup.amountUSDT * rate;
   const buttons = [];
 
   const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
@@ -202,7 +198,8 @@ const showPaymentMethods = async (ctx) => {
 // Быстрое пополнение на конкретную сумму (из карточки товара)
 const startTopupWithAmount = async (ctx, amount) => {
   ctx.session = ctx.session || {};
-  const rate = getRate();
+  const settings = await getSettings();
+  const rate = getRate(settings);
   ctx.session.topup = {
     amountUSDT: amount,
     amountRUB: amount * rate,
@@ -327,7 +324,8 @@ const handlePresetAmount = async (ctx, currency, amountStr) => {
     return ctx.answerCbQuery(lang === 'en' ? '⚠️ Invalid amount' : '⚠️ Некорректная сумма', { show_alert: true }).catch(() => null);
   }
 
-  const rate = getRate();
+  const settings = await getSettings();
+  const rate = getRate(settings);
   const val = parsed.value;
   topup.currency = currency;
   topup.amountUSDT = currency === 'usdt' ? val : val / rate;
@@ -368,7 +366,9 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 
   const inputAmount = parsed.value;
 
-  const rate = getRate();
+  const settings = await getSettings();
+  const rate = getRate(settings);
+  const minTopup = settings?.minTopup || 1;
   const { currency = 'usdt' } = topup;
 
   let amountUSDT, amountRUB;
@@ -379,10 +379,6 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
     amountRUB = inputAmount;
     amountUSDT = inputAmount / rate;
   }
-
-  const { getSettings } = require('../../services/settingsCache.service');
-  const settings = await getSettings();
-  const minTopup = settings?.minTopup || 1;
 
   if (amountUSDT < minTopup) {
     const minRub = Math.ceil(minTopup * rate);
@@ -415,11 +411,12 @@ const generateRequisitesAndShow = async (ctx) => {
   }
 
   const lang = ctx.user?.language || 'ru';
-  const rate = getRate();
-  const { method, network, amountUSDT, amountRUB } = topup;
-  const { getSettings } = require('../../services/settingsCache.service');
   const settings = await getSettings();
+  const rate = getRate(settings);
   const minTopup = settings?.minTopup || 1;
+  const { method, network, amountUSDT } = topup;
+  const amountRUB = amountUSDT * rate;
+  topup.amountRUB = amountRUB;
 
   // ─── Обработка пополнения через СБП (Platega) ──────────────────────────────
   if (method === 'platega') {
@@ -664,7 +661,8 @@ const handleTopupProof = async (ctx) => {
   const { method, network, amountUSDT, amountRUB } = topup;
   const user = ctx.user;
   const lang = user?.language || 'ru';
-  const rate = getRate();
+  const settings = await getSettings();
+  const rate = getRate(settings);
 
   let proofText = null;
   let proofFileId = null;
@@ -771,8 +769,6 @@ const handleTopupProof = async (ctx) => {
       }
     }
 
-    const { getSettings } = require('../../services/settingsCache.service');
-    const settings = await getSettings();
     const bybitAddresses = await getBybitAddresses();
     const net = bybitAddresses[network];
     const topupAddr = String((network === 'trc20' && settings?.topupWallet ? settings.topupWallet : net?.address) || '').trim();
