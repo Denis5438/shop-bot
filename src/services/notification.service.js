@@ -3,7 +3,7 @@ const { ADMIN_IDS } = require('../config');
 const { toRub } = require('./currency.service');
 const { getProviderLabel, resolveOrderProvider, resolveProductProvider } = require('./provider.service');
 const { Markup } = require('telegraf');
-const { escapeHtml } = require('../bot/utils/ui');
+const { escapeHtml, get2FAButtonLabel, has2FASecret } = require('../bot/utils/ui');
 const User = require('../models/User');
 const digest = require('./notification-digest.service');
 const i18n = require('../bot/middlewares/i18n');
@@ -236,10 +236,14 @@ const notifyUserOrderCompleted = async (user, order, product, result) => {
     result: h(result || 'Активация выполнена успешно!')
   });
 
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback(i18n.translate(lang, 'btn_buy') + ' 🔄', `shop:product:${productId}`)],
-    [Markup.button.callback(i18n.translate(lang, 'btn_back'), 'menu:main')],
-  ]);
+  const kbRows = [];
+  if (has2FASecret(order) || has2FASecret(result)) {
+    kbRows.push([Markup.button.callback(get2FAButtonLabel(lang), `profile:order:2fa:${order._id}`)]);
+  }
+  kbRows.push([Markup.button.callback(i18n.translate(lang, 'btn_buy') + ' 🔄', `shop:product:${productId}`)]);
+  kbRows.push([Markup.button.callback(i18n.translate(lang, 'btn_back'), 'menu:main')]);
+
+  const keyboard = Markup.inlineKeyboard(kbRows);
 
   await sendToUser(user.telegramId, msg, keyboard);
 };
@@ -742,11 +746,17 @@ const fulfillPreorders = async (product) => {
           `🔑 <b>Ваши данные для доступа:</b>\n${formattedItem}\n\n` +
           `<i>Спасибо за заказ!</i>`;
 
+      const inlineKeyboard = [];
+      if (has2FASecret(key.value)) {
+        inlineKeyboard.push([{ text: get2FAButtonLabel(userLang), callback_data: `profile:order:2fa:${preorder._id}` }]);
+      }
+      // Роут ожидает profile:order:detail:<id> - без ":detail" кнопка мёртвая
+      inlineKeyboard.push([{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]);
+
       await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
         parse_mode: 'HTML',
         reply_markup: {
-          // Роут ожидает profile:order:detail:<id> - без ":detail" кнопка мёртвая
-          inline_keyboard: [[{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]],
+          inline_keyboard: inlineKeyboard,
         },
       });
     } catch (e) {

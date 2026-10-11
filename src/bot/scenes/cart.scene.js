@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const cartService = require('../../services/cart.service');
-const { escapeHtml, formatDigitalItem, safeEdit } = require('../utils/ui');
+const { escapeHtml, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit } = require('../utils/ui');
 const { toRub } = require('../../services/currency.service');
 
 /**
@@ -173,11 +173,21 @@ const handleCheckout = async (ctx) => {
 
   successText += `<i>Все данные также сохранены в разделе «📜 Мои покупки» в вашем профиле.</i>`;
 
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📜 Мои покупки', 'profile:orders')],
-    [Markup.button.callback('🛍 Продолжить покупки', 'menu:shop')],
-    [Markup.button.callback('🏠 В главное меню', 'menu:main')],
-  ]);
+  const twoFaReports = res.deliveryReports.filter(
+    (rep) => rep.isInstant && rep.orderId && has2FASecret(rep.data)
+  );
+  const kbRows = [];
+  twoFaReports.forEach((rep, idx) => {
+    const label = twoFaReports.length === 1
+      ? get2FAButtonLabel(userLang)
+      : `${get2FAButtonLabel(userLang)} (#${idx + 1})`;
+    kbRows.push([Markup.button.callback(label, `profile:order:2fa:${rep.orderId}`)]);
+  });
+  kbRows.push([Markup.button.callback('📜 Мои покупки', 'profile:orders')]);
+  kbRows.push([Markup.button.callback('🛍 Продолжить покупки', 'menu:shop')]);
+  kbRows.push([Markup.button.callback('🏠 В главное меню', 'menu:main')]);
+
+  const keyboard = Markup.inlineKeyboard(kbRows);
 
   await ctx.reply(successText, { parse_mode: 'HTML', ...keyboard });
 };

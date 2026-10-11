@@ -24,6 +24,19 @@ module.exports = (bot) => {
     await profileScene.showOrderDetail(ctx, ctx.match[1]);
   });
 
+  bot.action(/^profile:order:2fa:(.+)$/, async (ctx) => {
+    await profileScene.showOrder2FA(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^profile:order:2fa_refresh:(.+)$/, async (ctx) => {
+    await profileScene.showOrder2FA(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^profile:order:(?!detail:|send_data:|2fa:|2fa_refresh:)(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    await profileScene.showOrderDetail(ctx, ctx.match[1]);
+  });
+
   bot.action(/^profile:order:send_data:(.+)$/, async (ctx) => {
     const orderId = ctx.match[1];
     const mongoose = require('mongoose');
@@ -51,7 +64,7 @@ module.exports = (bot) => {
       return ctx.answerCbQuery(emptyAlert, { show_alert: true });
     }
 
-    const { formatDigitalItem, escapeHtml } = require('../utils/ui');
+    const { formatDigitalItem, escapeHtml, has2FASecret, get2FAButtonLabel } = require('../utils/ui');
     const productName = (lang === 'en' && order.productId?.nameEn ? order.productId.nameEn : order.productId?.name) || (lang === 'en' ? 'Product' : 'Товар');
     const icon = order.productId?.icon || '🔐';
 
@@ -76,9 +89,12 @@ module.exports = (bot) => {
         `<pre><code>${escapeHtml(safeCopyVal)}</code></pre>\n\n` +
         `💡 <i>Эти данные всегда сохранены в вашем профиле и доступны в любое время.</i>`;
 
-    const backBtn = Markup.inlineKeyboard([
-      [Markup.button.callback(lang === 'en' ? '📋 Back to order' : '📋 К заказу', `profile:order:detail:${order._id}`)],
-    ]);
+    const kbRows = [];
+    if (has2FASecret(itemValue)) {
+      kbRows.push([Markup.button.callback(get2FAButtonLabel(lang), `profile:order:2fa:${order._id}`)]);
+    }
+    kbRows.push([Markup.button.callback(lang === 'en' ? '📋 Back to order' : '📋 К заказу', `profile:order:detail:${order._id}`)]);
+    const backBtn = Markup.inlineKeyboard(kbRows);
 
     try {
       await ctx.reply(msg, {

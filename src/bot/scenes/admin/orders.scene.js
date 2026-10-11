@@ -29,16 +29,24 @@ const notifyManualCompletion = async (user, order, product) => {
     const key = await Key.findById(order.keyId);
 
     if (key?.value) {
+      const { get2FAButtonLabel, get2FAHintText, has2FASecret } = require('../../utils/ui');
+      const userLang = user?.language || 'ru';
+      const has2FA = has2FASecret(key.value);
+      const hintBlock = has2FA ? `\n\n${get2FAHintText(userLang)}` : '';
+      const kbRows = [];
+      if (has2FA) {
+        kbRows.push([Markup.button.callback(get2FAButtonLabel(userLang), `profile:order:2fa:${order._id}`)]);
+      }
+      kbRows.push([Markup.button.callback('🛒 Купить ещё', `shop:product:${product._id || order.productId}`)]);
+      kbRows.push([Markup.button.callback('⬅️ В главное меню', 'menu:main')]);
+
       await notif.sendToUser(
         user.telegramId,
         `🎉 <b>Ваш заказ выполнен</b>\n\n` +
         `📦 Товар: ${escapeHtml(product.icon || '📦')} ${escapeHtml(product.name || 'Товар')}\n` +
         `📋 Заказ: <code>${order._id}</code>\n\n` +
-        `🔑 <b>Ваш ключ:</b>\n<pre>${escapeHtml(key.value)}</pre>`,
-        Markup.inlineKeyboard([
-          [Markup.button.callback('🛒 Купить ещё', `shop:product:${product._id || order.productId}`)],
-          [Markup.button.callback('⬅️ В главное меню', 'menu:main')],
-        ])
+        `🔑 <b>Ваш ключ:</b>\n<pre>${escapeHtml(key.value)}</pre>${hintBlock}`,
+        Markup.inlineKeyboard(kbRows)
       );
       return;
     }
@@ -543,14 +551,22 @@ const retryApiOrder = async (ctx, orderId) => {
 
     const userTgId = order.userId?.telegramId || order.userId;
     if (userTgId) {
-      const { formatDigitalItem } = require('../../utils/ui');
+      const { formatDigitalItem, get2FAButtonLabel, has2FASecret } = require('../../utils/ui');
       const userLang = order.userId?.language || 'ru';
       const formattedKeys = formatDigitalItem(suppRes.deliveryData, userLang);
       const deliveryMsg = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
         `📦 Товар: ${escapeHtml(product.name)}\n` +
         `🔑 <b>Ваши данные для доступа:</b>\n${formattedKeys}\n\n` +
         `<i>Спасибо за ожидание!</i>`;
-      await notif.sendToUser(userTgId, deliveryMsg, { parse_mode: 'HTML' }).catch(() => {});
+      const kbRows = [];
+      if (has2FASecret(suppRes.deliveryData)) {
+        kbRows.push([Markup.button.callback(get2FAButtonLabel(userLang), `profile:order:2fa:${order._id}`)]);
+      }
+      kbRows.push([Markup.button.callback(userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', `profile:order:detail:${order._id}`)]);
+      await notif.sendToUser(userTgId, deliveryMsg, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard(kbRows),
+      }).catch(() => {});
     }
 
     if (order.userId?._id) {

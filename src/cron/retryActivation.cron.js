@@ -53,7 +53,7 @@ const repairKnownOrderIfPending = async (bot) => {
     }
 
     if (!notifSent && bot?.telegram) {
-      const { formatDigitalItem, escapeHtml } = require('../bot/utils/ui');
+      const { formatDigitalItem, escapeHtml, get2FAButtonLabel, has2FASecret } = require('../bot/utils/ui');
       const userLang = order.userId?.language || 'ru';
       const formattedKeys = formatDigitalItem(REAL_DELIVERY, userLang);
       const productName = escapeHtml(order.productId?.name || 'ChatGPT Plus / Подписка');
@@ -71,10 +71,16 @@ const repairKnownOrderIfPending = async (bot) => {
           `ℹ️ <i>Нажмите на значение в поле, чтобы скопировать его в 1 клик.</i>\n\n` +
           `🛡 <i>Гарантия на заказ действует в полном объеме. Приятного пользования!</i>`;
 
+      const inlineKeyboard = [];
+      if (has2FASecret(REAL_DELIVERY)) {
+        inlineKeyboard.push([{ text: get2FAButtonLabel(userLang), callback_data: `profile:order:2fa:${targetOrderId}` }]);
+      }
+      inlineKeyboard.push([{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${targetOrderId}` }]);
+
       await bot.telegram.sendMessage(targetTelegramId, msg, {
         parse_mode: 'HTML',
         reply_markup: {
-          inline_keyboard: [[{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${targetOrderId}` }]],
+          inline_keyboard: inlineKeyboard,
         },
       });
 
@@ -274,7 +280,7 @@ const start = (bot) => {
  */
 const checkPendingSupplierOrders = async (bot) => {
   const supplierManager = require('../services/supplierManager.service');
-  const { formatDigitalItem, escapeHtml } = require('../bot/utils/ui');
+  const { formatDigitalItem, escapeHtml, get2FAButtonLabel, has2FASecret } = require('../bot/utils/ui');
 
   try {
     const orders = await Order.find({
@@ -323,10 +329,16 @@ const checkPendingSupplierOrders = async (bot) => {
                 `🔑 <b>Ваши данные для доступа:</b>\n${keysText}\n\n` +
                 `🛡 <i>Гарантия: ${product?.warrantyDays ?? 5} дн.</i>\n<i>Спасибо за ожидание!</i>`;
 
+            const inlineKeyboard = [];
+            if (has2FASecret(res.deliveryData)) {
+              inlineKeyboard.push([{ text: get2FAButtonLabel(userLang), callback_data: `profile:order:2fa:${order._id}` }]);
+            }
+            inlineKeyboard.push([{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${order._id}` }]);
+
             await bot.telegram.sendMessage(user.telegramId, msg, {
               parse_mode: 'HTML',
               reply_markup: {
-                inline_keyboard: [[{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${order._id}` }]],
+                inline_keyboard: inlineKeyboard,
               },
             }).catch(() => {});
           }
@@ -362,7 +374,7 @@ const checkPendingSupplierOrders = async (bot) => {
 const handleSupplierRetry = async (order, provider, bot) => {
   const supplierManager = require('../services/supplierManager.service');
   const { isTransientSupplierError } = require('../services/provider.service');
-  const { formatDigitalItem, escapeHtml } = require('../bot/utils/ui');
+  const { formatDigitalItem, escapeHtml, get2FAButtonLabel, has2FASecret } = require('../bot/utils/ui');
   const notif = require('../services/notification.service');
 
   const currentAttempt = (order.retryCount || 0) + 1;
@@ -421,10 +433,16 @@ const handleSupplierRetry = async (order, provider, bot) => {
           `🔑 <b>Ваши данные для доступа:</b>\n${keysText}\n\n` +
           `🛡 <i>Гарантия: ${product?.warrantyDays ?? 5} дн.</i>\n<i>Спасибо за ожидание!</i>`;
 
+      const inlineKeyboard = [];
+      if (has2FASecret(suppRes.deliveryData)) {
+        inlineKeyboard.push([{ text: get2FAButtonLabel(userLang), callback_data: `profile:order:2fa:${order._id}` }]);
+      }
+      inlineKeyboard.push([{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${order._id}` }]);
+
       await bot.telegram.sendMessage(user.telegramId, msg, {
         parse_mode: 'HTML',
         reply_markup: {
-          inline_keyboard: [[{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${order._id}` }]],
+          inline_keyboard: inlineKeyboard,
         },
       }).catch(() => {});
     }

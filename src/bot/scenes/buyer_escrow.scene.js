@@ -65,9 +65,14 @@ const confirmOrder = async (ctx, orderId) => {
 
   await ctx.answerCbQuery('✅ Заказ успешно подтверждён!');
   
-  // Edit the original message to remove buttons
+  // Edit the original message to remove confirm/dispute buttons (keeping 2FA button if applicable)
   try {
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    const { get2FAButtonLabel, has2FASecret } = require('../utils/ui');
+    const buyerLang = ctx.user?.language || 'ru';
+    const remainingKb = has2FASecret(order)
+      ? [[Markup.button.callback(get2FAButtonLabel(buyerLang), `profile:order:2fa:${order._id}`)]]
+      : [];
+    await ctx.editMessageReplyMarkup({ inline_keyboard: remainingKb });
   } catch (err) {}
 
   await ctx.reply(ctx.t('buyer_order_confirmed'), { parse_mode: 'HTML' });

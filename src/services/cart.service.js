@@ -348,6 +348,7 @@ const checkoutCart = async (ctx) => {
             orders.push(order);
 
             deliveryReports.push({
+              orderId: order._id,
               name: product.name,
               qty: 1,
               isInstant: product.type !== 'gpt_activation',
@@ -387,6 +388,7 @@ const checkoutCart = async (ctx) => {
           if (supplierItem) supplierItems.push(supplierItem);
 
           deliveryReports.push({
+            orderId: order._id,
             name: product.name,
             qty: item.qty,
             isInstant: false,
@@ -455,7 +457,8 @@ const checkoutCart = async (ctx) => {
             },
           }
         );
-        const report = deliveryReports.find((item) => item.name === product.name && item.qty === qty && !item.isInstant);
+        const report = deliveryReports.find((item) => String(item.orderId) === String(order._id))
+          || deliveryReports.find((item) => item.name === product.name && item.qty === qty && !item.isInstant);
         if (report) {
           report.isInstant = true;
           report.data = String(suppRes.deliveryData);

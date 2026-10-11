@@ -334,6 +334,17 @@ const showOrderDetail = async (ctx, orderId) => {
     issuedDataStr;
 
   const buttons = [];
+  const { has2FASecret, get2FAButtonLabel } = require('../utils/ui');
+
+  // Кнопка получения 6-значного кода 2FA (только если в выданных данных есть валидный ключ 2FA)
+  if (itemValue && has2FASecret(itemValue)) {
+    buttons.push([
+      Markup.button.callback(
+        get2FAButtonLabel(lang),
+        `profile:order:2fa:${order._id}`
+      ),
+    ]);
+  }
 
   // Кнопка "Прислать данные в чат" для выполненных заказов с выданными данными
   if (isCompleted && itemValue) {
@@ -341,6 +352,21 @@ const showOrderDetail = async (ctx, orderId) => {
       Markup.button.callback(
         lang === 'en' ? '📨 Send data to chat' : '📨 Прислать данные в чат',
         `profile:order:send_data:${order._id}`
+      ),
+    ]);
+  }
+
+  if (order.status === 'awaiting_confirmation' && order.sellerId) {
+    buttons.push([
+      Markup.button.callback(
+        lang === 'en' ? '✅ Confirm receipt (Everything works)' : '✅ Подтвердить получение (Всё работает)',
+        `buyer:confirm_order:${order._id}`
+      ),
+    ]);
+    buttons.push([
+      Markup.button.callback(
+        lang === 'en' ? '⚠️ Open dispute (Problem with product)' : '⚠️ Открыть спор (Проблема с товаром)',
+        `buyer:dispute_order:${order._id}`
       ),
     ]);
   }
@@ -354,6 +380,55 @@ const showOrderDetail = async (ctx, orderId) => {
   }
 
   buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ To orders' : '⬅️ К заказам', 'profile:orders:all:1')]);
+
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  await safeEdit(ctx, text, opts);
+};
+
+const showOrder2FA = async (ctx, orderId) => {
+  const mongoose = require('mongoose');
+  const lang = ctx.user?.language || 'ru';
+
+  if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+    return ctx.answerCbQuery(lang === 'en' ? '❌ Order not found' : '❌ Заказ не найден', { show_alert: true });
+  }
+
+  const order = await Order.findById(orderId)
+    .populate('productId')
+    .populate('keyId')
+    .populate('replacedKeyId');
+
+  const orderUserId = order?.userId?._id ? order.userId._id.toString() : order?.userId?.toString();
+  if (!order || !ctx.user?._id || orderUserId !== ctx.user._id.toString()) {
+    return ctx.answerCbQuery(lang === 'en' ? '❌ Order not found' : '❌ Заказ не найден', { show_alert: true });
+  }
+
+  const itemValue = order.replacedKeyId?.value || order.deliveryData || order.keyId?.value;
+  const { extract2FAAccounts, format2FACodeMessage } = require('../utils/ui');
+  const accounts = extract2FAAccounts(itemValue);
+
+  if (!accounts.length) {
+    return ctx.answerCbQuery(
+      lang === 'en' ? '❌ 2FA key is not available for this order' : '❌ Ключ 2FA для этого заказа отсутствует',
+      { show_alert: true }
+    );
+  }
+
+  const text = format2FACodeMessage(accounts, lang);
+  const buttons = [
+    [
+      Markup.button.callback(
+        lang === 'en' ? '🔄 Refresh 6-digit code' : '🔄 Обновить 6-значный код',
+        `profile:order:2fa_refresh:${order._id}`
+      ),
+    ],
+    [
+      Markup.button.callback(
+        lang === 'en' ? '📋 Back to order' : '📋 К заказу',
+        `profile:order:${order._id}`
+      ),
+    ],
+  ];
 
   const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
   await safeEdit(ctx, text, opts);
@@ -556,6 +631,7 @@ module.exports = {
   showLanguageSelect,
   showOrders,
   showOrderDetail,
+  showOrder2FA,
   showTopupHistory,
   showTopupDetail,
   showAchievements,

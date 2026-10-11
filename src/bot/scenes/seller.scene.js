@@ -267,46 +267,60 @@ const handleSellerDelivery = async (ctx) => {
 
   const buyer = order.userId;
 
+  let dataStr = '';
+  if (ctx.message.text) {
+    dataStr = ctx.message.text;
+  } else if (ctx.message.photo || ctx.message.document) {
+    dataStr = ctx.message.photo ? '[Фотография]' : '[Документ]';
+  } else {
+    await ctx.reply(ctx.t('seller_deliver_need_file'));
+    return true;
+  }
+
+  order.deliveryData = dataStr;
+
+  // Атомарно меняем статус и сохраняем deliveryData ДО отправки уведомления покупателю,
+  // чтобы при мгновенном нажатии кнопки 2FA данные уже были в БД
+  const updated = await Order.findOneAndUpdate(
+    { _id: order._id, status: 'pending' },
+    { $set: { status: 'awaiting_confirmation', deliveredAt: new Date(), activationResult: 'Ожидает подтверждения покупателя', deliveryData: dataStr } },
+    { new: true }
+  );
+  if (!updated) return true; // Уже обработан
+
   // Если нет покупателя (вдруг удалён), заказ всё равно закроем
   if (buyer) {
     const buyerLang = buyer.language || 'ru';
     const productName = order.qty > 1 ? `${escapeHtml(order.productId?.name || 'Товар')} (x${order.qty})` : escapeHtml(order.productId?.name || 'Товар');
     let buyerDeliveryText = i18n.translate(buyerLang, 'buyer_confirmation_title', { name: productName });
-    let dataStr = '';
-    
+
     try {
-      const buttons = Markup.inlineKeyboard([
+      const { get2FAButtonLabel, get2FAHintText, has2FASecret } = require('../utils/ui');
+      const btnRows = [
         [Markup.button.callback(i18n.translate(buyerLang, 'buyer_confirmation_btn_ok'), `buyer:confirm_order:${order._id}`)],
         [Markup.button.callback(i18n.translate(buyerLang, 'buyer_confirmation_btn_bad'), `buyer:dispute_order:${order._id}`)],
-      ]);
+      ];
 
       if (ctx.message.text) {
-        dataStr = ctx.message.text;
+        const has2FA = has2FASecret(dataStr);
         buyerDeliveryText += i18n.translate(buyerLang, 'seller_buyer_order_data', { data: escapeHtml(dataStr) });
+        if (has2FA) {
+          buyerDeliveryText += `\n\n${get2FAHintText(buyerLang)}`;
+          btnRows.unshift([Markup.button.callback(get2FAButtonLabel(buyerLang), `profile:order:2fa:${order._id}`)]);
+        }
+        const buttons = Markup.inlineKeyboard(btnRows);
         await notif.sendToUser(buyer.telegramId, buyerDeliveryText, { parse_mode: 'HTML', ...buttons });
       } else if (ctx.message.photo || ctx.message.document) {
-        dataStr = ctx.message.photo ? '[Фотография]' : '[Документ]';
+        const buttons = Markup.inlineKeyboard(btnRows);
         await notif.sendToUser(buyer.telegramId, buyerDeliveryText, { parse_mode: 'HTML' });
         await ctx.telegram.copyMessage(buyer.telegramId, ctx.chat.id, ctx.message.message_id, {
           ...buttons
         });
-      } else {
-        await ctx.reply(ctx.t('seller_deliver_need_file'));
-        return true;
       }
-      order.deliveryData = dataStr;
     } catch (err) {
       // Если бот не смог отправить
     }
   }
-
-  // Атомарно меняем статус, чтобы избежать двойной выдачи
-  const updated = await Order.findOneAndUpdate(
-    { _id: order._id, status: 'pending' },
-    { $set: { status: 'awaiting_confirmation', deliveredAt: new Date(), activationResult: 'Ожидает подтверждения покупателя', deliveryData: order.deliveryData } },
-    { new: true }
-  );
-  if (!updated) return; // Уже обработан
 
   // Очищаем сессию
   ctx.session.sellerAction = null;

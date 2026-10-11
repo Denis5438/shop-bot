@@ -325,6 +325,7 @@ const approveWarrantyClaim = async (ctx, orderId) => {
     }
 
     if (order.userId) {
+      const { get2FAButtonLabel, has2FASecret } = require('../../utils/ui');
       const userLang = order.userId.language || 'ru';
       const itemFormatted = formatDigitalItem(availableKey.value, userLang);
       const msgText =
@@ -332,7 +333,10 @@ const approveWarrantyClaim = async (ctx, orderId) => {
         `📦 <b>Товар:</b> ${escapeHtml(product?.name || 'Товар')}\n\n` +
         `📦 <b>Ваш новый аккаунт / ключ:</b>\n${itemFormatted}`;
 
-      await notif.sendToUser(order.userId.telegramId, msgText).catch(() => {});
+      const extra = has2FASecret(availableKey.value)
+        ? Markup.inlineKeyboard([[Markup.button.callback(get2FAButtonLabel(userLang), `profile:order:2fa:${order._id}`)]])
+        : {};
+      await notif.sendToUser(order.userId.telegramId, msgText, extra).catch(() => {});
     }
 
     await ctx.answerCbQuery('✅ Заявка одобрена! Новый товар выдан авто-выдачей.');
@@ -379,7 +383,7 @@ const handleManualWarrantyReplaceInput = async (ctx) => {
 
   const orderId = session.warrantyOrderId;
   const newValue = ctx.message.text.trim();
-  const { formatDigitalItem } = require('../../utils/ui');
+  const { formatDigitalItem, get2FAButtonLabel, has2FASecret } = require('../../utils/ui');
 
   // Атомарный захват заявки: одобряем только из pending (защита от двойной
   // ручной выдачи по одной заявке)
@@ -405,7 +409,10 @@ const handleManualWarrantyReplaceInput = async (ctx) => {
       `📦 <b>Товар:</b> ${escapeHtml(order.productId?.name || 'Товар')}\n\n` +
       `📦 <b>Ваш новый аккаунт / данные:</b>\n${itemFormatted}`;
 
-    await notif.sendToUser(order.userId.telegramId, msgText).catch(() => {});
+    const extra = has2FASecret(newValue)
+      ? Markup.inlineKeyboard([[Markup.button.callback(get2FAButtonLabel(userLang), `profile:order:2fa:${order._id}`)]])
+      : {};
+    await notif.sendToUser(order.userId.telegramId, msgText, extra).catch(() => {});
   }
 
   await ctx.reply(`✅ <b>Замена по заказу #${order._id} успешно отправлена покупателю!</b>`, { parse_mode: 'HTML' });

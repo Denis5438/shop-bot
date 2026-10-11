@@ -18,7 +18,7 @@ const {
 const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
 const promoService = require('../../services/promo.service');
-const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, safeEdit } = require('../utils/ui');
+const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit } = require('../utils/ui');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
 
 const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-17-78';
@@ -1158,6 +1158,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
             sellerPayout: hasSeller ? payoutPerItem : 0,
             status: product.type === 'gpt_activation' ? 'awaiting_token' : isAutoKeyProduct ? 'completed' : 'pending',
             keyId: allocatedKey ? allocatedKey._id : null,
+            deliveryData: product.type === 'gpt_activation' ? null : (allocatedKey ? allocatedKey.value : null),
             confirmedAt: isAutoKeyProduct ? new Date() : null,
             activationResult: isAutoKeyProduct ? 'Ключ выдан автоматически' : null,
             warrantyDays: product.warrantyDays ?? 5,
@@ -1332,14 +1333,10 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
     const chargedLbl = lang === 'en' ? 'Charged' : 'Списано';
     const keyLbl = lang === 'en' ? '🔑 <b>Your keys:</b>' : '🔑 <b>Ваши ключи:</b>';
     
-    let keysText = '';
-    if (qty === 1) {
-      keysText = formatDigitalItem(allocatedKeys[0].value, lang);
-    } else {
-      allocatedKeys.forEach((k, idx) => {
-        keysText += `<b>#${idx + 1}</b>\n${formatDigitalItem(k.value, lang)}\n\n`;
-      });
-    }
+    const combinedRawKeys = allocatedKeys.map((k) => k.value).join('\n');
+    const keysText = qty === 1
+      ? formatDigitalItem(allocatedKeys[0].value, lang)
+      : formatDigitalItem(combinedRawKeys, lang);
 
     const text =
       `✅ <b>${lang === 'en' ? 'Order completed automatically' : 'Заказ выполнен автоматически'}</b>\n\n` +
@@ -1350,12 +1347,19 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
 
     const buyMoreLabel = lang === 'en' ? '🛒 Buy more' : '🛒 Купить ещё';
     const menuLabel = t('back_to_menu');
+    const kbRows = [];
+    const twoFaOrders = orders.filter((ord, idx) => has2FASecret(allocatedKeys[idx]?.value || ord));
+    twoFaOrders.forEach((ord, idx) => {
+      const label = twoFaOrders.length === 1
+        ? get2FAButtonLabel(lang)
+        : `${get2FAButtonLabel(lang)} (#${idx + 1})`;
+      kbRows.push([Markup.button.callback(label, `profile:order:2fa:${ord._id}`)]);
+    });
+    kbRows.push([Markup.button.callback(buyMoreLabel, `shop:product:${product._id}`)]);
+    kbRows.push([Markup.button.callback(menuLabel, 'menu:main')]);
     const opts = {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(buyMoreLabel, `shop:product:${product._id}`)],
-        [Markup.button.callback(menuLabel, 'menu:main')],
-      ]),
+      ...Markup.inlineKeyboard(kbRows),
     };
     try {
       await ctx.editMessageText(text, opts);
@@ -1410,12 +1414,16 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
         `${keysText}\n\n` +
         `🛡 <i>Гарантия на заказ: ${product.warrantyDays ?? 5} дн.</i>`;
 
+      const kbRows = [];
+      if (has2FASecret(suppRes.deliveryData)) {
+        kbRows.push([Markup.button.callback(get2FAButtonLabel(lang), `profile:order:2fa:${orders[0]._id}`)]);
+      }
+      kbRows.push([Markup.button.callback('🛒 Купить ещё', `shop:product:${product._id}`)]);
+      kbRows.push([Markup.button.callback(t('back_to_menu'), 'menu:main')]);
+
       const opts = {
         parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('🛒 Купить ещё', `shop:product:${product._id}`)],
-          [Markup.button.callback(t('back_to_menu'), 'menu:main')],
-        ]),
+        ...Markup.inlineKeyboard(kbRows),
       };
       try {
         await ctx.editMessageText(text, opts);
