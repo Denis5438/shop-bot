@@ -27,12 +27,14 @@ const buildCartRichHtml = ({
   // Непустая корзина: для каждого товара ряд [-] [📦 Название (xN)] [+] [🗑]
   for (const item of cartData.items) {
     const p = item.product;
-    const title = `📦 ${p.name.substring(0, 18)} (x${item.qty})`;
+    const pName = p?.name || 'Товар';
+    const pId = p?._id || item.productId;
+    const title = `📦 ${pName.substring(0, 18)} (x${item.qty})`;
     richHtml += `<tg-button-row align="left">` +
-      `<tg-button type="callback_data" style="primary" data="cart:qty:${p._id}:-1">➖</tg-button>` +
-      `<tg-button type="callback_data" style="link" data="shop:product:${p._id}">${escapeHtml(title)}</tg-button>` +
-      `<tg-button type="callback_data" style="primary" data="cart:qty:${p._id}:1">➕</tg-button>` +
-      `<tg-button type="callback_data" style="danger" data="cart:remove:${p._id}">🗑</tg-button>` +
+      `<tg-button type="callback_data" style="primary" data="cart:qty:${pId}:-1">➖</tg-button>` +
+      `<tg-button type="callback_data" style="link" data="shop:product:${pId}">${escapeHtml(title)}</tg-button>` +
+      `<tg-button type="callback_data" style="primary" data="cart:qty:${pId}:1">➕</tg-button>` +
+      `<tg-button type="callback_data" style="danger" data="cart:remove:${pId}">🗑</tg-button>` +
       `</tg-button-row>\n`;
   }
 

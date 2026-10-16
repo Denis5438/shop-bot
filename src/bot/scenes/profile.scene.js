@@ -248,8 +248,8 @@ const showProfile = async (ctx) => {
     layoutLabel = lang === 'en' ? '📱 Buttons: 🔒 Locked' : '📱 Кнопки: 🔒 Зафиксировано';
   } else {
     layoutLabel = user.buttonLayout === 'classic'
-      ? (lang === 'en' ? '📱 Buttons: 🔘 Bottom' : '📱 Кнопки: 🔘 Снизу')
-      : (lang === 'en' ? '📱 Buttons: 🟢 In text' : '📱 Кнопки: 🟢 В тексте');
+      ? (lang === 'en' ? '📱 Buttons: 🔘 Bottom (Classic)' : '📱 Кнопки: 🔘 Снизу (Классика)')
+      : (lang === 'en' ? '📱 Buttons: 🟢 In text (New)' : '📱 Кнопки: 🟢 В тексте (Новые)');
   }
 
   const buttons = [];
@@ -428,11 +428,21 @@ const showAchievements = async (ctx) => {
   const items = await getAllWithProgress(ctx.user._id);
   const text = renderAchievementsText(items, lang);
 
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback(t('profile_back_to_profile'), 'menu:profile')],
-  ]);
+  const backLabel = t('profile_back_to_profile') || (lang === 'en' ? '⬅️ Back to profile' : '⬅️ Назад в профиль');
+  const keyboard = [
+    [Markup.button.callback(backLabel, 'menu:profile')],
+  ];
 
-  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
+  const settings = await getSettings();
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = `${text}\n\n<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: keyboard,
+    isRich,
+  });
 };
 
 const showOrderDetail = async (ctx, orderId) => {
@@ -649,23 +659,35 @@ const showOrder2FA = async (ctx, orderId) => {
   }
 
   const text = format2FACodeMessage(accounts, lang);
+  const refreshLabel = lang === 'en' ? '🔄 Refresh 6-digit code' : '🔄 Обновить 6-значный код';
+  const backOrderLabel = lang === 'en' ? '📋 Back to order' : '📋 К заказу';
   const buttons = [
     [
       Markup.button.callback(
-        lang === 'en' ? '🔄 Refresh 6-digit code' : '🔄 Обновить 6-значный код',
+        refreshLabel,
         `profile:order:2fa_refresh:${order._id}`
       ),
     ],
     [
       Markup.button.callback(
-        lang === 'en' ? '📋 Back to order' : '📋 К заказу',
+        backOrderLabel,
         `profile:order:${order._id}`
       ),
     ],
   ];
 
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  await safeEdit(ctx, text, opts);
+  const settings = await getSettings();
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = `${text}\n\n` +
+    `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:order:2fa_refresh:${order._id}">${escapeHtml(refreshLabel)}</tg-button></tg-button-row>\n` +
+    `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="profile:order:${order._id}">${escapeHtml(backOrderLabel)}</tg-button></tg-button-row>`;
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 const cancelPreorder = async (ctx, orderId) => {
@@ -830,7 +852,76 @@ const showTopupHistory = async (ctx, page = 1) => {
     Markup.button.callback(t('btn_back'), 'menu:profile'),
   ]);
 
-  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  const settings = await getSettings();
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = buildTopupHistoryRichHtml({
+    text,
+    requests,
+    page,
+    totalPages,
+    lang,
+    t,
+  });
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
+};
+
+const buildTopupHistoryRichHtml = ({
+  text,
+  requests = [],
+  page = 1,
+  totalPages = 1,
+  lang = 'ru',
+  t = (k) => k,
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  requests.forEach((req, idx) => {
+    const num = (page - 1) * TOPUPS_PER_PAGE + idx + 1;
+    const methodStr = getTopupMethodLabel(req.method, req.network, lang);
+    const amountUSDT = req.amount ? req.amount.toFixed(2) : '0.00';
+    const label = `🔍 #${num} ${methodStr} (${amountUSDT} USDT)`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:topup:detail:${req._id}">${escapeHtml(label)}</tg-button></tg-button-row>\n`;
+  });
+
+  if (totalPages > 1) {
+    let navBtns = '';
+    if (page > 1) {
+      navBtns += `<tg-button type="callback_data" style="primary" data="profile:topups:page:${page - 1}">⬅️</tg-button>`;
+    }
+    navBtns += `<tg-button type="callback_data" style="link" data="profile:noop">${page}/${totalPages}</tg-button>`;
+    if (page < totalPages) {
+      navBtns += `<tg-button type="callback_data" style="primary" data="profile:topups:page:${page + 1}">➡️</tg-button>`;
+    }
+    richHtml += `<tg-button-row align="center">${navBtns}</tg-button-row>\n`;
+  }
+
+  const addTopupLabel = lang === 'en' ? '➕ Top Up Balance' : '➕ Пополнить баланс';
+  const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Back' : '⬅️ Назад');
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="success" data="menu:topup">${escapeHtml(addTopupLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button>` +
+    `</tg-button-row>`;
+
+  return richHtml.trim();
+};
+
+const buildTopupDetailRichHtml = ({
+  text,
+  lang = 'ru',
+  t = (k) => k,
+}) => {
+  let richHtml = `${text}\n\n`;
+  const backToHistLabel = lang === 'en' ? '⬅️ Back to History' : '⬅️ К истории пополнений';
+  const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Back' : '⬅️ Назад');
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:topups">${escapeHtml(backToHistLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+  return richHtml.trim();
 };
 
 // Детальный просмотр заявки на пополнение
@@ -881,7 +972,20 @@ const showTopupDetail = async (ctx, requestId) => {
     [Markup.button.callback(t('btn_back'), 'menu:profile')],
   ];
 
-  await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+  const settings = await getSettings();
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = buildTopupDetailRichHtml({
+    text,
+    lang,
+    t,
+  });
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 module.exports = {
@@ -899,5 +1003,7 @@ module.exports = {
   buildProfileRichHtml,
   buildOrdersRichHtml,
   buildOrderDetailRichHtml,
+  buildTopupHistoryRichHtml,
+  buildTopupDetailRichHtml,
   STATUS_EMOJIS,
 };

@@ -959,7 +959,10 @@ const isRichActive = (ctx, settings) => {
  * При isRich === false или ошибке API — моментальный фолбэк на safeEdit с классической клавиатурой.
  */
 const safeEditRich = async (ctx, { richHtml, classicText, classicKeyboard, isRich }) => {
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(classicKeyboard || []) };
+  const keyboardExtra = (classicKeyboard && classicKeyboard.reply_markup)
+    ? classicKeyboard
+    : Markup.inlineKeyboard(classicKeyboard || []);
+  const opts = { parse_mode: 'HTML', ...keyboardExtra };
 
   if (!isRich) {
     return safeEdit(ctx, classicText, opts);
@@ -976,6 +979,7 @@ const safeEditRich = async (ctx, { richHtml, classicText, classicKeyboard, isRic
           chat_id: chatId,
           message_id: messageId,
           rich_message: { html: richHtml },
+          reply_markup: { inline_keyboard: [] },
         });
         await ctx.answerCbQuery().catch(() => {});
         return res;

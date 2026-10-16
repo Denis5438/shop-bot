@@ -43,8 +43,8 @@ const editOrReply = async (ctx, text, extra) => {
  */
 const buildTopupAmountRichHtml = ({
   text,
-  customAmountLabel,
-  cancelLabel,
+  customAmountLabel = '✍️ Своя сумма',
+  cancelLabel = '❌ Отмена',
 }) => {
   let richHtml = `${text}\n\n`;
 
@@ -76,12 +76,12 @@ const buildTopupAmountRichHtml = ({
 const buildTopupMethodsRichHtml = ({
   text,
   settings,
-  sbpLabel,
-  idbankLabel,
-  bybitLabel,
-  changeAmountLabel,
-  cancelLabel,
-  supportLabel,
+  sbpLabel = '⚡ СБП',
+  idbankLabel = '🏦 Карта IDBank',
+  bybitLabel = '📊 Bybit',
+  changeAmountLabel = '⬅️ Изменить сумму',
+  cancelLabel = '❌ Отмена',
+  supportLabel = '🆘 Поддержка',
 }) => {
   let richHtml = `${text}\n\n`;
 

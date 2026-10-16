@@ -57,6 +57,31 @@ const showChannelSubScreen = async (ctx, subCheckResult, isEdit = false) => {
 };
 
 module.exports = (bot) => {
+  const renderMainMenu = async (ctx, welcomeKey = 'welcome_back') => {
+    const t = ctx.t || ((k) => k);
+    const user = ctx.user;
+    const text = t(welcomeKey, {
+      name: escapeHtml(user?.firstName || ''),
+      balance: (user?.balance || 0).toFixed(2),
+      balanceRub: toRub(user?.balance || 0),
+    });
+    const settings = await getSettings();
+    const isRich = isRichActive(ctx, settings);
+    const richHtml = buildMainMenuRichHtml({
+      text,
+      t,
+      isSeller: ctx.isSeller,
+      lang: user?.language || 'ru',
+    });
+    const classicKeyboard = mainKeyboard(t, ctx.isSeller);
+    await safeEditRich(ctx, {
+      richHtml,
+      classicText: text,
+      classicKeyboard,
+      isRich,
+    });
+  };
+
   bot.start(async (ctx) => {
     await cleanPreviousBotMessage(ctx);
 
@@ -145,25 +170,7 @@ module.exports = (bot) => {
       return shopScene.showProduct(ctx, pId, 1);
     }
 
-    try {
-      await ctx.editMessageText(
-        t('welcome_back', {
-          name: escapeHtml(ctx.user.firstName),
-          balance: ctx.user.balance.toFixed(2),
-          balanceRub: toRub(ctx.user.balance),
-        }),
-        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-      );
-    } catch (_) {
-      await ctx.reply(
-        t('welcome_back', {
-          name: escapeHtml(ctx.user.firstName),
-          balance: ctx.user.balance.toFixed(2),
-          balanceRub: toRub(ctx.user.balance),
-        }),
-        { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-      ).catch(() => {});
-    }
+    await renderMainMenu(ctx, 'welcome_back');
   });
 
   // ─────────────────── Проверка подписки на каналы ───────────────────
@@ -171,19 +178,7 @@ module.exports = (bot) => {
     const subCheck = await checkUserSubscriptions(ctx.telegram, ctx.from.id);
     if (!subCheck.isEnabled || subCheck.allSubscribed) {
       await ctx.answerCbQuery('✅ Отлично! Вы подписаны на все каналы. Добро пожаловать!');
-      const user = ctx.user;
-      const t = ctx.t;
-      try {
-        await ctx.editMessageText(
-          t('welcome', { name: escapeHtml(user.firstName), balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
-          { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-        );
-      } catch (_) {
-        await ctx.reply(
-          t('welcome', { name: escapeHtml(user.firstName), balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
-          { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-        ).catch(() => {});
-      }
+      await renderMainMenu(ctx, 'welcome');
       return;
     }
 
@@ -367,10 +362,7 @@ module.exports = (bot) => {
       return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
     }
 
-    await ctx.editMessageText(
-      t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
-      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-    ).catch(() => {});
+    await renderMainMenu(ctx, 'welcome_back');
   });
 
   bot.action('lang:en', async (ctx) => {
@@ -385,10 +377,7 @@ module.exports = (bot) => {
       return ctx.editMessageText(tosGateText(t), { parse_mode: 'HTML', ...tosGateKeyboard(t) }).catch(() => {});
     }
 
-    await ctx.editMessageText(
-      t('welcome_back', { name: escapeHtml(ctx.user.firstName), balance: ctx.user.balance.toFixed(2), balanceRub: toRub(ctx.user.balance) }),
-      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-    ).catch(() => {});
+    await renderMainMenu(ctx, 'welcome_back');
   });
 
   // Кнопка «Сменить язык» из главного меню
@@ -408,27 +397,7 @@ module.exports = (bot) => {
 
   // ─────────────────── ГЛАВНОЕ МЕНЮ ───────────────────
   bot.action('menu:main', async (ctx) => {
-    const t = ctx.t;
-    const text = t('welcome_back', {
-      name: escapeHtml(ctx.user.firstName),
-      balance: ctx.user.balance.toFixed(2),
-      balanceRub: toRub(ctx.user.balance),
-    });
-    const settings = await getSettings();
-    const isRich = isRichActive(ctx, settings);
-    const richHtml = buildMainMenuRichHtml({
-      text,
-      t,
-      isSeller: ctx.isSeller,
-      lang: ctx.user?.language || 'ru',
-    });
-    const classicKeyboard = mainKeyboard(t, ctx.isSeller).reply_markup.inline_keyboard;
-    await safeEditRich(ctx, {
-      richHtml,
-      classicText: text,
-      classicKeyboard,
-      isRich,
-    });
+    await renderMainMenu(ctx, 'welcome_back');
   });
 
   bot.action('menu:shop', async (ctx) => {
