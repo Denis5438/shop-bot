@@ -191,6 +191,10 @@ module.exports = (bot) => {
     await profileScene.toggleBtnStyle(ctx);
   });
 
+  bot.action('profile:toggle_btn_layout', async (ctx) => {
+    await profileScene.toggleBtnLayout(ctx);
+  });
+
   bot.action('user:activate_promo', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     ctx.session = ctx.session || {};

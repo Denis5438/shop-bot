@@ -5,9 +5,26 @@ const Transaction = require('../../models/Transaction');
 const { toRub } = require('../../services/currency.service');
 const { getSettings } = require('../../services/settingsCache.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../../services/referral.service');
-const { escapeHtml, safeEdit } = require('../utils/ui');
+const { escapeHtml, safeEditRich, isRichActive } = require('../utils/ui');
 
 const mongoose = require('mongoose');
+
+/**
+ * Генерация Rich HTML для экрана реферальной программы
+ */
+const buildReferralRichHtml = ({
+  text,
+  shareUrl,
+  shareLabel,
+  backLabel,
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  richHtml += `<tg-button-row align="left"><tg-button type="url" style="primary" url="${escapeHtml(shareUrl)}">${escapeHtml(shareLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+
+  return richHtml.trim();
+};
 
 /**
  * Получение расширенной реферальной статистики пользователя:
@@ -126,20 +143,33 @@ const showReferral = async (ctx) => {
   const shareText = encodeURIComponent(lang === 'en' ? 'Get licensed keys & subscriptions with instant delivery!' : 'Покупай лицензионные подписки и ключи с моментальной выдачей!');
   const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${shareText}`;
 
-  const extra = {
-    parse_mode: 'HTML',
-    disable_web_page_preview: true,
-    ...Markup.inlineKeyboard([
-      [Markup.button.url(lang === 'en' ? '📤 Share Link' : '📤 Поделиться ссылкой', shareUrl)],
-      [Markup.button.callback(t('btn_back'), 'menu:main')],
-    ]),
-  };
+  const shareLabel = lang === 'en' ? '📤 Share Link' : '📤 Поделиться ссылкой';
+  const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню');
 
-  await safeEdit(ctx, text, extra);
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = buildReferralRichHtml({
+    text,
+    shareUrl,
+    shareLabel,
+    backLabel,
+  });
+
+  const classicKeyboard = [
+    [Markup.button.url(shareLabel, shareUrl)],
+    [Markup.button.callback(backLabel, 'menu:main')],
+  ];
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard,
+    isRich,
+  });
 };
 
 module.exports = {
   showReferral,
+  buildReferralRichHtml,
   getReferralStats,
   giveReferralBonus: grantReferralBonusForFirstCompletedOrder,
 };

@@ -934,8 +934,81 @@ const formatSingleItem = (rawStr, lang = 'ru') => {
   return `<code>${escapeHtml(val)}</code>`;
 };
 
+/**
+ * Проверяет, активен ли режим Rich API (кнопки внутри сообщения Telegram 10.3)
+ * с учётом настроек админа и индивидуального выбора пользователя.
+ *
+ * @param {Object} ctx Telegraf context (содержит ctx.user)
+ * @param {Object} settings Настройки магазина (из getSettings / Settings)
+ * @returns {boolean}
+ */
+const isRichActive = (ctx, settings) => {
+  const mode = settings?.globalButtonsMode || 'by_user';
+  if (mode === 'force_classic') return false;
+  if (mode === 'force_rich') return true;
+  // by_user:
+  const userPref = ctx?.user?.buttonLayout;
+  if (userPref === 'classic') return false;
+  if (userPref === 'rich') return true;
+  return (settings?.defaultButtonLayout || 'rich') === 'rich';
+};
+
+/**
+ * Универсальная отправка/редактирование сообщения с поддержкой Telegram Bot API 10.3 Rich Message
+ * (<tg-button-row> / <tg-button>).
+ * При isRich === false или ошибке API — моментальный фолбэк на safeEdit с классической клавиатурой.
+ */
+const safeEditRich = async (ctx, { richHtml, classicText, classicKeyboard, isRich }) => {
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(classicKeyboard || []) };
+
+  if (!isRich) {
+    return safeEdit(ctx, classicText, opts);
+  }
+
+  // Попытка отправить через Rich Message (Telegram Bot API 10.3)
+  if (ctx.telegram?.callApi) {
+    try {
+      const chatId = ctx.chat?.id || ctx.from?.id;
+      const messageId = ctx.callbackQuery?.message?.message_id;
+
+      if (ctx.callbackQuery && messageId && chatId) {
+        const res = await ctx.telegram.callApi('editMessageText', {
+          chat_id: chatId,
+          message_id: messageId,
+          rich_message: { html: richHtml },
+        });
+        await ctx.answerCbQuery().catch(() => {});
+        return res;
+      } else if (chatId) {
+        const res = await ctx.telegram.callApi('sendRichMessage', {
+          chat_id: chatId,
+          rich_message: { html: richHtml },
+        });
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery().catch(() => {});
+        }
+        return res;
+      }
+    } catch (err) {
+      const errText = String(err?.description || err?.message || '');
+      if (errText.includes('message is not modified')) {
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery('🔄 Данные актуальны').catch(() => {});
+        }
+        return null;
+      }
+      // Авто-фолбэк: при любой ошибке Telegram (устаревший клиент, ошибка парсинга и т.д.)
+      // моментально откатываемся на обычный safeEdit с классической клавиатурой
+    }
+  }
+
+  return safeEdit(ctx, classicText, opts);
+};
+
 module.exports = {
   safeEdit,
+  safeEditRich,
+  isRichActive,
   fmtUSDT,
   balanceHeader,
   copyHint,

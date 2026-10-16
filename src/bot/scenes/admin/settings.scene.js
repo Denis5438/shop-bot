@@ -37,6 +37,8 @@ const getLiveSettings = async () => {
       currencyMode: 'bybit_p2p',
       manualRate: 95,
       currencyOffset: 0,
+      globalButtonsMode: 'by_user',
+      defaultButtonLayout: 'rich',
       catalogButtonsStyle: 'rich',
     });
   }
@@ -61,6 +63,21 @@ const showSettings = async (ctx) => {
   const bybitBtnStr = settings.bybitEnabled !== false ? '📊 Bybit: Выкл' : '📊 Bybit: Вкл';
   const cleanChatStatusText = settings.cleanChatEnabled ? '🟢 Вкл' : '🔴 Выкл';
   const cleanChatBtnStr = settings.cleanChatEnabled ? '🧹 Чистый чат: Выкл' : '🧹 Чистый чат: Вкл';
+
+  const globalButtonsMode = settings.globalButtonsMode || 'by_user';
+  const buttonLayoutLabels = {
+    by_user: '👥 По выбору пользователя (по умолч. В тексте)',
+    force_rich: '🟢 Принудительно В тексте (Новые)',
+    force_classic: '🔘 Принудительно Снизу (Классика)',
+  };
+  const buttonLayoutModeLabel = buttonLayoutLabels[globalButtonsMode] || buttonLayoutLabels.by_user;
+
+  const shortLayoutLabels = {
+    by_user: '👥 По выбору пользователя',
+    force_rich: '🟢 Принудительно В тексте',
+    force_classic: '🔘 Принудительно Снизу',
+  };
+  const shortButtonLayoutLabel = shortLayoutLabels[globalButtonsMode] || shortLayoutLabels.by_user;
 
   const baseBybitRate = getBaseRate();
   const effectiveRate = getRate(settings);
@@ -96,7 +113,7 @@ const showSettings = async (ctx) => {
     `📉 Умная уценка (-${settings.autoMarkdownPercent}% / ${settings.autoMarkdownDays}дн): <b>${settings.autoMarkdownEnabled ? '🔴 Вкл' : '🟢 Выкл'}</b>\n` +
     `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n` +
     `🧹 Чистый чат (удаление старых сообщений): <b>${cleanChatStatusText}</b>\n` +
-    `• Стиль кнопок витрины: <b>${settings.catalogButtonsStyle === 'classic' ? '🔘 Классический (Снизу)' : '🟢 Внутри сообщения (Rich)'}</b>\n\n` +
+    `• Формат кнопок интерфейса: <b>${buttonLayoutModeLabel}</b>\n\n` +
     `✨ API Gemini AI: <code>${settings.geminiApiKey ? '••••••••' + String(settings.geminiApiKey).slice(-4) : 'не задан'}</code>\n\n` +
     `💱 <b>Курс валют (USDT ➔ RUB):</b>\n` +
     `• Режим: <b>${currencyMode === 'manual' ? '✋ Ручной' : '🟢 Авто (Bybit P2P)'}</b>\n` +
@@ -122,7 +139,7 @@ const showSettings = async (ctx) => {
       Markup.button.callback('✏️ Ручной фикс-курс', 'admin:settings:edit:manualRate'),
     ],
     [Markup.button.callback(cleanChatBtnStr, 'admin:settings:toggle_clean_chat')],
-    [Markup.button.callback(`🎨 Кнопки каталога: ${settings.catalogButtonsStyle === 'classic' ? '🔘 Классический' : '🟢 Внутри сообщения'}`, 'admin:settings:toggle_catalog_style')],
+    [Markup.button.callback(`🎨 Формат кнопок: ${shortButtonLayoutLabel}`, 'admin:settings:toggle_button_layout')],
     [Markup.button.callback('✨ API GEMINI', 'admin:settings:edit:geminiApiKey')],
     [Markup.button.callback('✏️ Platega Merchant ID', 'admin:settings:edit:plategaMerchantId')],
     [Markup.button.callback('✏️ Platega Secret Key', 'admin:settings:edit:plategaSecret')],
@@ -253,14 +270,30 @@ const toggleCleanChat = async (ctx) => {
   await showSettings(ctx);
 };
 
-const toggleCatalogStyle = async (ctx) => {
+const toggleButtonLayout = async (ctx) => {
   const settings = await getLiveSettings();
-  settings.catalogButtonsStyle = settings.catalogButtonsStyle === 'classic' ? 'rich' : 'classic';
+  const current = settings.globalButtonsMode || 'by_user';
+  let next = 'by_user';
+  if (current === 'by_user') next = 'force_rich';
+  else if (current === 'force_rich') next = 'force_classic';
+  else if (current === 'force_classic') next = 'by_user';
+
+  settings.globalButtonsMode = next;
+  settings.catalogButtonsStyle = next === 'force_classic' ? 'classic' : 'rich';
   await settings.save();
   invalidateCache(settings);
-  const label = settings.catalogButtonsStyle === 'classic' ? '🔘 Классический' : '🟢 Внутри сообщения';
-  await ctx.answerCbQuery(`Стиль кнопок: ${label}`).catch(() => {});
+
+  const shortLabels = {
+    by_user: '👥 По выбору пользователя',
+    force_rich: '🟢 Принудительно В тексте',
+    force_classic: '🔘 Принудительно Снизу',
+  };
+  await ctx.answerCbQuery(`Формат кнопок: ${shortLabels[next] || next}`).catch(() => {});
   await showSettings(ctx);
+};
+
+const toggleCatalogStyle = async (ctx) => {
+  return toggleButtonLayout(ctx);
 };
 
 const toggleCurrencyMode = async (ctx) => {
@@ -385,6 +418,7 @@ module.exports = {
   toggleCard,
   toggleBybit,
   toggleCleanChat,
+  toggleButtonLayout,
   toggleCatalogStyle,
   toggleCurrencyMode,
   startEditSetting,

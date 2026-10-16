@@ -18,7 +18,7 @@ const {
 const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
 const promoService = require('../../services/promo.service');
-const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit } = require('../utils/ui');
+const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit, safeEditRich, isRichActive } = require('../utils/ui');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
 
 const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-17-78';
@@ -227,52 +227,7 @@ const getStockMap = async (products) => {
  * (<tg-button-row> / <tg-button>), либо при classic режиме или ошибке Telegram —
  * моментально откатывается на safeEdit с классической клавиатурой Markup.inlineKeyboard.
  */
-const safeEditStorefront = async (ctx, { richHtml, classicText, classicKeyboard, isRich }) => {
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(classicKeyboard) };
-
-  if (!isRich) {
-    return safeEdit(ctx, classicText, opts);
-  }
-
-  // Попытка отправить через Rich Message (Telegram Bot API 10.3)
-  if (ctx.telegram?.callApi) {
-    try {
-      const chatId = ctx.chat?.id || ctx.from?.id;
-      const messageId = ctx.callbackQuery?.message?.message_id;
-
-      if (ctx.callbackQuery && messageId && chatId) {
-        const res = await ctx.telegram.callApi('editMessageText', {
-          chat_id: chatId,
-          message_id: messageId,
-          rich_message: { html: richHtml },
-        });
-        await ctx.answerCbQuery().catch(() => {});
-        return res;
-      } else if (chatId) {
-        const res = await ctx.telegram.callApi('sendRichMessage', {
-          chat_id: chatId,
-          rich_message: { html: richHtml },
-        });
-        if (ctx.callbackQuery) {
-          await ctx.answerCbQuery().catch(() => {});
-        }
-        return res;
-      }
-    } catch (err) {
-      const errText = String(err?.description || err?.message || '');
-      if (errText.includes('message is not modified')) {
-        if (ctx.callbackQuery) {
-          await ctx.answerCbQuery('🔄 Данные актуальны').catch(() => {});
-        }
-        return null;
-      }
-      // Авто-фолбэк: при любой ошибке Telegram (устаревший клиент, ошибка парсинга и т.д.)
-      // моментально откатываемся на обычный safeEdit с классической клавиатурой
-    }
-  }
-
-  return safeEdit(ctx, classicText, opts);
-};
+const safeEditStorefront = safeEditRich;
 
 const buildShopPageRichHtml = ({ text, inStockCats = [], outOfStockCats = [], isCollapsed = true, t = (k) => k }) => {
   let richHtml = `${text}\n\n`;
@@ -508,7 +463,7 @@ const showShopPage = async (ctx) => {
 
   const text = t('shop_title') || '🛍 <b>Каталог товаров</b>\n\nВыберите интересующую категорию или товар:';
   const settings = await getSettings();
-  const isRich = settings.catalogButtonsStyle !== 'classic';
+  const isRich = isRichActive(ctx, settings);
   const richHtml = buildShopPageRichHtml({ text, inStockCats, outOfStockCats, isCollapsed, t });
 
   await safeEditStorefront(ctx, {
@@ -629,7 +584,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
 
   const text = `📁 <b>${escapeHtml(category.name)}</b>\n${lang === 'en' ? 'Select a product:' : 'Выберите товар:'}`;
   const settings = await getSettings();
-  const isRich = settings.catalogButtonsStyle !== 'classic';
+  const isRich = isRichActive(ctx, settings);
   const richHtml = buildCategoryRichHtml({
     text,
     productItems,
@@ -800,7 +755,7 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
   }
   buttons.push(bottomRow);
   const settings = await getSettings();
-  const isRich = settings.catalogButtonsStyle !== 'classic';
+  const isRich = isRichActive(ctx, settings);
   const richHtml = buildProductRichHtml({
     text,
     product,

@@ -15,9 +15,10 @@ const cartScene = require('../scenes/cart.scene');
 const topupScene = require('../scenes/topup.scene');
 const { Markup } = require('telegraf');
 const { adminMiddleware } = require('../middlewares/auth');
-const { escapeHtml, formatDateTimeMSK, safeEdit } = require('../utils/ui');
-const { mainKeyboard, languageKeyboard } = require('../keyboards/main.keyboard');
+const { escapeHtml, formatDateTimeMSK, safeEdit, safeEditRich, isRichActive } = require('../utils/ui');
+const { mainKeyboard, languageKeyboard, buildMainMenuRichHtml } = require('../keyboards/main.keyboard');
 const { toRub } = require('../../services/currency.service');
+const { getSettings } = require('../../services/settingsCache.service');
 const { tosGateKeyboard, tosGateText, PRIVACY_URL, AGREEMENT_URL } = require('../middlewares/tos');
 const { checkUserSubscriptions } = require('../services/channelCheck.service');
 const { cleanPreviousBotMessage, saveBotMessage } = require('../utils/cleanChat');
@@ -413,7 +414,21 @@ module.exports = (bot) => {
       balance: ctx.user.balance.toFixed(2),
       balanceRub: toRub(ctx.user.balance),
     });
-    await safeEdit(ctx, text, { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) });
+    const settings = await getSettings();
+    const isRich = isRichActive(ctx, settings);
+    const richHtml = buildMainMenuRichHtml({
+      text,
+      t,
+      isSeller: ctx.isSeller,
+      lang: ctx.user?.language || 'ru',
+    });
+    const classicKeyboard = mainKeyboard(t, ctx.isSeller).reply_markup.inline_keyboard;
+    await safeEditRich(ctx, {
+      richHtml,
+      classicText: text,
+      classicKeyboard,
+      isRich,
+    });
   });
 
   bot.action('menu:shop', async (ctx) => {

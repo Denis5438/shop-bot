@@ -11,6 +11,7 @@
     "test:currency": "node scripts/test_currency_features.js",
     "test:promo": "node scripts/test_promo_features.js",
     "test:catalog-style": "node scripts/test_catalog_style.js",
+    "test:user-style": "node scripts/test_user_style_system.js",
     "migrate:token-raw": "node scripts/migrate-token-raw.js"
   },
   "dependencies": {

@@ -4,7 +4,8 @@ const User = require('../../models/User');
 const TopupRequest = require('../../models/TopupRequest');
 const { toRub } = require('../../services/currency.service');
 const { ORDER_STATUS_LABELS } = require('../constants/ux');
-const { escapeHtml, formatDateTimeMSK, formatDateMSK, safeEdit } = require('../utils/ui');
+const { escapeHtml, formatDateTimeMSK, formatDateMSK, safeEdit, safeEditRich, isRichActive, has2FASecret, get2FAButtonLabel } = require('../utils/ui');
+const { getSettings } = require('../../services/settingsCache.service');
 const { getAllWithProgress, renderAchievementsText } = require('../../services/achievements.service');
 
 const PER_PAGE = 5;
@@ -39,6 +40,160 @@ const localizedOrderStatus = (ctx, status) => {
   const localized = ctx.t ? ctx.t(key) : null;
   // Если перевод не найден (не добавлен новый статус в локаль) - fallback на RU-мапку.
   return localized && localized !== key ? localized : (ORDER_STATUS_LABELS[status] || status);
+};
+
+const buildProfileRichHtml = ({
+  text,
+  activeOrder = null,
+  btnStyleLabel,
+  layoutLabel,
+  isColored = true,
+  t = (k) => k,
+  lang = 'ru',
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  if (activeOrder) {
+    const activeLabel = t('profile_continue_activation') || (lang === 'en' ? '▶️ Continue activation' : '▶️ Продолжить активацию');
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="profile:continue_order:${activeOrder._id}">${escapeHtml(activeLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  const ordersLabel = t('btn_orders') || (lang === 'en' ? '📦 My Orders' : '📦 Мои покупки');
+  const topupsLabel = lang === 'en' ? '💳 Top-up History' : '💳 История пополнений';
+  const mainStyle = isColored ? 'primary' : 'link';
+
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="profile:orders">${escapeHtml(ordersLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="profile:topups">${escapeHtml(topupsLabel)}</tg-button>` +
+    `</tg-button-row>\n`;
+
+  const promoLabel = lang === 'en' ? '🎟 Promo Code' : '🎟 Промокод';
+  const refLabel = t('btn_referral') || (lang === 'en' ? '👥 Referrals' : '👥 Рефералы');
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="user:activate_promo">${escapeHtml(promoLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="profile:referral">${escapeHtml(refLabel)}</tg-button>` +
+    `</tg-button-row>\n`;
+
+  const achLabel = t('profile_achievements_btn') || (lang === 'en' ? '🏆 Achievements' : '🏆 Достижения');
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="profile:achievements">${escapeHtml(achLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="profile:toggle_btn_style">${escapeHtml(btnStyleLabel)}</tg-button>` +
+    `</tg-button-row>\n`;
+
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="profile:toggle_btn_layout">${escapeHtml(layoutLabel)}</tg-button>` +
+    `</tg-button-row>\n`;
+
+  const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню');
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button>` +
+    `</tg-button-row>`;
+
+  return richHtml.trim();
+};
+
+const buildOrdersRichHtml = ({
+  text,
+  orders = [],
+  filter = 'all',
+  page = 1,
+  totalPages = 1,
+  lang = 'ru',
+  t = (k) => k,
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  if (orders.length === 0) {
+    if (filter === 'active') {
+      richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:orders:all:1">${escapeHtml(t('orders_show_all'))}</tg-button></tg-button-row>\n`;
+    }
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(t('orders_to_shop'))}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(t('btn_back'))}</tg-button></tg-button-row>`;
+    return richHtml.trim();
+  }
+
+  // 1. Детали каждого заказа
+  for (const o of orders) {
+    const rawName = (lang === 'en' && o.productId?.nameEn ? o.productId.nameEn : o.productId?.name) || (lang === 'en' ? 'Deleted item' : 'Товар удалён');
+    const statusEmoji = STATUS_EMOJIS[o.status] || '📦';
+    const trimmedName = rawName.length > 18 ? rawName.slice(0, 17) + '…' : rawName;
+    const btnLabel = `🧾 ${trimmedName} · ${o.price} USDT · ${statusEmoji}`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:order:detail:${o._id}">${escapeHtml(btnLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  // 2. Вкладки фильтра
+  const allLabel = filter === 'all' ? t('orders_tab_all') : '📋 ' + t('orders_tab_all').replace('☑️ ', '');
+  const activeLabel = filter === 'active' ? t('orders_tab_active') : '📋 ' + t('orders_tab_active').replace('🔄 ', '');
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="${filter === 'all' ? 'success' : 'primary'}" data="profile:orders:all:1">${escapeHtml(allLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="${filter === 'active' ? 'success' : 'primary'}" data="profile:orders:active:1">${escapeHtml(activeLabel)}</tg-button>` +
+    `</tg-button-row>\n`;
+
+  // 3. Пагинация
+  if (totalPages > 1) {
+    let navBtns = '';
+    if (page > 1) {
+      navBtns += `<tg-button type="callback_data" style="primary" data="profile:orders:${filter}:${page - 1}">⬅️</tg-button>`;
+    }
+    navBtns += `<tg-button type="callback_data" style="link" data="shop:noop">${page}/${totalPages}</tg-button>`;
+    if (page < totalPages) {
+      navBtns += `<tg-button type="callback_data" style="primary" data="profile:orders:${filter}:${page + 1}">➡️</tg-button>`;
+    }
+    richHtml += `<tg-button-row align="center">${navBtns}</tg-button-row>\n`;
+  }
+
+  // 4. Назад
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(t('btn_back'))}</tg-button></tg-button-row>`;
+
+  return richHtml.trim();
+};
+
+const buildOrderDetailRichHtml = ({
+  text,
+  order,
+  itemValue,
+  isCompleted,
+  isWarrantyActive,
+  lang = 'ru',
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  // 1. 2FA кнопка
+  if (itemValue && has2FASecret(itemValue)) {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="profile:order:2fa:${order._id}">${escapeHtml(get2FAButtonLabel(lang))}</tg-button></tg-button-row>\n`;
+  }
+
+  // 2. Отправка данных в чат
+  if (isCompleted && itemValue) {
+    const sendDataLabel = lang === 'en' ? '📨 Send data to chat' : '📨 Прислать данные в чат';
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:order:send_data:${order._id}">${escapeHtml(sendDataLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  // 3. Действия покупателя escrow
+  if (order.status === 'awaiting_confirmation' && order.sellerId) {
+    const confirmLabel = lang === 'en' ? '✅ Confirm receipt (Everything works)' : '✅ Подтвердить получение (Всё работает)';
+    const disputeLabel = lang === 'en' ? '⚠️ Open dispute (Problem with product)' : '⚠️ Открыть спор (Проблема с товаром)';
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="buyer:confirm_order:${order._id}">${escapeHtml(confirmLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="danger" data="buyer:dispute_order:${order._id}">${escapeHtml(disputeLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  // 4. Отмена предзаказа
+  if (order.status === 'preorder_pending') {
+    const cancelLabel = lang === 'en' ? '❌ Cancel pre-order (refund)' : '❌ Отменить предзаказ (вернуть деньги)';
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="danger" data="profile:cancel_preorder:${order._id}">${escapeHtml(cancelLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  // 5. Замена по гарантии
+  if (isWarrantyActive && order.replacementStatus === 'none') {
+    const claimLabel = lang === 'en' ? '🔄 Request warranty replacement' : '🔄 Запросить замену по гарантии';
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:warranty:claim:${order._id}">${escapeHtml(claimLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  // 6. Назад к заказам
+  const backLabel = lang === 'en' ? '⬅️ To orders' : '⬅️ К заказам';
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="profile:orders:all:1">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+
+  return richHtml.trim();
 };
 
 // Показ профиля пользователя
@@ -80,9 +235,22 @@ const showProfile = async (ctx) => {
     `👥 ${lang === 'en' ? 'Invited friends' : 'Приглашено друзей'}: <b>${referralsCount}</b>\n` +
     `📅 ${t('profile_joined')}: ${createdAt}</blockquote>`;
 
+  const settings = await getSettings();
+  const globalMode = settings?.globalButtonsMode || 'by_user';
+  const isLocked = globalMode === 'force_rich' || globalMode === 'force_classic';
+
   const btnStyleLabel = user.btnStyle === 'classic'
-    ? (lang === 'en' ? '🎨 Theme: 🔘 Classic' : '🎨 Стиль: 🔘 Прозрачные')
-    : (lang === 'en' ? '🎨 Theme: 🟢 Colored' : '🎨 Стиль: 🟢 Цветные');
+    ? (lang === 'en' ? '🎨 Theme: 🔘 Classic' : '🎨 Цвет: 🔘 Прозрачные')
+    : (lang === 'en' ? '🎨 Theme: 🟢 Colored' : '🎨 Цвет: 🟢 Цветные');
+
+  let layoutLabel;
+  if (isLocked) {
+    layoutLabel = lang === 'en' ? '📱 Buttons: 🔒 Locked' : '📱 Кнопки: 🔒 Зафиксировано';
+  } else {
+    layoutLabel = user.buttonLayout === 'classic'
+      ? (lang === 'en' ? '📱 Buttons: 🔘 Bottom' : '📱 Кнопки: 🔘 Снизу')
+      : (lang === 'en' ? '📱 Buttons: 🟢 In text' : '📱 Кнопки: 🟢 В тексте');
+  }
 
   const buttons = [];
   if (activeOrder) {
@@ -103,10 +271,28 @@ const showProfile = async (ctx) => {
     Markup.button.callback(t('profile_achievements_btn'), 'profile:achievements'),
     Markup.button.callback(btnStyleLabel, 'profile:toggle_btn_style'),
   ]);
+  buttons.push([
+    Markup.button.callback(layoutLabel, 'profile:toggle_btn_layout'),
+  ]);
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
 
-  const keyboard = Markup.inlineKeyboard(buttons);
-  await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = buildProfileRichHtml({
+    text,
+    activeOrder,
+    btnStyleLabel,
+    layoutLabel,
+    isColored: user.btnStyle !== 'classic',
+    t,
+    lang,
+  });
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 // Смена языка
@@ -157,7 +343,24 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
     emptyButtons.push([Markup.button.callback(t('orders_to_shop'), 'menu:shop')]);
     emptyButtons.push([Markup.button.callback(t('btn_back'), 'menu:profile')]);
 
-    return await safeEdit(ctx, emptyMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) });
+    const settings = await getSettings();
+    const isRich = isRichActive(ctx, settings);
+    const richHtml = buildOrdersRichHtml({
+      text: emptyMsg,
+      orders: [],
+      filter,
+      page: 1,
+      totalPages: 1,
+      lang: ctx.user?.language || 'ru',
+      t,
+    });
+
+    return await safeEditRich(ctx, {
+      richHtml,
+      classicText: emptyMsg,
+      classicKeyboard: emptyButtons,
+      isRich,
+    });
   }
 
   const lang = ctx.user?.language || 'ru';
@@ -198,8 +401,24 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
 
   buttons.push([Markup.button.callback(t('btn_back'), 'menu:profile')]);
 
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  await safeEdit(ctx, text, opts);
+  const settings = await getSettings();
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = buildOrdersRichHtml({
+    text,
+    orders,
+    filter,
+    page,
+    totalPages,
+    lang,
+    t,
+  });
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 // №20 Достижения: отдельный экран со списком ачивок + прогрессом
@@ -381,8 +600,23 @@ const showOrderDetail = async (ctx, orderId) => {
 
   buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ To orders' : '⬅️ К заказам', 'profile:orders:all:1')]);
 
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  await safeEdit(ctx, text, opts);
+  const settings = await getSettings();
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = buildOrderDetailRichHtml({
+    text,
+    order,
+    itemValue,
+    isCompleted,
+    isWarrantyActive,
+    lang,
+  });
+
+  await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 const showOrder2FA = async (ctx, orderId) => {
@@ -484,6 +718,30 @@ const toggleBtnStyle = async (ctx) => {
       ? (lang === 'en' ? '🔘 Theme updated: Classic transparent buttons!' : '🔘 Тема обновлена: Прозрачные классические кнопки!')
       : (lang === 'en' ? '🟢 Theme updated: Colored buttons!' : '🟢 Тема обновлена: Яркие цветные кнопки!');
     await ctx.answerCbQuery(alertText).catch(() => {});
+  }
+  await showProfile(ctx);
+};
+
+const toggleBtnLayout = async (ctx) => {
+  const settings = await getSettings();
+  const globalMode = settings?.globalButtonsMode || 'by_user';
+  const lang = ctx.user?.language || 'ru';
+
+  if (globalMode === 'force_rich' || globalMode === 'force_classic') {
+    const alertMsg = lang === 'en'
+      ? '⚠️ Button layout is locked by shop administrator'
+      : '⚠️ Формат кнопок зафиксирован администратором магазина';
+    return ctx.answerCbQuery(alertMsg, { show_alert: true });
+  }
+
+  if (ctx.user) {
+    const nextLayout = ctx.user.buttonLayout === 'classic' ? 'rich' : 'classic';
+    ctx.user.buttonLayout = nextLayout;
+    await User.updateOne({ _id: ctx.user._id }, { $set: { buttonLayout: nextLayout } });
+    const alertMsg = nextLayout === 'classic'
+      ? (lang === 'en' ? '🔘 Button layout: Below message (Classic)' : '🔘 Формат кнопок: Снизу сообщения (Классика)')
+      : (lang === 'en' ? '🟢 Button layout: Inside message (New)' : '🟢 Формат кнопок: Внутри сообщения (Новые)');
+    await ctx.answerCbQuery(alertMsg, { show_alert: true }).catch(() => {});
   }
   await showProfile(ctx);
 };
@@ -637,5 +895,9 @@ module.exports = {
   showAchievements,
   cancelPreorder,
   toggleBtnStyle,
+  toggleBtnLayout,
+  buildProfileRichHtml,
+  buildOrdersRichHtml,
+  buildOrderDetailRichHtml,
   STATUS_EMOJIS,
 };

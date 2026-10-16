@@ -1,7 +1,71 @@
 const { Markup } = require('telegraf');
 const cartService = require('../../services/cart.service');
-const { escapeHtml, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit } = require('../utils/ui');
+const { escapeHtml, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEditRich, isRichActive } = require('../utils/ui');
+const { getSettings } = require('../../services/settingsCache.service');
 const { toRub } = require('../../services/currency.service');
+
+/**
+ * Генерация Rich HTML для экрана корзины
+ */
+const buildCartRichHtml = ({
+  text,
+  cartData,
+  userBalance = 0,
+  lang = 'ru',
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  // Пустая корзина
+  if (!cartData || !cartData.items || cartData.items.length === 0) {
+    const catalogLabel = lang === 'en' ? '🛍 Go to Catalog' : '🛍 В каталог';
+    const menuLabel = lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню';
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(catalogLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(menuLabel)}</tg-button></tg-button-row>`;
+    return richHtml.trim();
+  }
+
+  // Непустая корзина: для каждого товара ряд [-] [📦 Название (xN)] [+] [🗑]
+  for (const item of cartData.items) {
+    const p = item.product;
+    const title = `📦 ${p.name.substring(0, 18)} (x${item.qty})`;
+    richHtml += `<tg-button-row align="left">` +
+      `<tg-button type="callback_data" style="primary" data="cart:qty:${p._id}:-1">➖</tg-button>` +
+      `<tg-button type="callback_data" style="link" data="shop:product:${p._id}">${escapeHtml(title)}</tg-button>` +
+      `<tg-button type="callback_data" style="primary" data="cart:qty:${p._id}:1">➕</tg-button>` +
+      `<tg-button type="callback_data" style="danger" data="cart:remove:${p._id}">🗑</tg-button>` +
+      `</tg-button-row>\n`;
+  }
+
+  // Кнопка оплаты или пополнения
+  if (userBalance < cartData.finalTotal) {
+    const deficit = parseFloat((cartData.finalTotal - userBalance).toFixed(2));
+    const topupLabel = lang === 'en' ? `💰 Top up ${deficit} USDT` : `💰 Пополнить на ${deficit} USDT`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="topup:quick:${deficit}">${escapeHtml(topupLabel)}</tg-button></tg-button-row>\n`;
+  } else if (!cartData.hasStockIssue) {
+    const payLabel = lang === 'en' ? `✅ Checkout All ($${cartData.finalTotal.toFixed(2)})` : `✅ Оплатить корзину ($${cartData.finalTotal.toFixed(2)})`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="cart:checkout">${escapeHtml(payLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  // Кнопка промокода
+  const promoLabel = cartData.activePromo
+    ? `🎟 ${lang === 'en' ? 'Promo' : 'Промокод'}: ${cartData.activePromo.code} (✅)`
+    : (lang === 'en' ? '🎟 Apply Promo Code' : '🎟 Ввести промокод на скидку');
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="cart:promo">${escapeHtml(promoLabel)}</tg-button></tg-button-row>\n`;
+
+  // Очистить корзину / В каталог
+  const clearLabel = lang === 'en' ? '🗑 Clear Cart' : '🗑 Очистить корзину';
+  const toCatalogLabel = lang === 'en' ? '🛍 To Catalog' : '🛍 В каталог';
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="danger" data="cart:clear">${escapeHtml(clearLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(toCatalogLabel)}</tg-button>` +
+    `</tg-button-row>\n`;
+
+  // Главное меню
+  const mainMenuLabel = lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню';
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(mainMenuLabel)}</tg-button></tg-button-row>`;
+
+  return richHtml.trim();
+};
 
 /**
  * Отображение экрана корзины пользователя
@@ -10,6 +74,9 @@ const showCart = async (ctx) => {
   const user = ctx.user;
   const lang = ctx.user?.language || 'ru';
   const cartData = await cartService.getCart(user);
+
+  const settings = await getSettings();
+  const isRich = isRichActive(ctx, settings);
 
   if (cartData.items.length === 0) {
     const emptyText = lang === 'en'
@@ -21,8 +88,8 @@ const showCart = async (ctx) => {
       [Markup.button.callback(lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню', 'menu:main')],
     ];
 
-    const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(emptyButtons) };
-    return safeEdit(ctx, emptyText, opts);
+    const richHtml = buildCartRichHtml({ text: emptyText, cartData, userBalance: user.balance, lang });
+    return await safeEditRich(ctx, { richHtml, classicText: emptyText, classicKeyboard: emptyButtons, isRich });
   }
 
   let text = lang === 'en'
@@ -87,8 +154,8 @@ const showCart = async (ctx) => {
   ]);
   buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню', 'menu:main')]);
 
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  await safeEdit(ctx, text, opts);
+  const richHtml = buildCartRichHtml({ text, cartData, userBalance: user.balance, lang });
+  await safeEditRich(ctx, { richHtml, classicText: text, classicKeyboard: buttons, isRich });
 };
 
 /**
@@ -194,6 +261,7 @@ const handleCheckout = async (ctx) => {
 
 module.exports = {
   showCart,
+  buildCartRichHtml,
   handleAddToCart,
   handleUpdateQty,
   handleRemoveItem,

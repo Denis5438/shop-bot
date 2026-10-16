@@ -1064,7 +1064,10 @@ module.exports = (bot) => {
     await settingsScene.toggleCleanChat(ctx);
   });
   bot.action('admin:settings:toggle_catalog_style', adminMiddleware, async (ctx) => {
-    await settingsScene.toggleCatalogStyle(ctx);
+    await settingsScene.toggleButtonLayout(ctx);
+  });
+  bot.action('admin:settings:toggle_button_layout', adminMiddleware, async (ctx) => {
+    await settingsScene.toggleButtonLayout(ctx);
   });
 
   bot.action('admin:settings:toggle_currency_mode', adminMiddleware, async (ctx) => {

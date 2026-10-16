@@ -3,7 +3,7 @@ const TopupRequest = require('../../models/TopupRequest');
 const User = require('../../models/User');
 const { getRate } = require('../../services/currency.service');
 const notif = require('../../services/notification.service');
-const { parseAmount, copyHint, escapeHtml } = require('../utils/ui');
+const { parseAmount, copyHint, escapeHtml, safeEditRich, isRichActive } = require('../utils/ui');
 const { SLA, TEXTS } = require('../constants/ux');
 const { startProgress } = require('../utils/progress');
 const { getSettings } = require('../../services/settingsCache.service');
@@ -36,6 +36,79 @@ const editOrReply = async (ctx, text, extra) => {
     topup.msgId = sent.message_id;
   }
   return sent;
+};
+
+/**
+ * Генерация Rich HTML для экрана выбора суммы пополнения
+ */
+const buildTopupAmountRichHtml = ({
+  text,
+  customAmountLabel,
+  cancelLabel,
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:5">5 USDT</tg-button>` +
+    `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:10">10 USDT</tg-button>` +
+    `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:20">20 USDT</tg-button>` +
+    `</tg-button-row>\n`;
+
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:50">50 USDT</tg-button>` +
+    `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:100">100 USDT</tg-button>` +
+    `</tg-button-row>\n`;
+
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="primary" data="topup:custom_amount">${escapeHtml(customAmountLabel)}</tg-button>` +
+    `</tg-button-row>\n`;
+
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(cancelLabel)}</tg-button>` +
+    `</tg-button-row>`;
+
+  return richHtml.trim();
+};
+
+/**
+ * Генерация Rich HTML для экрана выбора способа оплаты
+ */
+const buildTopupMethodsRichHtml = ({
+  text,
+  settings,
+  sbpLabel,
+  idbankLabel,
+  bybitLabel,
+  changeAmountLabel,
+  cancelLabel,
+  supportLabel,
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  const hasPlatega = settings?.plategaEnabled !== false;
+  const hasCard = settings?.cardEnabled !== false;
+  const hasBybit = settings?.bybitEnabled !== false;
+
+  if (!hasPlatega && !hasCard && !hasBybit) {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:support">${escapeHtml(supportLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:topup">${escapeHtml(changeAmountLabel)}</tg-button></tg-button-row>`;
+    return richHtml.trim();
+  }
+
+  if (hasPlatega) {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="topup:pay:platega">${escapeHtml(sbpLabel)}</tg-button></tg-button-row>\n`;
+  }
+  if (hasCard) {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="topup:pay:card">${escapeHtml(idbankLabel)}</tg-button></tg-button-row>\n`;
+  }
+  if (hasBybit) {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="topup:pay:bybit">${escapeHtml(bybitLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:topup">${escapeHtml(changeAmountLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(cancelLabel)}</tg-button></tg-button-row>`;
+
+  return richHtml.trim();
 };
 
 // ─── Шаг 1: Выбор суммы (пресеты + своя сумма) ──────────────────────────────
@@ -78,17 +151,27 @@ const startTopup = async (ctx) => {
       `${hint}\n\n` +
       `<blockquote>💡 Или выберите частую сумму одной кнопкой ниже.</blockquote>`;
 
-  const opts = {
-    parse_mode: 'HTML',
-    ...Markup.inlineKeyboard([
-      presetRow1,
-      presetRow2,
-      [Markup.button.callback(customAmountLabel, 'topup:custom_amount')],
-      [Markup.button.callback(cancelLabel, 'menu:main')],
-    ]),
-  };
+  const classicKeyboard = [
+    presetRow1,
+    presetRow2,
+    [Markup.button.callback(customAmountLabel, 'topup:custom_amount')],
+    [Markup.button.callback(cancelLabel, 'menu:main')],
+  ];
 
-  const sent = await editOrReply(ctx, text, opts);
+  const isRich = isRichActive(ctx, settings);
+  const richHtml = buildTopupAmountRichHtml({
+    text,
+    customAmountLabel,
+    cancelLabel,
+  });
+
+  const sent = await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard,
+    isRich,
+  });
+
   if (ctx.session.topup) {
     ctx.session.topup.msgId = sent?.message_id || currentMsgId;
   }
@@ -166,6 +249,8 @@ const showPaymentMethods = async (ctx) => {
     buttons.push([Markup.button.callback(bybitLabel, 'topup:pay:bybit')]);
   }
 
+  const isRich = isRichActive(ctx, settings);
+
   if (buttons.length === 0) {
     const closedText = lang === 'en'
       ? '💳 <b>Balance top-up is temporarily unavailable.</b>\n\nPlease try again later or contact support.'
@@ -174,7 +259,17 @@ const showPaymentMethods = async (ctx) => {
       [Markup.button.callback(lang === 'en' ? '🆘 Support' : '🆘 Поддержка', 'menu:support')],
       [Markup.button.callback(changeAmountLabel, 'menu:topup')],
     ];
-    return editOrReply(ctx, closedText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(closedButtons) });
+    const richHtml = buildTopupMethodsRichHtml({
+      text: closedText,
+      settings,
+      sbpLabel,
+      idbankLabel,
+      bybitLabel,
+      changeAmountLabel,
+      cancelLabel,
+      supportLabel: lang === 'en' ? '🆘 Support' : '🆘 Поддержка',
+    });
+    return safeEditRich(ctx, { richHtml, classicText: closedText, classicKeyboard: closedButtons, isRich });
   }
 
   buttons.push([Markup.button.callback(changeAmountLabel, 'menu:topup')]);
@@ -189,10 +284,26 @@ const showPaymentMethods = async (ctx) => {
     `<blockquote>💰 ${amountLbl}: <b>${topup.amountUSDT} USDT</b> (~${topup.amountRUB.toFixed(0)} ₽)</blockquote>\n\n` +
     `${choose}`;
 
-  await editOrReply(ctx, text, {
-    parse_mode: 'HTML',
-    ...Markup.inlineKeyboard(buttons),
+  const richHtml = buildTopupMethodsRichHtml({
+    text,
+    settings,
+    sbpLabel,
+    idbankLabel,
+    bybitLabel,
+    changeAmountLabel,
+    cancelLabel,
+    supportLabel: lang === 'en' ? '🆘 Support' : '🆘 Поддержка',
   });
+
+  const sent = await safeEditRich(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
+  if (topup && sent?.message_id) {
+    topup.msgId = sent.message_id;
+  }
 };
 
 // Быстрое пополнение на конкретную сумму (из карточки товара)
@@ -1308,6 +1419,8 @@ module.exports = {
   startTopupWithAmount,
   showDirectOptions,
   showPaymentMethods,
+  buildTopupAmountRichHtml,
+  buildTopupMethodsRichHtml,
   showCustomAmountPrompt,
   showPlategaDetails,
   showBybitOptions,

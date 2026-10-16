@@ -44,6 +44,10 @@ const settingsSchema = new mongoose.Schema({
   currencyOffset: { type: Number, default: 0 },
   // Стиль кнопок витрины каталога ('rich' - внутри сообщения, 'classic' - стандартные telegraf)
   catalogButtonsStyle: { type: String, enum: ['rich', 'classic'], default: 'rich' },
+  // Глобальный режим формата кнопок ('by_user' - выбор юзера, 'force_rich' - принудительно rich, 'force_classic' - принудительно снизу)
+  globalButtonsMode: { type: String, enum: ['by_user', 'force_rich', 'force_classic'], default: 'by_user' },
+  // Формат кнопок по умолчанию для новых пользователей
+  defaultButtonLayout: { type: String, enum: ['rich', 'classic'], default: 'rich' },
 }, {
   timestamps: true
 });
