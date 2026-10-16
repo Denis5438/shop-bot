@@ -42,6 +42,8 @@ const settingsSchema = new mongoose.Schema({
   currencyMode: { type: String, enum: ['bybit_p2p', 'manual'], default: 'bybit_p2p' },
   manualRate: { type: Number, default: 95 },
   currencyOffset: { type: Number, default: 0 },
+  // Стиль кнопок витрины каталога ('rich' - внутри сообщения, 'classic' - стандартные telegraf)
+  catalogButtonsStyle: { type: String, enum: ['rich', 'classic'], default: 'rich' },
 }, {
   timestamps: true
 });

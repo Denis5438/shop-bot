@@ -10,6 +10,7 @@
     "lint:fix": "eslint src index.js --fix",
     "test:currency": "node scripts/test_currency_features.js",
     "test:promo": "node scripts/test_promo_features.js",
+    "test:catalog-style": "node scripts/test_catalog_style.js",
     "migrate:token-raw": "node scripts/migrate-token-raw.js"
   },
   "dependencies": {

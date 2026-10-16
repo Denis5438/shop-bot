@@ -37,6 +37,7 @@ const getLiveSettings = async () => {
       currencyMode: 'bybit_p2p',
       manualRate: 95,
       currencyOffset: 0,
+      catalogButtonsStyle: 'rich',
     });
   }
   return settings;
@@ -94,7 +95,8 @@ const showSettings = async (ctx) => {
     `🚕 Умные цены (x1.2 при &lt;10 шт): <b>${smartPriceText}</b>\n` +
     `📉 Умная уценка (-${settings.autoMarkdownPercent}% / ${settings.autoMarkdownDays}дн): <b>${settings.autoMarkdownEnabled ? '🔴 Вкл' : '🟢 Выкл'}</b>\n` +
     `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n` +
-    `🧹 Чистый чат (удаление старых сообщений): <b>${cleanChatStatusText}</b>\n\n` +
+    `🧹 Чистый чат (удаление старых сообщений): <b>${cleanChatStatusText}</b>\n` +
+    `• Стиль кнопок витрины: <b>${settings.catalogButtonsStyle === 'classic' ? '🔘 Классический (Снизу)' : '🟢 Внутри сообщения (Rich)'}</b>\n\n` +
     `✨ API Gemini AI: <code>${settings.geminiApiKey ? '••••••••' + String(settings.geminiApiKey).slice(-4) : 'не задан'}</code>\n\n` +
     `💱 <b>Курс валют (USDT ➔ RUB):</b>\n` +
     `• Режим: <b>${currencyMode === 'manual' ? '✋ Ручной' : '🟢 Авто (Bybit P2P)'}</b>\n` +
@@ -120,6 +122,7 @@ const showSettings = async (ctx) => {
       Markup.button.callback('✏️ Ручной фикс-курс', 'admin:settings:edit:manualRate'),
     ],
     [Markup.button.callback(cleanChatBtnStr, 'admin:settings:toggle_clean_chat')],
+    [Markup.button.callback(`🎨 Кнопки каталога: ${settings.catalogButtonsStyle === 'classic' ? '🔘 Классический' : '🟢 Внутри сообщения'}`, 'admin:settings:toggle_catalog_style')],
     [Markup.button.callback('✨ API GEMINI', 'admin:settings:edit:geminiApiKey')],
     [Markup.button.callback('✏️ Platega Merchant ID', 'admin:settings:edit:plategaMerchantId')],
     [Markup.button.callback('✏️ Platega Secret Key', 'admin:settings:edit:plategaSecret')],
@@ -250,6 +253,16 @@ const toggleCleanChat = async (ctx) => {
   await showSettings(ctx);
 };
 
+const toggleCatalogStyle = async (ctx) => {
+  const settings = await getLiveSettings();
+  settings.catalogButtonsStyle = settings.catalogButtonsStyle === 'classic' ? 'rich' : 'classic';
+  await settings.save();
+  invalidateCache(settings);
+  const label = settings.catalogButtonsStyle === 'classic' ? '🔘 Классический' : '🟢 Внутри сообщения';
+  await ctx.answerCbQuery(`Стиль кнопок: ${label}`).catch(() => {});
+  await showSettings(ctx);
+};
+
 const toggleCurrencyMode = async (ctx) => {
   const settings = await getLiveSettings();
   settings.currencyMode = settings.currencyMode === 'manual' ? 'bybit_p2p' : 'manual';
@@ -372,6 +385,7 @@ module.exports = {
   toggleCard,
   toggleBybit,
   toggleCleanChat,
+  toggleCatalogStyle,
   toggleCurrencyMode,
   startEditSetting,
   handleSettingsInput,

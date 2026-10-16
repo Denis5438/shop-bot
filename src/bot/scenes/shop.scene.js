@@ -222,6 +222,204 @@ const getStockMap = async (products) => {
   return map;
 };
 
+/**
+ * Отправляет или редактирует сообщение витрины через Telegram Bot API 10.3 Rich Message
+ * (<tg-button-row> / <tg-button>), либо при classic режиме или ошибке Telegram —
+ * моментально откатывается на safeEdit с классической клавиатурой Markup.inlineKeyboard.
+ */
+const safeEditStorefront = async (ctx, { richHtml, classicText, classicKeyboard, isRich }) => {
+  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(classicKeyboard) };
+
+  if (!isRich) {
+    return safeEdit(ctx, classicText, opts);
+  }
+
+  // Попытка отправить через Rich Message (Telegram Bot API 10.3)
+  if (ctx.telegram?.callApi) {
+    try {
+      const chatId = ctx.chat?.id || ctx.from?.id;
+      const messageId = ctx.callbackQuery?.message?.message_id;
+
+      if (ctx.callbackQuery && messageId && chatId) {
+        const res = await ctx.telegram.callApi('editMessageText', {
+          chat_id: chatId,
+          message_id: messageId,
+          rich_message: { html: richHtml },
+        });
+        await ctx.answerCbQuery().catch(() => {});
+        return res;
+      } else if (chatId) {
+        const res = await ctx.telegram.callApi('sendRichMessage', {
+          chat_id: chatId,
+          rich_message: { html: richHtml },
+        });
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery().catch(() => {});
+        }
+        return res;
+      }
+    } catch (err) {
+      const errText = String(err?.description || err?.message || '');
+      if (errText.includes('message is not modified')) {
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery('🔄 Данные актуальны').catch(() => {});
+        }
+        return null;
+      }
+      // Авто-фолбэк: при любой ошибке Telegram (устаревший клиент, ошибка парсинга и т.д.)
+      // моментально откатываемся на обычный safeEdit с классической клавиатурой
+    }
+  }
+
+  return safeEdit(ctx, classicText, opts);
+};
+
+const buildShopPageRichHtml = ({ text, inStockCats = [], outOfStockCats = [], isCollapsed = true, t = (k) => k }) => {
+  let richHtml = `${text}\n\n`;
+
+  // 1. Категории в наличии (сетка по 3 в ряд)
+  let row = [];
+  for (const cat of inStockCats) {
+    const label = `${cat.icon || '📁'} ${cat.name}`;
+    row.push(`<tg-button type="callback_data" style="primary" data="shop:category:${cat._id}:1">${escapeHtml(label)}</tg-button>`);
+    if (row.length === 3) {
+      richHtml += `<tg-button-row align="left">${row.join('')}</tg-button-row>\n`;
+      row = [];
+    }
+  }
+  if (row.length > 0) {
+    richHtml += `<tg-button-row align="left">${row.join('')}</tg-button-row>\n`;
+  }
+
+  // 2. Сворачиваемый блок "Нет в наличии" для категорий
+  if (outOfStockCats.length > 0) {
+    const toggleIcon = isCollapsed ? '▼' : '▲';
+    const toggleLabel = `Нет в наличии · ${outOfStockCats.length} ${toggleIcon}`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="shop:toggle_out_main">${escapeHtml(toggleLabel)}</tg-button></tg-button-row>\n`;
+
+    if (!isCollapsed) {
+      let outRow = [];
+      for (const cat of outOfStockCats) {
+        const label = `${cat.icon || '📁'} ${cat.name}`;
+        outRow.push(`<tg-button type="callback_data" style="danger" data="shop:category:${cat._id}:1">${escapeHtml(label)}</tg-button>`);
+        if (outRow.length === 3) {
+          richHtml += `<tg-button-row align="left">${outRow.join('')}</tg-button-row>\n`;
+          outRow = [];
+        }
+      }
+      if (outRow.length > 0) {
+        richHtml += `<tg-button-row align="left">${outRow.join('')}</tg-button-row>\n`;
+      }
+    }
+  }
+
+  // 3. Нижние кнопки навигации (Поиск, Назад)
+  const searchLabel = t('btn_search_product') || '🔍 Поиск товара';
+  const backLabel = t('btn_back') || '⬅️ Назад';
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:search">${escapeHtml(searchLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+
+  return richHtml.trim();
+};
+
+const buildCategoryRichHtml = ({ text, productItems = [], outOfStockToggle = null, safePage = 1, totalPages = 1, categoryId, lang = 'ru' }) => {
+  let richHtml = `${text}\n\n`;
+
+  for (const item of productItems) {
+    const style = item.hasStock ? 'success' : 'danger';
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="${style}" data="${item.callbackData}">${escapeHtml(item.label)}</tg-button></tg-button-row>\n`;
+  }
+
+  if (outOfStockToggle) {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="${outOfStockToggle.callbackData}">${escapeHtml(outOfStockToggle.label)}</tg-button></tg-button-row>\n`;
+  }
+
+  if (totalPages > 1 || safePage > 1) {
+    let navBtns = '';
+    if (safePage > 1) {
+      navBtns += `<tg-button type="callback_data" style="primary" data="shop:category:${categoryId}:${safePage - 1}">⬅️</tg-button>`;
+    }
+    if (totalPages > 1) {
+      navBtns += `<tg-button type="callback_data" style="link" data="shop:noop">${safePage}/${totalPages}</tg-button>`;
+    }
+    if (safePage < totalPages) {
+      navBtns += `<tg-button type="callback_data" style="primary" data="shop:category:${categoryId}:${safePage + 1}">➡️</tg-button>`;
+    }
+    if (navBtns) {
+      richHtml += `<tg-button-row align="center">${navBtns}</tg-button-row>\n`;
+    }
+  }
+
+  const searchLabel = lang === 'en' ? '🔍 Search' : '🔍 Поиск';
+  const refreshLabel = lang === 'en' ? '🔄 Refresh' : '🔄 Обновить';
+  const backLabel = lang === 'en' ? '⬅️ To Categories' : '⬅️ К категориям';
+  richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="primary" data="shop:search">${escapeHtml(searchLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="primary" data="shop:category:${categoryId}:${safePage}">${escapeHtml(refreshLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="link" data="shop:main">${escapeHtml(backLabel)}</tg-button>` +
+    `</tg-button-row>`;
+
+  return richHtml.trim();
+};
+
+const buildProductRichHtml = ({
+  text,
+  product,
+  productId,
+  fromPage = 1,
+  safePage = 1,
+  outOfStock = false,
+  cartCount = 0,
+  promoBtnLabel = '🎟 Ввести промокод',
+  isFlashSale = false,
+  backAction = 'shop:main',
+  lang = 'ru',
+  t = (k) => k,
+}) => {
+  let richHtml = `${text}\n\n`;
+
+  if (!outOfStock) {
+    if (product?.type !== 'gpt_activation') {
+      const buyLabel = t('btn_buy') || '⚡ Купить';
+      const cartLabel = '🛒 В корзину (+1)';
+      richHtml += `<tg-button-row align="left">` +
+        `<tg-button type="callback_data" style="success" data="shop:qty:${productId}:${fromPage}:1">${escapeHtml(buyLabel)}</tg-button>` +
+        `<tg-button type="callback_data" style="primary" data="cart:add:${productId}">${escapeHtml(cartLabel)}</tg-button>` +
+        `</tg-button-row>\n`;
+    } else {
+      const buyLabel = t('btn_buy') || '⚡ Купить';
+      richHtml += `<tg-button-row align="left">` +
+        `<tg-button type="callback_data" style="success" data="shop:buy:${productId}:${fromPage}:1">${escapeHtml(buyLabel)}</tg-button>` +
+        `</tg-button-row>\n`;
+    }
+  } else {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:notify:${productId}">🔔 Уведомить о наличии</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="shop:preorder_qty:${productId}:${fromPage}:1">⏳ Сделать предзаказ</tg-button></tg-button-row>\n`;
+  }
+
+  if (cartCount > 0) {
+    const cartBtnLabel = `🛍 Перейти в корзину (${cartCount} шт.)`;
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:cart">${escapeHtml(cartBtnLabel)}</tg-button></tg-button-row>\n`;
+  }
+
+  if (product?.type === 'gpt_activation') {
+    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:check_token:${productId}">${escapeHtml(t('shop_check_token'))}</tg-button></tg-button-row>\n`;
+  }
+
+  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:promo_prompt:${productId}:${fromPage}:1">${escapeHtml(promoBtnLabel)}</tg-button></tg-button-row>\n`;
+
+  let bottomRichRow = '';
+  if (isFlashSale) {
+    const refreshLabel = lang === 'en' ? '🔄 Refresh' : '🔄 Обновить';
+    bottomRichRow += `<tg-button type="callback_data" style="primary" data="shop:product:${productId}:${safePage}">${escapeHtml(refreshLabel)}</tg-button>`;
+  }
+  const backLabel = t('shop_back_to_list') || (lang === 'en' ? '⬅️ Back' : '⬅️ Назад');
+  bottomRichRow += `<tg-button type="callback_data" style="link" data="${backAction}">${escapeHtml(backLabel)}</tg-button>`;
+  richHtml += `<tg-button-row align="left">${bottomRichRow}</tg-button-row>`;
+
+  return richHtml.trim();
+};
+
 const showShopPage = async (ctx) => {
   const t = ctx.t || ((k) => k);
   const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
@@ -309,12 +507,19 @@ const showShopPage = async (ctx) => {
   buttons.push([Markup.button.callback(t('btn_back') || '⬅️ Назад', 'menu:main')]);
 
   const text = t('shop_title') || '🛍 <b>Каталог товаров</b>\n\nВыберите интересующую категорию или товар:';
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  await safeEdit(ctx, text, opts);
+  const settings = await getSettings();
+  const isRich = settings.catalogButtonsStyle !== 'classic';
+  const richHtml = buildShopPageRichHtml({ text, inStockCats, outOfStockCats, isCollapsed, t });
+
+  await safeEditStorefront(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 const showCategory = async (ctx, categoryId, page = 1) => {
-  const t = ctx.t || ((k) => k);
   const category = await Category.findById(categoryId);
   if (!category || !category.isActive) {
     return ctx.answerCbQuery('❌ Категория не найдена', { show_alert: true });
@@ -375,6 +580,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   const isClassicTheme = ctx.user?.btnStyle === 'classic';
   const activePromo = await getActivePromoFromCtx(ctx);
 
+  const productItems = [];
   for (const { product, stock } of paginated) {
     const hasStock = stock === '∞' || (typeof stock === 'number' && stock > 0);
     const effectivePrice = await getEffectivePrice(product, stock, activePromo, { qty: 1, userId: ctx.user?._id });
@@ -395,8 +601,10 @@ const showCategory = async (ctx, categoryId, page = 1) => {
     const btn = Markup.button.callback(label, `shop:product:${product._id}:${safePage}`);
     if (!isClassicTheme) btn.style = hasStock ? 'success' : 'danger';
     buttons.push([btn]);
+    productItems.push({ label, hasStock, callbackData: `shop:product:${product._id}:${safePage}` });
   }
 
+  let outOfStockToggle = null;
   // Кнопка сворачивания / разворачивания отсутствующих товаров (предзаказа)
   if (allOutOfStock.length > 0 && allInStock.length > 0) {
     const toggleIcon = isCollapsed ? '▼' : '▲';
@@ -404,6 +612,7 @@ const showCategory = async (ctx, categoryId, page = 1) => {
       ? (lang === 'en' ? `⏳ Out of stock (${allOutOfStock.length}) ${toggleIcon}` : `⏳ Нет в наличии (предзаказ) · ${allOutOfStock.length} ${toggleIcon}`)
       : (lang === 'en' ? `⏳ Hide out of stock ${toggleIcon}` : `⏳ Скрыть отсутствующие товары ${toggleIcon}`);
     buttons.push([Markup.button.callback(toggleLabel, `shop:toggle_out:${categoryId}:${safePage}`)]);
+    outOfStockToggle = { label: toggleLabel, callbackData: `shop:toggle_out:${categoryId}:${safePage}` };
   }
 
   const navButtons = [];
@@ -419,9 +628,24 @@ const showCategory = async (ctx, categoryId, page = 1) => {
   ]);
 
   const text = `📁 <b>${escapeHtml(category.name)}</b>\n${lang === 'en' ? 'Select a product:' : 'Выберите товар:'}`;
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
+  const settings = await getSettings();
+  const isRich = settings.catalogButtonsStyle !== 'classic';
+  const richHtml = buildCategoryRichHtml({
+    text,
+    productItems,
+    outOfStockToggle,
+    safePage,
+    totalPages,
+    categoryId,
+    lang,
+  });
 
-  await safeEdit(ctx, text, opts);
+  await safeEditStorefront(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 const toggleOutOfStock = async (ctx, categoryId, page = 1) => {
@@ -575,9 +799,29 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     bottomRow.unshift(Markup.button.callback(lang === 'en' ? '🔄 Refresh' : '🔄 Обновить', `shop:product:${productId}:${safePage}`));
   }
   buttons.push(bottomRow);
+  const settings = await getSettings();
+  const isRich = settings.catalogButtonsStyle !== 'classic';
+  const richHtml = buildProductRichHtml({
+    text,
+    product,
+    productId,
+    fromPage,
+    safePage,
+    outOfStock,
+    cartCount,
+    promoBtnLabel,
+    isFlashSale,
+    backAction,
+    lang,
+    t,
+  });
 
-  const opts = { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) };
-  await safeEdit(ctx, text, opts);
+  await safeEditStorefront(ctx, {
+    richHtml,
+    classicText: text,
+    classicKeyboard: buttons,
+    isRich,
+  });
 };
 
 const handleWaitlist = async (ctx, productId) => {
@@ -2058,4 +2302,8 @@ module.exports = {
   startCustomerSearch,
   handleCustomerSearch,
   getProductBadges,
+  safeEditStorefront,
+  buildShopPageRichHtml,
+  buildCategoryRichHtml,
+  buildProductRichHtml,
 };

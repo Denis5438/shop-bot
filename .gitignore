@@ -35,6 +35,8 @@ find_tx.js
 reset_txids.js
 test_bsc.js
 test_bybit.js
+scratch/
+
 
 # === Build / deploy артефакты ===
 dist/

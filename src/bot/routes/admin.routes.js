@@ -1063,6 +1063,9 @@ module.exports = (bot) => {
   bot.action('admin:settings:toggle_clean_chat', adminMiddleware, async (ctx) => {
     await settingsScene.toggleCleanChat(ctx);
   });
+  bot.action('admin:settings:toggle_catalog_style', adminMiddleware, async (ctx) => {
+    await settingsScene.toggleCatalogStyle(ctx);
+  });
 
   bot.action('admin:settings:toggle_currency_mode', adminMiddleware, async (ctx) => {
     await settingsScene.toggleCurrencyMode(ctx);
