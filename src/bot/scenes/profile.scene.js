@@ -4,7 +4,7 @@ const User = require('../../models/User');
 const TopupRequest = require('../../models/TopupRequest');
 const { toRub } = require('../../services/currency.service');
 const { ORDER_STATUS_LABELS } = require('../constants/ux');
-const { escapeHtml, formatDateTimeMSK, formatDateMSK, safeEdit, safeEditRich, isRichActive, has2FASecret, get2FAButtonLabel } = require('../utils/ui');
+const { escapeHtml, formatDateTimeMSK, formatDateMSK, safeEdit, safeEditRich, isRichActive, toRichHtmlText, has2FASecret, get2FAButtonLabel } = require('../utils/ui');
 const { getSettings } = require('../../services/settingsCache.service');
 const { getAllWithProgress, renderAchievementsText } = require('../../services/achievements.service');
 
@@ -51,7 +51,7 @@ const buildProfileRichHtml = ({
   t = (k) => k,
   lang = 'ru',
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   if (activeOrder) {
     const activeLabel = t('profile_continue_activation') || (lang === 'en' ? '▶️ Continue activation' : '▶️ Продолжить активацию');
@@ -80,12 +80,9 @@ const buildProfileRichHtml = ({
     `<tg-button type="callback_data" style="${mainStyle}" data="profile:toggle_btn_style">${escapeHtml(btnStyleLabel)}</tg-button>` +
     `</tg-button-row>\n`;
 
-  richHtml += `<tg-button-row align="left">` +
-    `<tg-button type="callback_data" style="${mainStyle}" data="profile:toggle_btn_layout">${escapeHtml(layoutLabel)}</tg-button>` +
-    `</tg-button-row>\n`;
-
   const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню');
   richHtml += `<tg-button-row align="left">` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="profile:toggle_btn_layout">${escapeHtml(layoutLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button>` +
     `</tg-button-row>`;
 
@@ -101,7 +98,7 @@ const buildOrdersRichHtml = ({
   lang = 'ru',
   t = (k) => k,
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   if (orders.length === 0) {
     if (filter === 'active') {
@@ -156,7 +153,7 @@ const buildOrderDetailRichHtml = ({
   isWarrantyActive,
   lang = 'ru',
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   // 1. 2FA кнопка
   if (itemValue && has2FASecret(itemValue)) {
@@ -225,13 +222,13 @@ const showProfile = async (ctx) => {
   const text =
     `👤 <b>${lang === 'en' ? 'My Profile' : 'Мой профиль'}</b>\n\n` +
     bannerText +
-    `<blockquote>${level.emoji} ${t('profile_level')}: <b>${levelLabel}</b>\n\n` +
+    `<blockquote>${level.emoji} ${t('profile_level')}: <b>${levelLabel}</b>\n` +
     `🆔 ${t('profile_id')}: <code>${user.telegramId}</code>\n` +
-    `📛 ${t('profile_name')}: ${escapeHtml(user.firstName)}${user.lastName ? ' ' + escapeHtml(user.lastName) : ''}\n\n` +
-    `💰 ${t('profile_balance')}: <b>${user.balance.toFixed(2)} USDT</b>  (~${toRub(user.balance)} ₽)\n` +
-    `📦 ${t('profile_orders')}: ${ordersCount}\n` +
-    `💸 ${t('profile_spent')}: ${user.totalSpent.toFixed(2)} USDT\n\n` +
-    `🔗 ${t('profile_ref_code')}: <code>${escapeHtml(user.referralCode)}</code>\n` +
+    `👑 ${t('profile_name')}: <b>${escapeHtml(user.firstName)}${user.lastName ? ' ' + escapeHtml(user.lastName) : ''}</b></blockquote>\n\n` +
+    `<blockquote>💰 ${t('profile_balance')}: <b>${user.balance.toFixed(2)} USDT</b> (~${toRub(user.balance)} ₽)\n` +
+    `📦 ${t('profile_orders')}: <b>${ordersCount}</b>\n` +
+    `💸 ${t('profile_spent')}: <b>${user.totalSpent.toFixed(2)} USDT</b></blockquote>\n\n` +
+    `<blockquote>🔗 ${t('profile_ref_code')}: <code>${escapeHtml(user.referralCode)}</code>\n` +
     `👥 ${lang === 'en' ? 'Invited friends' : 'Приглашено друзей'}: <b>${referralsCount}</b>\n` +
     `📅 ${t('profile_joined')}: ${createdAt}</blockquote>`;
 
@@ -273,8 +270,8 @@ const showProfile = async (ctx) => {
   ]);
   buttons.push([
     Markup.button.callback(layoutLabel, 'profile:toggle_btn_layout'),
+    Markup.button.callback(t('btn_back'), 'menu:main'),
   ]);
-  buttons.push([Markup.button.callback(t('btn_back'), 'menu:main')]);
 
   const isRich = isRichActive(ctx, settings);
   const richHtml = buildProfileRichHtml({
@@ -435,7 +432,7 @@ const showAchievements = async (ctx) => {
 
   const settings = await getSettings();
   const isRich = isRichActive(ctx, settings);
-  const richHtml = `${text}\n\n<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+  const richHtml = `${toRichHtmlText(text)}<br><br><tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
 
   await safeEditRich(ctx, {
     richHtml,
@@ -678,7 +675,7 @@ const showOrder2FA = async (ctx, orderId) => {
 
   const settings = await getSettings();
   const isRich = isRichActive(ctx, settings);
-  const richHtml = `${text}\n\n` +
+  const richHtml = `${toRichHtmlText(text)}<br><br>` +
     `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:order:2fa_refresh:${order._id}">${escapeHtml(refreshLabel)}</tg-button></tg-button-row>\n` +
     `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="profile:order:${order._id}">${escapeHtml(backOrderLabel)}</tg-button></tg-button-row>`;
 
@@ -879,7 +876,7 @@ const buildTopupHistoryRichHtml = ({
   lang = 'ru',
   t = (k) => k,
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   requests.forEach((req, idx) => {
     const num = (page - 1) * TOPUPS_PER_PAGE + idx + 1;
@@ -916,7 +913,7 @@ const buildTopupDetailRichHtml = ({
   lang = 'ru',
   t = (k) => k,
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
   const backToHistLabel = lang === 'en' ? '⬅️ Back to History' : '⬅️ К истории пополнений';
   const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Back' : '⬅️ Назад');
   richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:topups">${escapeHtml(backToHistLabel)}</tg-button></tg-button-row>\n`;

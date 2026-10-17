@@ -954,6 +954,18 @@ const isRichActive = (ctx, settings) => {
 };
 
 /**
+ * Преобразует обычный текст сообщения (с \n) в корректный HTML для Telegram Bot API 10.3 Rich Message,
+ * заменяя \n на <br>, чтобы парсер Telegram не схлопывал строки цитат и абзацев в одну строку.
+ */
+const toRichHtmlText = (str) => {
+  if (!str) return '';
+  return String(str)
+    .trim()
+    .replace(/\r\n/g, '\n')
+    .replace(/\n/g, '<br>');
+};
+
+/**
  * Универсальная отправка/редактирование сообщения с поддержкой Telegram Bot API 10.3 Rich Message
  * (<tg-button-row> / <tg-button>).
  * При isRich === false или ошибке API — моментальный фолбэк на safeEdit с классической клавиатурой.
@@ -978,15 +990,18 @@ const safeEditRich = async (ctx, { richHtml, classicText, classicKeyboard, isRic
         const res = await ctx.telegram.callApi('editMessageText', {
           chat_id: chatId,
           message_id: messageId,
+          text: classicText,
           rich_message: { html: richHtml },
           reply_markup: { inline_keyboard: [] },
         });
         await ctx.answerCbQuery().catch(() => {});
         return res;
       } else if (chatId) {
-        const res = await ctx.telegram.callApi('sendRichMessage', {
+        const res = await ctx.telegram.callApi('sendMessage', {
           chat_id: chatId,
+          text: classicText,
           rich_message: { html: richHtml },
+          reply_markup: { inline_keyboard: [] },
         });
         if (ctx.callbackQuery) {
           await ctx.answerCbQuery().catch(() => {});
@@ -1013,6 +1028,7 @@ module.exports = {
   safeEdit,
   safeEditRich,
   isRichActive,
+  toRichHtmlText,
   fmtUSDT,
   balanceHeader,
   copyHint,

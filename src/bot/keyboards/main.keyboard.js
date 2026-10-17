@@ -58,7 +58,7 @@ const topupKeyboard = (t) =>
     [Markup.button.callback(t('btn_back'), 'menu:main')],
   ]);
 
-const { escapeHtml } = require('../utils/ui');
+const { escapeHtml, toRichHtmlText } = require('../utils/ui');
 
 /**
  * Генерация Rich HTML для главного меню
@@ -69,7 +69,7 @@ const buildMainMenuRichHtml = ({
   isSeller = false,
   lang = 'ru',
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   const cartLabel = t ? (t('btn_change_lang') === 'Language' || lang === 'en' ? '🛒 Cart' : '🛒 Корзина') : '🛒 Корзина';
 

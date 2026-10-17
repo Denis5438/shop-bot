@@ -74,7 +74,7 @@ module.exports = (bot) => {
       lang: user?.language || 'ru',
     });
     const classicKeyboard = mainKeyboard(t, ctx.isSeller);
-    await safeEditRich(ctx, {
+    return await safeEditRich(ctx, {
       richHtml,
       classicText: text,
       classicKeyboard,
@@ -134,11 +134,18 @@ module.exports = (bot) => {
       return shopScene.showProduct(ctx, targetProductId, 1);
     }
 
-    const sent = await ctx.reply(
-      t('welcome_back', { name: user.firstName, balance: user.balance.toFixed(2), balanceRub: toRub(user.balance) }),
-      { parse_mode: 'HTML', ...mainKeyboard(t, ctx.isSeller) }
-    );
-    saveBotMessage(ctx, sent?.message_id);
+    const sent = await renderMainMenu(ctx, 'welcome_back');
+    if (sent?.message_id) {
+      saveBotMessage(ctx, sent.message_id);
+    }
+  });
+
+  bot.command('menu', async (ctx) => {
+    await cleanPreviousBotMessage(ctx);
+    const sent = await renderMainMenu(ctx, 'welcome_back');
+    if (sent?.message_id) {
+      saveBotMessage(ctx, sent.message_id);
+    }
   });
 
   // ─────────────────── ToS: согласие / отказ ───────────────────

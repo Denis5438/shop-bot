@@ -3,7 +3,7 @@ const TopupRequest = require('../../models/TopupRequest');
 const User = require('../../models/User');
 const { getRate } = require('../../services/currency.service');
 const notif = require('../../services/notification.service');
-const { parseAmount, copyHint, escapeHtml, safeEditRich, isRichActive } = require('../utils/ui');
+const { parseAmount, copyHint, escapeHtml, safeEditRich, isRichActive, toRichHtmlText } = require('../utils/ui');
 const { SLA, TEXTS } = require('../constants/ux');
 const { startProgress } = require('../utils/progress');
 const { getSettings } = require('../../services/settingsCache.service');
@@ -46,7 +46,7 @@ const buildTopupAmountRichHtml = ({
   customAmountLabel = '✍️ Своя сумма',
   cancelLabel = '❌ Отмена',
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   richHtml += `<tg-button-row align="left">` +
     `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:5">5 USDT</tg-button>` +
@@ -83,7 +83,7 @@ const buildTopupMethodsRichHtml = ({
   cancelLabel = '❌ Отмена',
   supportLabel = '🆘 Поддержка',
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   const hasPlatega = settings?.plategaEnabled !== false;
   const hasCard = settings?.cardEnabled !== false;

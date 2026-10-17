@@ -1,6 +1,6 @@
 const { Markup } = require('telegraf');
 const cartService = require('../../services/cart.service');
-const { escapeHtml, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEditRich, isRichActive } = require('../utils/ui');
+const { escapeHtml, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEditRich, isRichActive, toRichHtmlText } = require('../utils/ui');
 const { getSettings } = require('../../services/settingsCache.service');
 const { toRub } = require('../../services/currency.service');
 
@@ -13,7 +13,7 @@ const buildCartRichHtml = ({
   userBalance = 0,
   lang = 'ru',
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   // Пустая корзина
   if (!cartData || !cartData.items || cartData.items.length === 0) {

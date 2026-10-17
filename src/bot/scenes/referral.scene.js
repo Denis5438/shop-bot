@@ -5,7 +5,7 @@ const Transaction = require('../../models/Transaction');
 const { toRub } = require('../../services/currency.service');
 const { getSettings } = require('../../services/settingsCache.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('../../services/referral.service');
-const { escapeHtml, safeEditRich, isRichActive } = require('../utils/ui');
+const { escapeHtml, safeEditRich, isRichActive, toRichHtmlText } = require('../utils/ui');
 
 const mongoose = require('mongoose');
 
@@ -18,7 +18,7 @@ const buildReferralRichHtml = ({
   shareLabel,
   backLabel,
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   richHtml += `<tg-button-row align="left"><tg-button type="url" style="primary" url="${escapeHtml(shareUrl)}">${escapeHtml(shareLabel)}</tg-button></tg-button-row>\n`;
   richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;

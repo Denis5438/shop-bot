@@ -18,7 +18,7 @@ const {
 const notif = require('../../services/notification.service');
 const Seller = require('../../models/Seller');
 const promoService = require('../../services/promo.service');
-const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit, safeEditRich, isRichActive } = require('../utils/ui');
+const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit, safeEditRich, isRichActive, toRichHtmlText } = require('../utils/ui');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
 
 const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-17-78';
@@ -230,7 +230,7 @@ const getStockMap = async (products) => {
 const safeEditStorefront = safeEditRich;
 
 const buildShopPageRichHtml = ({ text, inStockCats = [], outOfStockCats = [], isCollapsed = true, t = (k) => k }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   // 1. Категории в наличии (сетка по 3 в ряд)
   let row = [];
@@ -278,7 +278,7 @@ const buildShopPageRichHtml = ({ text, inStockCats = [], outOfStockCats = [], is
 };
 
 const buildCategoryRichHtml = ({ text, productItems = [], outOfStockToggle = null, safePage = 1, totalPages = 1, categoryId, lang = 'ru' }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   for (const item of productItems) {
     const style = item.hasStock ? 'success' : 'danger';
@@ -331,7 +331,7 @@ const buildProductRichHtml = ({
   lang = 'ru',
   t = (k) => k,
 }) => {
-  let richHtml = `${text}\n\n`;
+  let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
   if (!outOfStock) {
     if (product?.type !== 'gpt_activation') {
