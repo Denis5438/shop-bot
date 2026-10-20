@@ -238,19 +238,19 @@ const buildShopPageRichHtml = ({ text, inStockCats = [], outOfStockCats = [], is
     const label = `${cat.icon || '📁'} ${cat.name}`;
     row.push(`<tg-button type="callback_data" style="primary" data="shop:category:${cat._id}:1">${escapeHtml(label)}</tg-button>`);
     if (row.length === 3) {
-      richHtml += `<tg-button-row align="left">${row.join('')}</tg-button-row>\n`;
+      richHtml += `<tg-button-row align="center">${row.join('')}</tg-button-row>\n`;
       row = [];
     }
   }
   if (row.length > 0) {
-    richHtml += `<tg-button-row align="left">${row.join('')}</tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center">${row.join('')}</tg-button-row>\n`;
   }
 
   // 2. Сворачиваемый блок "Нет в наличии" для категорий
   if (outOfStockCats.length > 0) {
     const toggleIcon = isCollapsed ? '▼' : '▲';
     const toggleLabel = `Нет в наличии · ${outOfStockCats.length} ${toggleIcon}`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="shop:toggle_out_main">${escapeHtml(toggleLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="shop:toggle_out_main">${escapeHtml(toggleLabel)}</tg-button></tg-button-row>\n`;
 
     if (!isCollapsed) {
       let outRow = [];
@@ -258,12 +258,12 @@ const buildShopPageRichHtml = ({ text, inStockCats = [], outOfStockCats = [], is
         const label = `${cat.icon || '📁'} ${cat.name}`;
         outRow.push(`<tg-button type="callback_data" style="danger" data="shop:category:${cat._id}:1">${escapeHtml(label)}</tg-button>`);
         if (outRow.length === 3) {
-          richHtml += `<tg-button-row align="left">${outRow.join('')}</tg-button-row>\n`;
+          richHtml += `<tg-button-row align="center">${outRow.join('')}</tg-button-row>\n`;
           outRow = [];
         }
       }
       if (outRow.length > 0) {
-        richHtml += `<tg-button-row align="left">${outRow.join('')}</tg-button-row>\n`;
+        richHtml += `<tg-button-row align="center">${outRow.join('')}</tg-button-row>\n`;
       }
     }
   }
@@ -271,8 +271,8 @@ const buildShopPageRichHtml = ({ text, inStockCats = [], outOfStockCats = [], is
   // 3. Нижние кнопки навигации (Поиск, Назад)
   const searchLabel = t('btn_search_product') || '🔍 Поиск товара';
   const backLabel = t('btn_back') || '⬅️ Назад';
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:search">${escapeHtml(searchLabel)}</tg-button></tg-button-row>\n`;
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="shop:search">${escapeHtml(searchLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
 
   return richHtml.trim();
 };
@@ -282,11 +282,11 @@ const buildCategoryRichHtml = ({ text, productItems = [], outOfStockToggle = nul
 
   for (const item of productItems) {
     const style = item.hasStock ? 'success' : 'danger';
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="${style}" data="${item.callbackData}">${escapeHtml(item.label)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="${style}" data="${item.callbackData}">${escapeHtml(item.label)}</tg-button></tg-button-row>\n`;
   }
 
   if (outOfStockToggle) {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="${outOfStockToggle.callbackData}">${escapeHtml(outOfStockToggle.label)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="${outOfStockToggle.callbackData}">${escapeHtml(outOfStockToggle.label)}</tg-button></tg-button-row>\n`;
   }
 
   if (totalPages > 1 || safePage > 1) {
@@ -308,7 +308,7 @@ const buildCategoryRichHtml = ({ text, productItems = [], outOfStockToggle = nul
   const searchLabel = lang === 'en' ? '🔍 Search' : '🔍 Поиск';
   const refreshLabel = lang === 'en' ? '🔄 Refresh' : '🔄 Обновить';
   const backLabel = lang === 'en' ? '⬅️ To Categories' : '⬅️ К категориям';
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="primary" data="shop:search">${escapeHtml(searchLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="shop:category:${categoryId}:${safePage}">${escapeHtml(refreshLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="link" data="shop:main">${escapeHtml(backLabel)}</tg-button>` +
@@ -337,31 +337,31 @@ const buildProductRichHtml = ({
     if (product?.type !== 'gpt_activation') {
       const buyLabel = t('btn_buy') || '⚡ Купить';
       const cartLabel = '🛒 В корзину (+1)';
-      richHtml += `<tg-button-row align="left">` +
+      richHtml += `<tg-button-row align="center">` +
         `<tg-button type="callback_data" style="success" data="shop:qty:${productId}:${fromPage}:1">${escapeHtml(buyLabel)}</tg-button>` +
         `<tg-button type="callback_data" style="primary" data="cart:add:${productId}">${escapeHtml(cartLabel)}</tg-button>` +
         `</tg-button-row>\n`;
     } else {
       const buyLabel = t('btn_buy') || '⚡ Купить';
-      richHtml += `<tg-button-row align="left">` +
+      richHtml += `<tg-button-row align="center">` +
         `<tg-button type="callback_data" style="success" data="shop:buy:${productId}:${fromPage}:1">${escapeHtml(buyLabel)}</tg-button>` +
         `</tg-button-row>\n`;
     }
   } else {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:notify:${productId}">🔔 Уведомить о наличии</tg-button></tg-button-row>\n`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="shop:preorder_qty:${productId}:${fromPage}:1">⏳ Сделать предзаказ</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="shop:notify:${productId}">🔔 Уведомить о наличии</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="success" data="shop:preorder_qty:${productId}:${fromPage}:1">⏳ Сделать предзаказ</tg-button></tg-button-row>\n`;
   }
 
   if (cartCount > 0) {
     const cartBtnLabel = `🛍 Перейти в корзину (${cartCount} шт.)`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:cart">${escapeHtml(cartBtnLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="menu:cart">${escapeHtml(cartBtnLabel)}</tg-button></tg-button-row>\n`;
   }
 
   if (product?.type === 'gpt_activation') {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:check_token:${productId}">${escapeHtml(t('shop_check_token'))}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="shop:check_token:${productId}">${escapeHtml(t('shop_check_token'))}</tg-button></tg-button-row>\n`;
   }
 
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="shop:promo_prompt:${productId}:${fromPage}:1">${escapeHtml(promoBtnLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="shop:promo_prompt:${productId}:${fromPage}:1">${escapeHtml(promoBtnLabel)}</tg-button></tg-button-row>\n`;
 
   let bottomRichRow = '';
   if (isFlashSale) {
@@ -370,7 +370,7 @@ const buildProductRichHtml = ({
   }
   const backLabel = t('shop_back_to_list') || (lang === 'en' ? '⬅️ Back' : '⬅️ Назад');
   bottomRichRow += `<tg-button type="callback_data" style="link" data="${backAction}">${escapeHtml(backLabel)}</tg-button>`;
-  richHtml += `<tg-button-row align="left">${bottomRichRow}</tg-button-row>`;
+  richHtml += `<tg-button-row align="center">${bottomRichRow}</tg-button-row>`;
 
   return richHtml.trim();
 };

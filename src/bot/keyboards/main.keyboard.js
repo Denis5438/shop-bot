@@ -74,32 +74,32 @@ const buildMainMenuRichHtml = ({
   const cartLabel = t ? (t('btn_change_lang') === 'Language' || lang === 'en' ? '🛒 Cart' : '🛒 Корзина') : '🛒 Корзина';
 
   // Ряд 1: Каталог, Корзина
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(t('btn_shop'))}</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="menu:cart">${escapeHtml(cartLabel)}</tg-button>` +
     `</tg-button-row>\n`;
 
   // Ряд 2: Пополнить баланс, Профиль
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="primary" data="menu:topup">${escapeHtml(t('btn_topup'))}</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="menu:profile">${escapeHtml(t('btn_profile'))}</tg-button>` +
     `</tg-button-row>\n`;
 
   // Ряд 3: Рефералы, Поддержка
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="primary" data="menu:referral">${escapeHtml(t('btn_referral'))}</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="menu:support">${escapeHtml(t('btn_support'))}</tg-button>` +
     `</tg-button-row>\n`;
 
   // Ряд 4: Документы, Язык
-  richHtml += `<tg-button-row align="left">` +
-    `<tg-button type="callback_data" style="link" data="menu:documents">${escapeHtml(t('btn_documents'))}</tg-button>` +
-    `<tg-button type="callback_data" style="link" data="profile:lang">${escapeHtml(t('btn_change_lang'))}</tg-button>` +
+  richHtml += `<tg-button-row align="center">` +
+    `<tg-button type="callback_data" style="primary" data="menu:documents">${escapeHtml(t('btn_documents'))}</tg-button>` +
+    `<tg-button type="callback_data" style="primary" data="profile:lang">${escapeHtml(t('btn_change_lang'))}</tg-button>` +
     `</tg-button-row>`;
 
   // Ряд 5: Кабинет продавца (при наличии роли продавца)
   if (isSeller) {
-    richHtml += `\n<tg-button-row align="left">` +
+    richHtml += `\n<tg-button-row align="center">` +
       `<tg-button type="callback_data" style="primary" data="seller:cabinet">${escapeHtml(t('btn_seller_cabinet'))}</tg-button>` +
       `</tg-button-row>`;
   }

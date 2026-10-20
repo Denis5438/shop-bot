@@ -20,8 +20,8 @@ const buildReferralRichHtml = ({
 }) => {
   let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
-  richHtml += `<tg-button-row align="left"><tg-button type="url" style="primary" url="${escapeHtml(shareUrl)}">${escapeHtml(shareLabel)}</tg-button></tg-button-row>\n`;
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+  richHtml += `<tg-button-row align="center"><tg-button type="url" style="primary" url="${escapeHtml(shareUrl)}">${escapeHtml(shareLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
 
   return richHtml.trim();
 };

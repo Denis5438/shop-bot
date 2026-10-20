@@ -48,22 +48,22 @@ const buildTopupAmountRichHtml = ({
 }) => {
   let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:5">5 USDT</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:10">10 USDT</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:20">20 USDT</tg-button>` +
     `</tg-button-row>\n`;
 
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:50">50 USDT</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="topup:preset:usdt:100">100 USDT</tg-button>` +
     `</tg-button-row>\n`;
 
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="primary" data="topup:custom_amount">${escapeHtml(customAmountLabel)}</tg-button>` +
     `</tg-button-row>\n`;
 
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(cancelLabel)}</tg-button>` +
     `</tg-button-row>`;
 
@@ -90,23 +90,23 @@ const buildTopupMethodsRichHtml = ({
   const hasBybit = settings?.bybitEnabled !== false;
 
   if (!hasPlatega && !hasCard && !hasBybit) {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:support">${escapeHtml(supportLabel)}</tg-button></tg-button-row>\n`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:topup">${escapeHtml(changeAmountLabel)}</tg-button></tg-button-row>`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="menu:support">${escapeHtml(supportLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:topup">${escapeHtml(changeAmountLabel)}</tg-button></tg-button-row>`;
     return richHtml.trim();
   }
 
   if (hasPlatega) {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="topup:pay:platega">${escapeHtml(sbpLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="success" data="topup:pay:platega">${escapeHtml(sbpLabel)}</tg-button></tg-button-row>\n`;
   }
   if (hasCard) {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="topup:pay:card">${escapeHtml(idbankLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="topup:pay:card">${escapeHtml(idbankLabel)}</tg-button></tg-button-row>\n`;
   }
   if (hasBybit) {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="topup:pay:bybit">${escapeHtml(bybitLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="topup:pay:bybit">${escapeHtml(bybitLabel)}</tg-button></tg-button-row>\n`;
   }
 
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:topup">${escapeHtml(changeAmountLabel)}</tg-button></tg-button-row>\n`;
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(cancelLabel)}</tg-button></tg-button-row>`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:topup">${escapeHtml(changeAmountLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(cancelLabel)}</tg-button></tg-button-row>`;
 
   return richHtml.trim();
 };

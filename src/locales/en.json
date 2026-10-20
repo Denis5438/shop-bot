@@ -136,7 +136,7 @@
   "tos_declined": "❌ Without accepting the terms, the store cannot be used.\n\nYou can return and accept at any time — send /start.",
   "tos_required": "⚠️ To use the bot, please accept the terms of service. Send /start.",
   "tos_accepted_alert": "✅ Terms accepted! Enjoy your shopping.",
-  "btn_documents": "📄 Terms & Policy",
+  "btn_documents": "📄 Terms",
   "documents_title": "📄 <b>Terms & Policy</b>",
   "documents_text": "Official service documents:",
   "documents_accepted_at": "✅ Terms accepted on: {date}",

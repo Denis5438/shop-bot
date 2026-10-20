@@ -19,8 +19,8 @@ const buildCartRichHtml = ({
   if (!cartData || !cartData.items || cartData.items.length === 0) {
     const catalogLabel = lang === 'en' ? '🛍 Go to Catalog' : '🛍 В каталог';
     const menuLabel = lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню';
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(catalogLabel)}</tg-button></tg-button-row>\n`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(menuLabel)}</tg-button></tg-button-row>`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(catalogLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(menuLabel)}</tg-button></tg-button-row>`;
     return richHtml.trim();
   }
 
@@ -30,7 +30,7 @@ const buildCartRichHtml = ({
     const pName = p?.name || 'Товар';
     const pId = p?._id || item.productId;
     const title = `📦 ${pName.substring(0, 18)} (x${item.qty})`;
-    richHtml += `<tg-button-row align="left">` +
+    richHtml += `<tg-button-row align="center">` +
       `<tg-button type="callback_data" style="primary" data="cart:qty:${pId}:-1">➖</tg-button>` +
       `<tg-button type="callback_data" style="link" data="shop:product:${pId}">${escapeHtml(title)}</tg-button>` +
       `<tg-button type="callback_data" style="primary" data="cart:qty:${pId}:1">➕</tg-button>` +
@@ -42,29 +42,29 @@ const buildCartRichHtml = ({
   if (userBalance < cartData.finalTotal) {
     const deficit = parseFloat((cartData.finalTotal - userBalance).toFixed(2));
     const topupLabel = lang === 'en' ? `💰 Top up ${deficit} USDT` : `💰 Пополнить на ${deficit} USDT`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="topup:quick:${deficit}">${escapeHtml(topupLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="topup:quick:${deficit}">${escapeHtml(topupLabel)}</tg-button></tg-button-row>\n`;
   } else if (!cartData.hasStockIssue) {
     const payLabel = lang === 'en' ? `✅ Checkout All ($${cartData.finalTotal.toFixed(2)})` : `✅ Оплатить корзину ($${cartData.finalTotal.toFixed(2)})`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="cart:checkout">${escapeHtml(payLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="success" data="cart:checkout">${escapeHtml(payLabel)}</tg-button></tg-button-row>\n`;
   }
 
   // Кнопка промокода
   const promoLabel = cartData.activePromo
     ? `🎟 ${lang === 'en' ? 'Promo' : 'Промокод'}: ${cartData.activePromo.code} (✅)`
     : (lang === 'en' ? '🎟 Apply Promo Code' : '🎟 Ввести промокод на скидку');
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="cart:promo">${escapeHtml(promoLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="cart:promo">${escapeHtml(promoLabel)}</tg-button></tg-button-row>\n`;
 
   // Очистить корзину / В каталог
   const clearLabel = lang === 'en' ? '🗑 Clear Cart' : '🗑 Очистить корзину';
   const toCatalogLabel = lang === 'en' ? '🛍 To Catalog' : '🛍 В каталог';
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="danger" data="cart:clear">${escapeHtml(clearLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(toCatalogLabel)}</tg-button>` +
     `</tg-button-row>\n`;
 
   // Главное меню
   const mainMenuLabel = lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню';
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(mainMenuLabel)}</tg-button></tg-button-row>`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(mainMenuLabel)}</tg-button></tg-button-row>`;
 
   return richHtml.trim();
 };

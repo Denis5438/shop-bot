@@ -55,35 +55,35 @@ const buildProfileRichHtml = ({
 
   if (activeOrder) {
     const activeLabel = t('profile_continue_activation') || (lang === 'en' ? '▶️ Continue activation' : '▶️ Продолжить активацию');
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="profile:continue_order:${activeOrder._id}">${escapeHtml(activeLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="success" data="profile:continue_order:${activeOrder._id}">${escapeHtml(activeLabel)}</tg-button></tg-button-row>\n`;
   }
 
   const ordersLabel = t('btn_orders') || (lang === 'en' ? '📦 My Orders' : '📦 Мои покупки');
   const topupsLabel = lang === 'en' ? '💳 Top-up History' : '💳 История пополнений';
   const mainStyle = isColored ? 'primary' : 'link';
 
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="${mainStyle}" data="profile:orders">${escapeHtml(ordersLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="${mainStyle}" data="profile:topups">${escapeHtml(topupsLabel)}</tg-button>` +
     `</tg-button-row>\n`;
 
   const promoLabel = lang === 'en' ? '🎟 Promo Code' : '🎟 Промокод';
   const refLabel = t('btn_referral') || (lang === 'en' ? '👥 Referrals' : '👥 Рефералы');
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="${mainStyle}" data="user:activate_promo">${escapeHtml(promoLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="${mainStyle}" data="profile:referral">${escapeHtml(refLabel)}</tg-button>` +
     `</tg-button-row>\n`;
 
   const achLabel = t('profile_achievements_btn') || (lang === 'en' ? '🏆 Achievements' : '🏆 Достижения');
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="${mainStyle}" data="profile:achievements">${escapeHtml(achLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="${mainStyle}" data="profile:toggle_btn_style">${escapeHtml(btnStyleLabel)}</tg-button>` +
     `</tg-button-row>\n`;
 
   const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Main Menu' : '⬅️ Главное меню');
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="${mainStyle}" data="profile:toggle_btn_layout">${escapeHtml(layoutLabel)}</tg-button>` +
-    `<tg-button type="callback_data" style="link" data="menu:main">${escapeHtml(backLabel)}</tg-button>` +
+    `<tg-button type="callback_data" style="${mainStyle}" data="menu:main">${escapeHtml(backLabel)}</tg-button>` +
     `</tg-button-row>`;
 
   return richHtml.trim();
@@ -102,10 +102,10 @@ const buildOrdersRichHtml = ({
 
   if (orders.length === 0) {
     if (filter === 'active') {
-      richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:orders:all:1">${escapeHtml(t('orders_show_all'))}</tg-button></tg-button-row>\n`;
+      richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:orders:all:1">${escapeHtml(t('orders_show_all'))}</tg-button></tg-button-row>\n`;
     }
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(t('orders_to_shop'))}</tg-button></tg-button-row>\n`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(t('btn_back'))}</tg-button></tg-button-row>`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="menu:shop">${escapeHtml(t('orders_to_shop'))}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(t('btn_back'))}</tg-button></tg-button-row>`;
     return richHtml.trim();
   }
 
@@ -115,13 +115,13 @@ const buildOrdersRichHtml = ({
     const statusEmoji = STATUS_EMOJIS[o.status] || '📦';
     const trimmedName = rawName.length > 18 ? rawName.slice(0, 17) + '…' : rawName;
     const btnLabel = `🧾 ${trimmedName} · ${o.price} USDT · ${statusEmoji}`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:order:detail:${o._id}">${escapeHtml(btnLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:order:detail:${o._id}">${escapeHtml(btnLabel)}</tg-button></tg-button-row>\n`;
   }
 
   // 2. Вкладки фильтра
   const allLabel = filter === 'all' ? t('orders_tab_all') : '📋 ' + t('orders_tab_all').replace('☑️ ', '');
   const activeLabel = filter === 'active' ? t('orders_tab_active') : '📋 ' + t('orders_tab_active').replace('🔄 ', '');
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="${filter === 'all' ? 'success' : 'primary'}" data="profile:orders:all:1">${escapeHtml(allLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="${filter === 'active' ? 'success' : 'primary'}" data="profile:orders:active:1">${escapeHtml(activeLabel)}</tg-button>` +
     `</tg-button-row>\n`;
@@ -140,7 +140,7 @@ const buildOrdersRichHtml = ({
   }
 
   // 4. Назад
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(t('btn_back'))}</tg-button></tg-button-row>`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(t('btn_back'))}</tg-button></tg-button-row>`;
 
   return richHtml.trim();
 };
@@ -157,38 +157,38 @@ const buildOrderDetailRichHtml = ({
 
   // 1. 2FA кнопка
   if (itemValue && has2FASecret(itemValue)) {
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="profile:order:2fa:${order._id}">${escapeHtml(get2FAButtonLabel(lang))}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="success" data="profile:order:2fa:${order._id}">${escapeHtml(get2FAButtonLabel(lang))}</tg-button></tg-button-row>\n`;
   }
 
   // 2. Отправка данных в чат
   if (isCompleted && itemValue) {
     const sendDataLabel = lang === 'en' ? '📨 Send data to chat' : '📨 Прислать данные в чат';
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:order:send_data:${order._id}">${escapeHtml(sendDataLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:order:send_data:${order._id}">${escapeHtml(sendDataLabel)}</tg-button></tg-button-row>\n`;
   }
 
   // 3. Действия покупателя escrow
   if (order.status === 'awaiting_confirmation' && order.sellerId) {
     const confirmLabel = lang === 'en' ? '✅ Confirm receipt (Everything works)' : '✅ Подтвердить получение (Всё работает)';
     const disputeLabel = lang === 'en' ? '⚠️ Open dispute (Problem with product)' : '⚠️ Открыть спор (Проблема с товаром)';
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="success" data="buyer:confirm_order:${order._id}">${escapeHtml(confirmLabel)}</tg-button></tg-button-row>\n`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="danger" data="buyer:dispute_order:${order._id}">${escapeHtml(disputeLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="success" data="buyer:confirm_order:${order._id}">${escapeHtml(confirmLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="danger" data="buyer:dispute_order:${order._id}">${escapeHtml(disputeLabel)}</tg-button></tg-button-row>\n`;
   }
 
   // 4. Отмена предзаказа
   if (order.status === 'preorder_pending') {
     const cancelLabel = lang === 'en' ? '❌ Cancel pre-order (refund)' : '❌ Отменить предзаказ (вернуть деньги)';
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="danger" data="profile:cancel_preorder:${order._id}">${escapeHtml(cancelLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="danger" data="profile:cancel_preorder:${order._id}">${escapeHtml(cancelLabel)}</tg-button></tg-button-row>\n`;
   }
 
   // 5. Замена по гарантии
   if (isWarrantyActive && order.replacementStatus === 'none') {
     const claimLabel = lang === 'en' ? '🔄 Request warranty replacement' : '🔄 Запросить замену по гарантии';
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:warranty:claim:${order._id}">${escapeHtml(claimLabel)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:warranty:claim:${order._id}">${escapeHtml(claimLabel)}</tg-button></tg-button-row>\n`;
   }
 
   // 6. Назад к заказам
   const backLabel = lang === 'en' ? '⬅️ To orders' : '⬅️ К заказам';
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="profile:orders:all:1">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="profile:orders:all:1">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
 
   return richHtml.trim();
 };
@@ -432,7 +432,7 @@ const showAchievements = async (ctx) => {
 
   const settings = await getSettings();
   const isRich = isRichActive(ctx, settings);
-  const richHtml = `${toRichHtmlText(text)}<br><br><tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+  const richHtml = `${toRichHtmlText(text)}<br><br><tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
 
   await safeEditRich(ctx, {
     richHtml,
@@ -676,8 +676,8 @@ const showOrder2FA = async (ctx, orderId) => {
   const settings = await getSettings();
   const isRich = isRichActive(ctx, settings);
   const richHtml = `${toRichHtmlText(text)}<br><br>` +
-    `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:order:2fa_refresh:${order._id}">${escapeHtml(refreshLabel)}</tg-button></tg-button-row>\n` +
-    `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="profile:order:${order._id}">${escapeHtml(backOrderLabel)}</tg-button></tg-button-row>`;
+    `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:order:2fa_refresh:${order._id}">${escapeHtml(refreshLabel)}</tg-button></tg-button-row>\n` +
+    `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="profile:order:${order._id}">${escapeHtml(backOrderLabel)}</tg-button></tg-button-row>`;
 
   await safeEditRich(ctx, {
     richHtml,
@@ -883,7 +883,7 @@ const buildTopupHistoryRichHtml = ({
     const methodStr = getTopupMethodLabel(req.method, req.network, lang);
     const amountUSDT = req.amount ? req.amount.toFixed(2) : '0.00';
     const label = `🔍 #${num} ${methodStr} (${amountUSDT} USDT)`;
-    richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:topup:detail:${req._id}">${escapeHtml(label)}</tg-button></tg-button-row>\n`;
+    richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:topup:detail:${req._id}">${escapeHtml(label)}</tg-button></tg-button-row>\n`;
   });
 
   if (totalPages > 1) {
@@ -900,7 +900,7 @@ const buildTopupHistoryRichHtml = ({
 
   const addTopupLabel = lang === 'en' ? '➕ Top Up Balance' : '➕ Пополнить баланс';
   const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Back' : '⬅️ Назад');
-  richHtml += `<tg-button-row align="left">` +
+  richHtml += `<tg-button-row align="center">` +
     `<tg-button type="callback_data" style="success" data="menu:topup">${escapeHtml(addTopupLabel)}</tg-button>` +
     `<tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button>` +
     `</tg-button-row>`;
@@ -916,8 +916,8 @@ const buildTopupDetailRichHtml = ({
   let richHtml = `${toRichHtmlText(text)}<br><br>`;
   const backToHistLabel = lang === 'en' ? '⬅️ Back to History' : '⬅️ К истории пополнений';
   const backLabel = t('btn_back') || (lang === 'en' ? '⬅️ Back' : '⬅️ Назад');
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="primary" data="profile:topups">${escapeHtml(backToHistLabel)}</tg-button></tg-button-row>\n`;
-  richHtml += `<tg-button-row align="left"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:topups">${escapeHtml(backToHistLabel)}</tg-button></tg-button-row>\n`;
+  richHtml += `<tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
   return richHtml.trim();
 };
 
