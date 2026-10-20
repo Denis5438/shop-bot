@@ -976,6 +976,47 @@ const safeEditRich = async (ctx, { richHtml, classicText, classicKeyboard, isRic
     : Markup.inlineKeyboard(classicKeyboard || []);
   const opts = { parse_mode: 'HTML', ...keyboardExtra };
 
+  if (!isRich) {
+    return safeEdit(ctx, classicText, opts);
+  }
+
+  // Отправка через Rich Message (Telegram Bot API 10.3)
+  if (ctx.telegram?.callApi) {
+    try {
+      const chatId = ctx.chat?.id || ctx.from?.id;
+      const messageId = ctx.callbackQuery?.message?.message_id;
+
+      if (ctx.callbackQuery && messageId && chatId) {
+        const res = await ctx.telegram.callApi('editMessageText', {
+          chat_id: chatId,
+          message_id: messageId,
+          rich_message: { html: richHtml },
+        });
+        await ctx.answerCbQuery().catch(() => {});
+        return res;
+      } else if (chatId) {
+        const res = await ctx.telegram.callApi('sendRichMessage', {
+          chat_id: chatId,
+          rich_message: { html: richHtml },
+        });
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery().catch(() => {});
+        }
+        return res;
+      }
+    } catch (err) {
+      const errText = String(err?.description || err?.message || '');
+      if (errText.includes('message is not modified')) {
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery('🔄 Данные актуальны').catch(() => {});
+        }
+        return null;
+      }
+      // Авто-фолбэк: при любой ошибке Telegram (устаревший клиент, ошибка структуры и т.д.)
+      // моментально откатываемся на обычный safeEdit с классической клавиатурой
+    }
+  }
+
   return safeEdit(ctx, classicText, opts);
 };
 
