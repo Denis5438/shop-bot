@@ -450,7 +450,7 @@ const showOrderDetail = async (ctx, orderId) => {
     return ctx.answerCbQuery(lang === 'en' ? '❌ Order not found' : '❌ Заказ не найден', { show_alert: true });
   }
 
-  const order = await Order.findById(orderId)
+  let order = await Order.findById(orderId)
     .populate('productId')
     .populate('keyId')
     .populate('replacedKeyId');
@@ -459,7 +459,42 @@ const showOrderDetail = async (ctx, orderId) => {
     return ctx.answerCbQuery(lang === 'en' ? '❌ Order not found' : '❌ Заказ не найден', { show_alert: true });
   }
 
-  const product = order.productId;
+  let product = order.productId;
+  const { resolveOrderProvider } = require('../../services/provider.service');
+  const provider = resolveOrderProvider(order, product);
+  const isSupplier = ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider);
+
+  if (isSupplier && order.supplierOrderId && ['pending', 'activating', 'retry'].includes(order.status)) {
+    try {
+      const supplierManager = require('../../services/supplierManager.service');
+      const suppRes = await supplierManager.getSupplierOrder(provider, order.supplierOrderId);
+      if (suppRes && suppRes.success && suppRes.deliveryData) {
+        const completed = await Order.findOneAndUpdate(
+          { _id: order._id, status: { $in: ['pending', 'activating', 'retry'] } },
+          {
+            $set: {
+              status: 'completed',
+              confirmedAt: order.confirmedAt || new Date(),
+              deliveryData: String(suppRes.deliveryData),
+              supplierOrderId: String(suppRes.orderNumber || order.supplierOrderId),
+              activationResult: 'Автовыдача через API поставщика (проверка статуса) ⚡',
+              nextRetryAt: null,
+            },
+          },
+          { new: true }
+        ).populate('productId').populate('keyId').populate('replacedKeyId');
+
+        if (completed) {
+          order = completed;
+          product = order.productId;
+          if (ctx.user?._id) {
+            const { grantReferralBonusForFirstCompletedOrder } = require('../../services/referral.service');
+            await grantReferralBonusForFirstCompletedOrder(ctx.user._id).catch(() => {});
+          }
+        }
+      }
+    } catch (_) {}
+  }
   const productName = escapeHtml(
     (lang === 'en' && product?.nameEn ? product.nameEn : product?.name) ||
     (lang === 'en' ? 'Product' : 'Товар')
@@ -603,6 +638,15 @@ const showOrderDetail = async (ctx, orderId) => {
 
   if (isWarrantyActive && order.replacementStatus === 'none') {
     buttons.push([Markup.button.callback(lang === 'en' ? '🔄 Request warranty replacement' : '🔄 Запросить замену по гарантии', `profile:warranty:claim:${order._id}`)]);
+  }
+
+  if (['pending', 'activating', 'retry'].includes(order.status)) {
+    buttons.push([
+      Markup.button.callback(
+        lang === 'en' ? '🔄 Refresh status' : '🔄 Обновить статус',
+        `profile:order:detail:${order._id}`
+      ),
+    ]);
   }
 
   buttons.push([Markup.button.callback(lang === 'en' ? '⬅️ To orders' : '⬅️ К заказам', 'profile:orders:all:1')]);

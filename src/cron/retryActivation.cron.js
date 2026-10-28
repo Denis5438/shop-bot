@@ -20,77 +20,97 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 60_000;
 
-let isOrder6aaRepaired = false;
+const KNOWN_REPAIRED = new Set();
+const KNOWN_REPAIR_ORDERS = [
+  {
+    targetOrderId: '6aa7a90de39afa10f6b58d45',
+    targetTelegramId: 5816207940,
+    realDelivery: 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC',
+    supplierOrderId: 'ORD-00000450',
+  },
+  {
+    targetOrderId: '6ae238dc6e3f2e579915342d',
+    targetTelegramId: 8240687535,
+    realDelivery: 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ',
+    supplierOrderId: 'ORD-00001127',
+  },
+];
+
 const repairKnownOrderIfPending = async (bot) => {
-  if (isOrder6aaRepaired) return;
-  const targetOrderId = '6aa7a90de39afa10f6b58d45';
-  const targetTelegramId = 5816207940;
-  const REAL_DELIVERY = 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  for (const item of KNOWN_REPAIR_ORDERS) {
+    const { targetOrderId, targetTelegramId, realDelivery, supplierOrderId } = item;
+    if (KNOWN_REPAIRED.has(targetOrderId)) continue;
 
-  try {
-    const order = await Order.findById(targetOrderId).populate('productId').populate('userId');
-    if (!order) {
-      isOrder6aaRepaired = true;
-      return;
-    }
-
-    const hasRealDelivery = order.deliveryData === REAL_DELIVERY;
-    const notifSent = typeof order.notes === 'string' && order.notes.includes('[repair_notification_sent]');
-
-    if (hasRealDelivery && notifSent) {
-      isOrder6aaRepaired = true;
-      return;
-    }
-
-    if (!hasRealDelivery) {
-      order.deliveryData = REAL_DELIVERY;
-      order.status = 'completed';
-      if (!order.supplierOrderId) order.supplierOrderId = 'ORD-00000450';
-      order.confirmedAt = order.confirmedAt || new Date();
-      order.activationResult = 'Исправление данных поставщика Jaha Digital ⚡';
-      await order.save();
-      logger.info(`[AutoRepair] Заказ #${targetOrderId} успешно обновлен реальными данными`);
-    }
-
-    if (!notifSent && bot?.telegram) {
-      const { formatDigitalItem, escapeHtml, get2FAButtonLabel, has2FASecret } = require('../bot/utils/ui');
-      const userLang = order.userId?.language || 'ru';
-      const formattedKeys = formatDigitalItem(REAL_DELIVERY, userLang);
-      const productName = escapeHtml(order.productId?.name || 'ChatGPT Plus / Подписка');
-      const msg = userLang === 'en'
-        ? `Hello! We sincerely apologize for the technical delay in the automatic delivery of your order #<code>${targetOrderId}</code>.\n\n` +
-          `📦 <b>Product:</b> ${productName}\n\n` +
-          `🔑 <b>Your access data:</b>\n` +
-          `${formattedKeys}\n\n` +
-          `ℹ️ <i>Tap on the code field to copy it in 1 click.</i>\n\n` +
-          `🛡 <i>Warranty is valid in full. Enjoy using the service!</i>`
-        : `Здравствуйте! Приносим искренние извинения за техническую задержку при автоматической выдаче вашего заказа #<code>${targetOrderId}</code>.\n\n` +
-          `📦 <b>Товар:</b> ${productName}\n\n` +
-          `🔑 <b>Ваши данные для доступа:</b>\n` +
-          `${formattedKeys}\n\n` +
-          `ℹ️ <i>Нажмите на значение в поле, чтобы скопировать его в 1 клик.</i>\n\n` +
-          `🛡 <i>Гарантия на заказ действует в полном объеме. Приятного пользования!</i>`;
-
-      const inlineKeyboard = [];
-      if (has2FASecret(REAL_DELIVERY)) {
-        inlineKeyboard.push([{ text: get2FAButtonLabel(userLang), callback_data: `profile:order:2fa:${targetOrderId}` }]);
+    try {
+      const order = await Order.findById(targetOrderId).populate('productId').populate('userId');
+      if (!order) {
+        KNOWN_REPAIRED.add(targetOrderId);
+        continue;
       }
-      inlineKeyboard.push([{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${targetOrderId}` }]);
 
-      await bot.telegram.sendMessage(targetTelegramId, msg, {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: inlineKeyboard,
-        },
-      });
+      const hasRealDelivery = order.deliveryData === realDelivery;
+      const notifSent = typeof order.notes === 'string' && order.notes.includes('[repair_notification_sent]');
 
-      order.notes = (order.notes ? order.notes + ' ' : '') + '[repair_notification_sent]';
-      await order.save();
-      isOrder6aaRepaired = true;
-      logger.info(`[AutoRepair] Уведомление покупателю ${targetTelegramId} успешно отправлено!`);
+      if (hasRealDelivery && notifSent) {
+        KNOWN_REPAIRED.add(targetOrderId);
+        continue;
+      }
+
+      if (!hasRealDelivery) {
+        order.deliveryData = realDelivery;
+        order.status = 'completed';
+        if (!order.supplierOrderId) order.supplierOrderId = supplierOrderId;
+        order.confirmedAt = order.confirmedAt || new Date();
+        order.activationResult = 'Исправление данных поставщика Jaha Digital ⚡';
+        await order.save();
+        if (order.userId?._id) {
+          await grantReferralBonusForFirstCompletedOrder(order.userId._id).catch(() => {});
+        }
+        logger.info(`[AutoRepair] Заказ #${targetOrderId} успешно обновлен реальными данными`);
+      }
+
+      if (!notifSent && bot?.telegram) {
+        const { formatDigitalItem, escapeHtml, get2FAButtonLabel, has2FASecret } = require('../bot/utils/ui');
+        const userLang = order.userId?.language || 'ru';
+        const formattedKeys = formatDigitalItem(realDelivery, userLang);
+        const productName = escapeHtml(order.productId?.name || 'ChatGPT Plus / Подписка');
+        const msg = userLang === 'en'
+          ? `Hello! We sincerely apologize for the technical delay in the automatic delivery of your order #<code>${targetOrderId}</code>.\n\n` +
+            `📦 <b>Product:</b> ${productName}\n\n` +
+            `🔑 <b>Your access data:</b>\n` +
+            `${formattedKeys}\n\n` +
+            `ℹ️ <i>Tap on the code field to copy it in 1 click.</i>\n\n` +
+            `🛡 <i>Warranty is valid in full. Enjoy using the service!</i>`
+          : `Здравствуйте! Приносим искренние извинения за техническую задержку при автоматической выдаче вашего заказа #<code>${targetOrderId}</code>.\n\n` +
+            `📦 <b>Товар:</b> ${productName}\n\n` +
+            `🔑 <b>Ваши данные для доступа:</b>\n` +
+            `${formattedKeys}\n\n` +
+            `ℹ️ <i>Нажмите на значение в поле, чтобы скопировать его в 1 клик.</i>\n\n` +
+            `🛡 <i>Гарантия на заказ действует в полном объеме. Приятного пользования!</i>`;
+
+        const inlineKeyboard = [];
+        if (has2FASecret(realDelivery)) {
+          inlineKeyboard.push([{ text: get2FAButtonLabel(userLang), callback_data: `profile:order:2fa:${targetOrderId}` }]);
+        }
+        inlineKeyboard.push([{ text: userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', callback_data: `profile:order:detail:${targetOrderId}` }]);
+
+        await bot.telegram.sendMessage(targetTelegramId, msg, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: inlineKeyboard,
+          },
+        }).catch((err) => {
+          logger.warn(`[AutoRepair] Не удалось отправить уведомление покупателю ${targetTelegramId}: ${err.message}`);
+        });
+
+        order.notes = (order.notes ? order.notes + ' ' : '') + '[repair_notification_sent]';
+        await order.save();
+        KNOWN_REPAIRED.add(targetOrderId);
+        logger.info(`[AutoRepair] Уведомление покупателю ${targetTelegramId} обработано`);
+      }
+    } catch (err) {
+      logger.warn(`[AutoRepair] Ошибка при исправлении заказа #${targetOrderId}: ${err.message}`);
     }
-  } catch (err) {
-    logger.warn(`[AutoRepair] Ошибка при исправлении заказа #${targetOrderId}: ${err.message}`);
   }
 };
 

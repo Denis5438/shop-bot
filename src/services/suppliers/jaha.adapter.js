@@ -339,6 +339,125 @@ const getProducts = async (apiKey, options = {}) => {
 };
 
 /**
+ * Рекурсивное извлечение текстовых данных выданного товара из произвольной структуры ответа Jaha Digital
+ */
+const extractItemDelivery = (val) => {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof val === 'number') {
+    return String(val);
+  }
+  if (Array.isArray(val)) {
+    const parts = val.map(extractItemDelivery).filter(Boolean);
+    return parts.length > 0 ? parts.join('\n') : null;
+  }
+  if (typeof val === 'object') {
+    // 1. Структура логин / пароль / 2fa
+    const login = (typeof val.login === 'string' && val.login.trim()) ||
+                  (typeof val.email === 'string' && val.email.trim()) ||
+                  (typeof val.username === 'string' && val.username.trim()) ||
+                  (typeof val.user === 'string' && val.user.trim()) ||
+                  (typeof val.account === 'string' && val.account.trim() && (val.password || val.pass) ? val.account.trim() : null);
+
+    const password = (typeof val.password === 'string' && val.password.trim()) ||
+                     (typeof val.pass === 'string' && val.pass.trim()) ||
+                     (typeof val.password === 'number' ? String(val.password) : null) ||
+                     (typeof val.pass === 'number' ? String(val.pass) : null);
+
+    const secret = (typeof val.secret === 'string' && val.secret.trim()) ||
+                   (typeof val.totp === 'string' && val.totp.trim()) ||
+                   (typeof val.otp === 'string' && val.otp.trim()) ||
+                   (typeof val.two_factor === 'string' && val.two_factor.trim()) ||
+                   (typeof val['2fa'] === 'string' && val['2fa'].trim()) ||
+                   (typeof val.twoFactor === 'string' && val.twoFactor.trim()) ||
+                   (typeof val.two_factor_secret === 'string' && val.two_factor_secret.trim()) ||
+                   (typeof val.twoFactorSecret === 'string' && val.twoFactorSecret.trim()) ||
+                   (typeof val.secret_key === 'string' && val.secret_key.trim()) ||
+                   (typeof val.secretKey === 'string' && val.secretKey.trim()) ||
+                   (typeof val.code === 'string' && val.code.trim()) ||
+                   (typeof val.code === 'number' ? String(val.code) : null);
+
+    if (login && password) {
+      return [login, password, secret].filter(Boolean).join(' | ');
+    }
+
+    // 2. Прямые ключи с контентом/данными
+    const directKeys = [
+      'delivery', 'delivery_data', 'delivered_data', 'additions', 'addition', 'order_additions',
+      'items', 'item', 'keys', 'key', 'account', 'account_details', 'credentials', 'credential',
+      'fulfillment', 'result', 'data', 'content', 'text', 'value', 'code', 'codes',
+      'token', 'tokens', 'details', 'license', 'licenses'
+    ];
+    for (const k of directKeys) {
+      if (val[k] !== undefined && val[k] !== null && val[k] !== '') {
+        const res = extractItemDelivery(val[k]);
+        if (res) return res;
+      }
+    }
+  }
+  return null;
+};
+
+const extractDeliveryData = (orderData) => {
+  if (!orderData || typeof orderData !== 'object') return null;
+
+  // Прямые поля верхнего уровня
+  const candidateKeys = [
+    'delivery',
+    'delivery_data',
+    'delivered_data',
+    'additions',
+    'addition',
+    'order_additions',
+    'items',
+    'item',
+    'keys',
+    'key',
+    'account',
+    'account_details',
+    'credentials',
+    'credential',
+    'fulfillment',
+    'result',
+    'data',
+    'content',
+    'text',
+    'value',
+    'codes',
+    'code',
+    'token',
+    'tokens',
+    'details',
+    'license',
+    'licenses',
+  ];
+
+  for (const k of candidateKeys) {
+    if (orderData[k] !== undefined && orderData[k] !== null && orderData[k] !== '') {
+      const res = extractItemDelivery(orderData[k]);
+      if (res) return res;
+    }
+  }
+
+  // Если данные завернуты в orderData.order
+  if (orderData.order && typeof orderData.order === 'object') {
+    const res = extractDeliveryData(orderData.order);
+    if (res) return res;
+  }
+
+  // Если данные завернуты в orderData.data
+  if (orderData.data && typeof orderData.data === 'object' && !Array.isArray(orderData.data)) {
+    const res = extractDeliveryData(orderData.data);
+    if (res) return res;
+  }
+
+  return null;
+};
+
+/**
  * Автоматический выкуп заказа у Jaha Digital
  */
 const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 999, idempotencyKey, externalOrderId }) => {
@@ -362,23 +481,8 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
     );
 
     const orderData = res.data?.order || res.data;
-    const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
-    const orderNum = orderData?.order_number || orderData?.order_id || orderData?.id;
-
-    let deliveryStr = null;
-    if (delivery) {
-      if (typeof delivery === 'string') {
-        deliveryStr = delivery;
-      } else if (Array.isArray(delivery)) {
-        deliveryStr = delivery
-          .map((d) => (typeof d === 'object' ? (d.key || d.content || d.value || JSON.stringify(d)) : String(d)))
-          .join('\n');
-      } else if (typeof delivery === 'object') {
-        deliveryStr = delivery.content || delivery.key || delivery.keys || JSON.stringify(delivery);
-      } else {
-        deliveryStr = String(delivery);
-      }
-    }
+    const orderNum = orderData?.order_number || orderData?.order_id || orderData?.id || res.data?.order_number || res.data?.order_id;
+    let deliveryStr = extractDeliveryData(res.data) || extractDeliveryData(orderData);
 
     if (!deliveryStr && orderNum) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -394,7 +498,8 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
       }
     }
 
-    const status = deliveryStr ? (orderData?.status || 'completed') : 'processing';
+    const rawStatus = String(orderData?.status || res.data?.status || '').toLowerCase();
+    const status = deliveryStr ? 'completed' : (rawStatus || 'processing');
 
     return {
       success: true,
@@ -414,43 +519,46 @@ const createOrder = async (apiKey, { productCode, quantity = 1, maxUnitPrice = 9
 };
 
 /**
- * Проверка статуса и получение выданного товара по номеру заказа в Jaha Digital
+ * Проверка статуса и получение выданного товара по номеру заказа в Jaha Digital.
+ * Передаёт query-параметр include_additions=true, чтобы Jaha возвращал добавленные
+ * поставщиком данные при не-мгновенной выдаче.
  */
 const getOrder = async (apiKey, orderNumber) => {
   try {
-    const res = await axios.get(`${BASE_URL}/orders/${encodeURIComponent(orderNumber)}`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: 'application/json',
-      },
-      timeout: 15000,
-    });
-
-    const orderData = res.data?.order || res.data;
-    const delivery = orderData?.delivery || orderData?.keys || orderData?.key || orderData?.account || orderData?.data || orderData?.content;
-
-    let deliveryStr = null;
-    if (delivery) {
-      if (typeof delivery === 'string') {
-        deliveryStr = delivery;
-      } else if (Array.isArray(delivery)) {
-        deliveryStr = delivery
-          .map((d) => (typeof d === 'object' ? (d.key || d.content || d.value || JSON.stringify(d)) : String(d)))
-          .join('\n');
-      } else if (typeof delivery === 'object') {
-        deliveryStr = delivery.content || delivery.key || delivery.keys || JSON.stringify(delivery);
+    let res;
+    try {
+      res = await axios.get(`${BASE_URL}/orders/${encodeURIComponent(orderNumber)}?include_additions=true`, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/json',
+        },
+        timeout: 15000,
+      });
+    } catch (errWithAdditions) {
+      if (errWithAdditions.response && errWithAdditions.response.status >= 400 && errWithAdditions.response.status < 500) {
+        // Fallback без query param если эндпоинт отклонил параметр
+        res = await axios.get(`${BASE_URL}/orders/${encodeURIComponent(orderNumber)}`, {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: 'application/json',
+          },
+          timeout: 15000,
+        });
       } else {
-        deliveryStr = String(delivery);
+        throw errWithAdditions;
       }
     }
 
-    const status = orderData?.status || (deliveryStr ? 'completed' : 'processing');
+    const orderData = res.data?.order || res.data;
+    const deliveryStr = extractDeliveryData(res.data) || extractDeliveryData(orderData);
+    const rawStatus = String(orderData?.status || res.data?.status || '').toLowerCase();
+    const status = deliveryStr ? 'completed' : (rawStatus || 'processing');
 
     return {
       success: true,
       orderNumber: orderData?.order_number || orderNumber,
       status,
-      deliveryData: deliveryStr,
+      deliveryData: deliveryStr || null,
       raw: orderData,
     };
   } catch (err) {
@@ -467,4 +575,5 @@ module.exports = {
   createOrder,
   getOrder,
   parseSubscriptionAndWarranty,
+  extractDeliveryData,
 };

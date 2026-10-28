@@ -157,12 +157,77 @@ const showOrdersList = async (ctx, filter = 'active', page = 1) => {
 };
 
 const showOrderDetail = async (ctx, orderId) => {
-  const order = await Order.findById(orderId).populate('userId').populate('productId');
+  let order = await Order.findById(orderId).populate('userId').populate('productId');
   if (!order) return ctx.answerCbQuery('❌ Заказ не найден', { show_alert: true });
 
-  const user = order.userId;
   const product = order.productId;
-  const providerLabel = getProviderLabel(resolveOrderProvider(order, product));
+  const provider = resolveOrderProvider(order, product);
+  const isSupplier = ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider);
+
+  let wasDeliveredOnline = false;
+  // Для заказов внешних поставщиков в процессе активации — проверяем онлайн-статус у поставщика напрямую
+  if (isSupplier && order.supplierOrderId && ['pending', 'activating', 'retry'].includes(order.status)) {
+    try {
+      const suppRes = await supplierManager.getSupplierOrder(provider, order.supplierOrderId);
+      if (suppRes && suppRes.success && suppRes.deliveryData) {
+        const completed = await Order.findOneAndUpdate(
+          { _id: order._id, status: { $in: ['pending', 'activating', 'retry'] } },
+          {
+            $set: {
+              status: 'completed',
+              confirmedAt: order.confirmedAt || new Date(),
+              deliveryData: String(suppRes.deliveryData),
+              supplierOrderId: String(suppRes.orderNumber || order.supplierOrderId),
+              activationResult: 'Автовыдача через API поставщика (проверка статуса) ⚡',
+              nextRetryAt: null,
+            },
+          },
+          { new: true }
+        ).populate('userId').populate('productId');
+
+        if (completed) {
+          order = completed;
+          wasDeliveredOnline = true;
+          const freshUser = order.userId;
+          const userTgId = freshUser?.telegramId;
+          if (userTgId) {
+            const { formatDigitalItem, get2FAButtonLabel, has2FASecret } = require('../../utils/ui');
+            const userLang = freshUser?.language || 'ru';
+            const formattedKeys = formatDigitalItem(suppRes.deliveryData, userLang);
+            const deliveryMsg = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
+              `📦 Товар: ${escapeHtml(product?.name || 'Товар')}\n` +
+              `🔑 <b>Ваши данные для доступа:</b>\n${formattedKeys}\n\n` +
+              `<i>Спасибо за ожидание!</i>`;
+            const kbRows = [];
+            if (has2FASecret(suppRes.deliveryData)) {
+              kbRows.push([Markup.button.callback(get2FAButtonLabel(userLang), `profile:order:2fa:${order._id}`)]);
+            }
+            kbRows.push([Markup.button.callback(userLang === 'en' ? '📋 My orders' : '📋 Мои покупки', `profile:order:detail:${order._id}`)]);
+            await notif.sendToUser(userTgId, deliveryMsg, {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard(kbRows),
+            }).catch(() => {});
+          }
+
+          if (freshUser?._id) {
+            await grantReferralBonusForFirstCompletedOrder(freshUser._id).catch(() => {});
+          }
+        }
+      } else if (suppRes && suppRes.success && (suppRes.status === 'failed' || suppRes.status === 'canceled' || suppRes.status === 'cancelled')) {
+        const failNote = `Поставщик отменил заказ (${suppRes.orderNumber || order.supplierOrderId})`;
+        await Order.updateOne(
+          { _id: order._id, status: { $in: ['pending', 'activating', 'retry'] } },
+          { $set: { notes: failNote } }
+        );
+        order.notes = failNote;
+      }
+    } catch (_) {
+      // Игнорируем сетевые ошибки, чтобы экран админ-панели гарантированно отобразился
+    }
+  }
+
+  const user = order.userId;
+  const providerLabel = getProviderLabel(provider);
 
   let text =
     `📋 <b>Заказ ${orderId}</b>\n\n` +
@@ -174,6 +239,14 @@ const showOrderDetail = async (ctx, orderId) => {
     `📊 Прибыль: ${(order.price - (order.costPrice || 0)).toFixed(2)} USDT\n` +
     `🔘 Статус: ${STATUS_LABELS[order.status]}\n` +
     `📅 Дата: ${new Date(order.createdAt).toLocaleString('ru-RU')}\n`;
+
+  if (order.supplierOrderId) {
+    text += `🆔 ID поставщика: <code>${escapeHtml(order.supplierOrderId)}</code>\n`;
+  }
+
+  if (order.deliveryData) {
+    text += `🔑 <b>Выданный товар:</b>\n<pre>${escapeHtml(order.deliveryData)}</pre>\n`;
+  }
 
   if (order.notes) {
     text += `\n💬 Заметки: ${escapeHtml(order.notes)}`;
@@ -211,10 +284,18 @@ const showOrderDetail = async (ctx, orderId) => {
 
   try {
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
-    await ctx.answerCbQuery().catch(() => {});
+    if (wasDeliveredOnline) {
+      await ctx.answerCbQuery('✅ Товар получен у поставщика и выдан клиенту!', { show_alert: true }).catch(() => {});
+    } else {
+      await ctx.answerCbQuery().catch(() => {});
+    }
   } catch (err) {
     if (err.description?.includes('message is not modified')) {
-      await ctx.answerCbQuery('✅ Статус актуален').catch(() => {});
+      if (['pending', 'activating', 'retry'].includes(order.status) && isSupplier) {
+        await ctx.answerCbQuery('⏳ Статус проверен у поставщика: заказ всё ещё в обработке', { show_alert: true }).catch(() => {});
+      } else {
+        await ctx.answerCbQuery('✅ Статус актуален').catch(() => {});
+      }
     } else {
       throw err;
     }
@@ -498,7 +579,7 @@ const retryApiOrder = async (ctx, orderId) => {
   }
 
   const product = order.productId;
-  const provider = product?.provider || order.provider;
+  const provider = resolveOrderProvider(order, product);
   if (!['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
     return ctx.answerCbQuery('❌ Этот заказ не привязан к API поставщику', { show_alert: true });
   }
@@ -506,7 +587,7 @@ const retryApiOrder = async (ctx, orderId) => {
   await ctx.answerCbQuery('🔄 Проверяю статус / запрашиваю у поставщика...', { show_alert: false }).catch(() => {});
 
   let suppRes;
-  let retryKey = order.supplierIdempotencyKey;
+  let retryKey = order.supplierIdempotencyKey || `ord-${order._id}`;
 
   // Если у заказа уже есть supplierOrderId — сначала опрашиваем getOrder, чтобы не выкупать повторно
   if (order.supplierOrderId) {
@@ -520,9 +601,10 @@ const retryApiOrder = async (ctx, orderId) => {
   // Если товара ещё нет или нет supplierOrderId — пробуем выкупить
   if (!suppRes || (!suppRes.deliveryData && !order.supplierOrderId)) {
     const qty = order.qty || 1;
-    retryKey = `ord-${order._id}-${Date.now()}`;
-    order.supplierIdempotencyKey = retryKey;
-    await order.save();
+    if (!order.supplierIdempotencyKey) {
+      order.supplierIdempotencyKey = retryKey;
+      await order.save();
+    }
 
     try {
       suppRes = await supplierManager.fulfillSupplierOrder(product, qty, order.userId, {
@@ -540,22 +622,23 @@ const retryApiOrder = async (ctx, orderId) => {
       {
         $set: {
           status: 'completed',
-          confirmedAt: new Date(),
+          confirmedAt: order.confirmedAt || new Date(),
           deliveryData: String(suppRes.deliveryData),
-          supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
+          supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || order.supplierOrderId || ''),
           activationResult: 'Повторный выкуп администратором ⚡',
           supplierIdempotencyKey: retryKey,
         },
       }
     );
 
-    const userTgId = order.userId?.telegramId || order.userId;
+    const freshUser = order.userId?.telegramId ? order.userId : await User.findById(order.userId);
+    const userTgId = freshUser?.telegramId;
     if (userTgId) {
       const { formatDigitalItem, get2FAButtonLabel, has2FASecret } = require('../../utils/ui');
-      const userLang = order.userId?.language || 'ru';
+      const userLang = freshUser?.language || 'ru';
       const formattedKeys = formatDigitalItem(suppRes.deliveryData, userLang);
       const deliveryMsg = `✅ <b>Товар по вашему заказу выдан!</b>\n\n` +
-        `📦 Товар: ${escapeHtml(product.name)}\n` +
+        `📦 Товар: ${escapeHtml(product?.name || 'Товар')}\n` +
         `🔑 <b>Ваши данные для доступа:</b>\n${formattedKeys}\n\n` +
         `<i>Спасибо за ожидание!</i>`;
       const kbRows = [];
@@ -569,13 +652,14 @@ const retryApiOrder = async (ctx, orderId) => {
       }).catch(() => {});
     }
 
-    if (order.userId?._id) {
-      await grantReferralBonusForFirstCompletedOrder(order.userId._id).catch(() => {});
+    const buyerId = freshUser?._id || order.userId?._id || order.userId;
+    if (buyerId) {
+      await grantReferralBonusForFirstCompletedOrder(buyerId).catch(() => {});
     }
 
     await ctx.answerCbQuery('✅ Успешно выкуплено и отправлено клиенту!', { show_alert: true }).catch(() => {});
   } else if (suppRes && suppRes.success) {
-    const suppOrderId = String(suppRes.orderNumber || suppRes.orderId || '');
+    const suppOrderId = String(suppRes.orderNumber || suppRes.orderId || order.supplierOrderId || '');
     await Order.updateOne(
       { _id: order._id },
       {
