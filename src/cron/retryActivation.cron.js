@@ -31,7 +31,7 @@ const KNOWN_REPAIR_ORDERS = [
   {
     targetOrderId: '6ae238dc6e3f2e579915342d',
     targetTelegramId: 8240687535,
-    realDelivery: 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ',
+    realDelivery: 'burwellferrari316@gmail.com|Phamhoangdien14@|MXF5UCUDQBBE3R7SNBM6SIXXMZRAQP6E',
     supplierOrderId: 'ORD-00001127',
   },
 ];

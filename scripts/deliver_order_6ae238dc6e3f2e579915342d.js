@@ -14,7 +14,7 @@ const config = require('../src/config');
 
 const ORDER_ID = '6ae238dc6e3f2e579915342d';
 const TARGET_TELEGRAM_ID = 8240687535;
-const REAL_DELIVERY_DATA = 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ';
+const REAL_DELIVERY_DATA = 'burwellferrari316@gmail.com|Phamhoangdien14@|MXF5UCUDQBBE3R7SNBM6SIXXMZRAQP6E';
 const SUPPLIER_ORDER_ID = 'ORD-00001127';
 
 async function run() {
