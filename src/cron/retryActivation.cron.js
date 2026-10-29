@@ -20,6 +20,15 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 60_000;
 
+const formatWarrantyDays = (warrantyDays, isEn = false) => {
+  const days = warrantyDays ?? 5;
+  if (days < 1) {
+    const hours = Math.round(days * 24);
+    return isEn ? `${hours} hours` : `${hours} ч.`;
+  }
+  return isEn ? `${days} days` : `${days} дн.`;
+};
+
 const KNOWN_REPAIRED = new Set();
 const KNOWN_REPAIR_ORDERS = [
   {
@@ -343,11 +352,11 @@ const checkPendingSupplierOrders = async (bot) => {
               ? `✅ <b>Order completed automatically! ⚡</b>\n\n` +
                 `📦 <b>Product:</b> ${escapeHtml(product?.icon || '📦')} ${escapeHtml(product?.nameEn || product?.name || 'Item')}\n` +
                 `🔑 <b>Your access data:</b>\n${keysText}\n\n` +
-                `🛡 <i>Warranty: ${product?.warrantyDays ?? 5} days.</i>\n<i>Thank you for your patience!</i>`
+                `🛡 <i>Warranty: ${formatWarrantyDays(product?.warrantyDays, true)}.</i>\n<i>Thank you for your patience!</i>`
               : `✅ <b>Заказ выполнен автоматически! ⚡</b>\n\n` +
                 `📦 <b>Товар:</b> ${escapeHtml(product?.icon || '📦')} ${escapeHtml(product?.name || 'Товар')}\n` +
                 `🔑 <b>Ваши данные для доступа:</b>\n${keysText}\n\n` +
-                `🛡 <i>Гарантия: ${product?.warrantyDays ?? 5} дн.</i>\n<i>Спасибо за ожидание!</i>`;
+                `🛡 <i>Гарантия: ${formatWarrantyDays(product?.warrantyDays, false)}.</i>\n<i>Спасибо за ожидание!</i>`;
 
             const inlineKeyboard = [];
             if (has2FASecret(res.deliveryData)) {
@@ -447,11 +456,11 @@ const handleSupplierRetry = async (order, provider, bot) => {
         ? `✅ <b>Order completed automatically! ⚡</b>\n\n` +
           `📦 <b>Product:</b> ${escapeHtml(product?.icon || '📦')} ${escapeHtml(product?.nameEn || product?.name || 'Item')}\n` +
           `🔑 <b>Your access data:</b>\n${keysText}\n\n` +
-          `🛡 <i>Warranty: ${product?.warrantyDays ?? 5} days.</i>\n<i>Thank you for your patience!</i>`
+          `🛡 <i>Warranty: ${formatWarrantyDays(product?.warrantyDays, true)}.</i>\n<i>Thank you for your patience!</i>`
         : `✅ <b>Заказ выполнен автоматически! ⚡</b>\n\n` +
           `📦 <b>Товар:</b> ${escapeHtml(product?.icon || '📦')} ${escapeHtml(product?.name || 'Товар')}\n` +
           `🔑 <b>Ваши данные для доступа:</b>\n${keysText}\n\n` +
-          `🛡 <i>Гарантия: ${product?.warrantyDays ?? 5} дн.</i>\n<i>Спасибо за ожидание!</i>`;
+          `🛡 <i>Гарантия: ${formatWarrantyDays(product?.warrantyDays, false)}.</i>\n<i>Спасибо за ожидание!</i>`;
 
       const inlineKeyboard = [];
       if (has2FASecret(suppRes.deliveryData)) {

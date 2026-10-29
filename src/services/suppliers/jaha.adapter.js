@@ -137,8 +137,16 @@ const parseSubscriptionAndWarranty = (name = '', description = '') => {
   // 2. ОПРЕДЕЛЕНИЕ СРОКА ГАРАНТИИ (warrantyDays)
   let warrantyDays = null;
 
-  // 2.1 Проверка в НАЗВАНИИ:
-  if (/\b(nw|no[-\s]?warranty)\b/i.test(lowerName) || /\[nw\]|\(nw\)/i.test(cleanName) || /без гарантии/iu.test(lowerName)) {
+  // 2.0 Проверка на ЧАСЫ в названии (W12H, [W12H], (W6H), W24H, 12 hours warranty, 12 ч. гарантия и т.д.):
+  const hourTagMatch = cleanName.match(/(?:^|\s|\[|\()w(\d+)\s*h(?:our|ours)?(?:\b|\]|\))/i);
+  const hourPhraseMatch = lowerName.match(/(?:(\d+)\s*(?:h|hours?|ч|часа?|часов)\s*(?:warranty|гаранти[яи]))|(?:(?:warranty|гаранти[яи])\s*[:\s]*(\d+)\s*(?:h|hours?|ч|часа?|часов))/iu);
+  if (hourTagMatch) {
+    const hours = parseInt(hourTagMatch[1], 10);
+    warrantyDays = hours / 24;
+  } else if (hourPhraseMatch) {
+    const hours = parseInt(hourPhraseMatch[1] || hourPhraseMatch[2], 10);
+    warrantyDays = hours / 24;
+  } else if (/\b(nw|no[-\s]?warranty)\b/i.test(lowerName) || /\[nw\]|\(nw\)/i.test(cleanName) || /без гарантии/iu.test(lowerName)) {
     warrantyDays = 0;
   } else if (
     /\bw(\d+)\s*d?\b/i.test(cleanName) ||
@@ -146,16 +154,16 @@ const parseSubscriptionAndWarranty = (name = '', description = '') => {
     /\[w(\d+)d?\]/i.test(cleanName)
   ) {
     const m = cleanName.match(/w(\d+)\s*d?/i);
-    if (m) warrantyDays = parseInt(m[1]);
+    if (m) warrantyDays = parseInt(m[1], 10);
   } else if (/(\d+)\s*(?:d|day|days|дн|дней|день)\s*warranty/iu.test(lowerName) || /warranty\s*[:\s]*(\d+)\s*(?:d|day|days|дн|дней|день)/iu.test(lowerName)) {
     const m = lowerName.match(/(\d+)\s*(?:d|day|days|дн|дней|день)\s*warranty/iu) || lowerName.match(/warranty\s*[:\s]*(\d+)\s*(?:d|day|days|дн|дней|день)/iu);
-    if (m) warrantyDays = parseInt(m[1]);
+    if (m) warrantyDays = parseInt(m[1], 10);
   } else if (/warranty\s*[:\s]*(\d+)\s*(?:month|months|m|мес|месяц|месяца|месяцев)/iu.test(lowerName)) {
     const m = lowerName.match(/warranty\s*[:\s]*(\d+)\s*(?:month|months|m|мес|месяц|месяца|месяцев)/iu);
-    if (m) warrantyDays = parseInt(m[1]) * 30;
+    if (m) warrantyDays = parseInt(m[1], 10) * 30;
   } else if (/warranty\s*[:\s]*(\d+)\s*(?:year|years|y|год|года|лет)/iu.test(lowerName)) {
     const m = lowerName.match(/warranty\s*[:\s]*(\d+)\s*(?:year|years|y|год|года|лет)/iu);
-    if (m) warrantyDays = parseInt(m[1]) * 365;
+    if (m) warrantyDays = parseInt(m[1], 10) * 365;
   } else if (
     /\b(fw|full[-\s]?warranty|fully covered|fully guaranteed|полная гарантия)\b/iu.test(lowerName) ||
     /\[fw\]|\(fw\)/i.test(cleanName)
@@ -167,7 +175,11 @@ const parseSubscriptionAndWarranty = (name = '', description = '') => {
 
   // 2.2 Проверка в ОПИСАНИИ:
   if (warrantyDays === null) {
-    if (/\b(nw|no[-\s]?warranty)\b/i.test(lowerDesc) || /без гарантии/iu.test(lowerDesc)) {
+    const descHourMatch = lowerDesc.match(/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:h|hours?|ч|часа?|часов)/iu);
+    if (descHourMatch) {
+      const hours = parseInt(descHourMatch[1], 10);
+      warrantyDays = hours / 24;
+    } else if (/\b(nw|no[-\s]?warranty)\b/i.test(lowerDesc) || /без гарантии/iu.test(lowerDesc)) {
       warrantyDays = 0;
     } else if (
       /\b(fw|full[-\s]?warranty|fully covered|fully guaranteed|полная гарантия|гарантия на весь срок)\b/iu.test(lowerDesc) ||
@@ -176,10 +188,10 @@ const parseSubscriptionAndWarranty = (name = '', description = '') => {
       warrantyDays = subscriptionDays;
     } else if (/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:day|days|дн|дней|день)/iu.test(lowerDesc)) {
       const m = lowerDesc.match(/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:day|days|дн|дней|день)/iu);
-      if (m) warrantyDays = parseInt(m[1]);
+      if (m) warrantyDays = parseInt(m[1], 10);
     } else if (/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:month|months|мес|месяц|месяца)/iu.test(lowerDesc)) {
       const m = lowerDesc.match(/(?:warranty|гарантия)[\s:]*(\d+)\s*(?:month|months|мес|месяц|месяца)/iu);
-      if (m) warrantyDays = parseInt(m[1]) * 30;
+      if (m) warrantyDays = parseInt(m[1], 10) * 30;
     } else if (/гарантия активации/iu.test(lowerDesc)) {
       warrantyDays = 1;
     }

@@ -511,12 +511,23 @@ const showOrderDetail = async (ctx, orderId) => {
   let warrantyStr = '';
   if (order.status === 'completed' && warrantyDays > 0) {
     const warrantyTitle = lang === 'en' ? 'Warranty' : 'Гарантия';
-    if (isWarrantyActive) {
-      const diffMs = warrantyExpiresAt.getTime() - now.getTime();
-      const daysLeft = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-      warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Active (${daysLeft} of ${warrantyDays} days left)` : `Активна (осталось ${daysLeft} дн. из ${warrantyDays})`}`;
+    if (warrantyDays < 1) {
+      const totalHours = Math.round(warrantyDays * 24);
+      if (isWarrantyActive) {
+        const diffMs = warrantyExpiresAt.getTime() - now.getTime();
+        const hoursLeft = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60)));
+        warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Active (${hoursLeft} of ${totalHours} hours left)` : `Активна (осталось ${hoursLeft} ч. из ${totalHours} ч.)`}`;
+      } else {
+        warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Expired (${totalHours} hours)` : `Истёкла (${totalHours} ч.)`}`;
+      }
     } else {
-      warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Expired (${warrantyDays} days)` : `Истёкла (${warrantyDays} дн.)`}`;
+      if (isWarrantyActive) {
+        const diffMs = warrantyExpiresAt.getTime() - now.getTime();
+        const daysLeft = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Active (${daysLeft} of ${warrantyDays} days left)` : `Активна (осталось ${daysLeft} дн. из ${warrantyDays})`}`;
+      } else {
+        warrantyStr = `🛡 <b>${warrantyTitle}:</b> ${lang === 'en' ? `Expired (${warrantyDays} days)` : `Истёкла (${warrantyDays} дн.)`}`;
+      }
     }
   }
 

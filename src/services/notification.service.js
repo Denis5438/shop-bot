@@ -401,9 +401,16 @@ const buildProductBroadcastMessage = (product, stock, lang = 'ru') => {
   // Warranty line
   let warrantyLine = '';
   if (product.warrantyDays) {
-    warrantyLine = lang === 'en'
-      ? `\n🛡 <b>Warranty:</b> ${product.warrantyDays} days`
-      : `\n🛡 <b>Гарантия:</b> ${product.warrantyDays} дн.`;
+    if (product.warrantyDays < 1) {
+      const hours = Math.round(product.warrantyDays * 24);
+      warrantyLine = lang === 'en'
+        ? `\n🛡 <b>Warranty:</b> ${hours} hours`
+        : `\n🛡 <b>Гарантия:</b> ${hours} ч.`;
+    } else {
+      warrantyLine = lang === 'en'
+        ? `\n🛡 <b>Warranty:</b> ${product.warrantyDays} days`
+        : `\n🛡 <b>Гарантия:</b> ${product.warrantyDays} дн.`;
+    }
   }
 
   // Description block (expandable in Telegram)

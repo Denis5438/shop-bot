@@ -651,7 +651,9 @@ const showProduct = async (ctx, productId, fromPage = 1) => {
     const warrantyLabel = t('product_warranty_label') || (lang === 'en' ? '⏳ Warranty' : '⏳ Гарантия');
     const warrantyVal = product.warrantyDays === 0
       ? (lang === 'en' ? 'No warranty' : 'Без гарантии')
-      : (t('product_warranty_days', { days: product.warrantyDays }) || (lang === 'en' ? `${product.warrantyDays} days` : `${product.warrantyDays} дн.`));
+      : (product.warrantyDays < 1
+        ? (lang === 'en' ? `${Math.round(product.warrantyDays * 24)} hours` : `${Math.round(product.warrantyDays * 24)} ч.`)
+        : (t('product_warranty_days', { days: product.warrantyDays }) || (lang === 'en' ? `${product.warrantyDays} days` : `${product.warrantyDays} дн.`)));
     warrantyLine = `\n${warrantyLabel}: <b>${warrantyVal}</b>`;
   }
 
@@ -970,7 +972,9 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
 
   const tariffLine = qty > 1
     ? `${qty} шт.`
-    : (product.warrantyDays ? `${product.warrantyDays} дн. гарантии` : '1 шт.');
+    : (product.warrantyDays
+      ? (product.warrantyDays < 1 ? `${Math.round(product.warrantyDays * 24)} ч. гарантии` : `${product.warrantyDays} дн. гарантии`)
+      : '1 шт.');
 
   const text =
     `<b>Перед оплатой</b>\n` +
@@ -1138,7 +1142,9 @@ const showProductDescInfo = async (ctx, productId, fromPage = 1, qty = 1, isPreo
 
   const warrantyVal = product.warrantyDays === 0
     ? (lang === 'en' ? 'No warranty' : 'Без гарантии')
-    : `${product.warrantyDays ?? 5} дн.`;
+    : (product.warrantyDays < 1
+      ? (lang === 'en' ? `${Math.round(product.warrantyDays * 24)} hours` : `${Math.round(product.warrantyDays * 24)} ч.`)
+      : (lang === 'en' ? `${product.warrantyDays ?? 5} days` : `${product.warrantyDays ?? 5} дн.`));
 
   const durationLine = product.subscriptionDays && product.subscriptionDays > 0
     ? `⏳ <b>${lang === 'en' ? 'Duration' : 'Срок подписки'}:</b> ${product.subscriptionDays} дн.\n`
@@ -1611,7 +1617,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
         `💰 ${chargedLbl}: <b>${totalCost} USDT</b>\n\n` +
         `🔑 <b>Ваши данные для доступа:</b>\n` +
         `${keysText}\n\n` +
-        `🛡 <i>Гарантия на заказ: ${product.warrantyDays ?? 5} дн.</i>`;
+        `🛡 <i>${lang === 'en' ? 'Order warranty' : 'Гарантия на заказ'}: ${product.warrantyDays < 1 ? (lang === 'en' ? `${Math.round((product.warrantyDays ?? 0.5) * 24)} hours` : `${Math.round((product.warrantyDays ?? 0.5) * 24)} ч.`) : (lang === 'en' ? `${product.warrantyDays ?? 5} days` : `${product.warrantyDays ?? 5} дн.`)}.</i>`;
 
       const kbRows = [];
       if (has2FASecret(suppRes.deliveryData)) {
@@ -1876,7 +1882,13 @@ const confirmPreorder = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
   const unit = lang === 'en' ? 'pcs' : 'шт.';
 
   const isRu = lang === 'ru';
-  const tariffLine = qty > 1 ? `${qty} ${unit}` : (product.warrantyDays ? `${product.warrantyDays} дн. гарантии` : `1 ${unit}`);
+  const tariffLine = qty > 1
+    ? `${qty} ${unit}`
+    : (product.warrantyDays
+      ? (product.warrantyDays < 1
+        ? (isRu ? `${Math.round(product.warrantyDays * 24)} ч. гарантии` : `${Math.round(product.warrantyDays * 24)} hours warranty`)
+        : (isRu ? `${product.warrantyDays} дн. гарантии` : `${product.warrantyDays} days warranty`))
+      : `1 ${unit}`);
 
   let priceDisplay = `<b>${totalCost} USDT</b> (~${totalCostRub} ₽)`;
   let promoInfoLine = '';

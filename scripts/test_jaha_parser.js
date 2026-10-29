@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { extractDeliveryData } = require('../src/services/suppliers/jaha.adapter');
+const { extractDeliveryData, parseSubscriptionAndWarranty } = require('../src/services/suppliers/jaha.adapter');
 const { has2FASecret, extract2FAAccounts } = require('../src/bot/utils/ui');
 
 console.log('🧪 Starting Jaha Digital Parser & Delivery Extractor Test Suite...\n');
@@ -162,5 +162,26 @@ const res12 = extractDeliveryData(sample12);
 assert.strictEqual(res12, 'token-abc-123-xyz');
 console.log('✅ Test 12 Passed');
 
-console.log('\n🎉 All Jaha Parser tests (12/12) passed successfully!');
+// Test 13: parseSubscriptionAndWarranty with [W12H]
+console.log('Test 13: parseSubscriptionAndWarranty with [W12H]');
+const res13 = parseSubscriptionAndWarranty('ChatGPT Plus 1 Month [W12H]');
+assert.strictEqual(res13.subscriptionDays, 30);
+assert.strictEqual(res13.warrantyDays, 0.5);
+console.log('✅ Test 13 Passed (12 hours = 0.5 days)');
+
+// Test 14: parseSubscriptionAndWarranty with [W6H] and [W24H]
+console.log('Test 14: parseSubscriptionAndWarranty with W6H and W24H');
+const res14a = parseSubscriptionAndWarranty('ChatGPT Plus 1 Month (W6H)');
+assert.strictEqual(res14a.warrantyDays, 0.25);
+const res14b = parseSubscriptionAndWarranty('ChatGPT Plus 1 Month [W24H]');
+assert.strictEqual(res14b.warrantyDays, 1);
+console.log('✅ Test 14 Passed');
+
+// Test 15: parseSubscriptionAndWarranty with phrase "12 hours warranty"
+console.log('Test 15: parseSubscriptionAndWarranty with natural phrase');
+const res15 = parseSubscriptionAndWarranty('Product Title', 'Some description with Warranty: 12 hours');
+assert.strictEqual(res15.warrantyDays, 0.5);
+console.log('✅ Test 15 Passed');
+
+console.log('\n🎉 All Jaha Parser & Warranty tests (15/15) passed successfully!');
 
