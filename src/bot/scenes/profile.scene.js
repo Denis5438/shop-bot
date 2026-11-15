@@ -422,15 +422,16 @@ const showOrders = async (ctx, filter = 'all', page = 1) => {
 const showAchievements = async (ctx) => {
   const t = ctx.t || ((k) => k);
   const lang = ctx.user?.language || 'ru';
+  const settings = await getSettings();
+  const achievementRewardsEnabled = settings?.achievementRewardsEnabled === true;
   const items = await getAllWithProgress(ctx.user._id);
-  const text = renderAchievementsText(items, lang);
+  const text = renderAchievementsText(items, lang, { achievementRewardsEnabled });
 
   const backLabel = t('profile_back_to_profile') || (lang === 'en' ? '⬅️ Back to profile' : '⬅️ Назад в профиль');
   const keyboard = [
     [Markup.button.callback(backLabel, 'menu:profile')],
   ];
 
-  const settings = await getSettings();
   const isRich = isRichActive(ctx, settings);
   const richHtml = `${toRichHtmlText(text)}<br><br><tg-button-row align="center"><tg-button type="callback_data" style="link" data="menu:profile">${escapeHtml(backLabel)}</tg-button></tg-button-row>`;
 
@@ -1057,5 +1058,6 @@ module.exports = {
   buildOrderDetailRichHtml,
   buildTopupHistoryRichHtml,
   buildTopupDetailRichHtml,
+  renderAchievementsText,
   STATUS_EMOJIS,
 };

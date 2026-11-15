@@ -34,6 +34,7 @@ const getLiveSettings = async () => {
       topupNetwork: TOPUP_NETWORK,
       minTopup: MIN_TOPUP,
       referralBonus: REFERRAL_BONUS,
+      achievementRewardsEnabled: false,
       currencyMode: 'bybit_p2p',
       manualRate: 95,
       currencyOffset: 0,
@@ -41,6 +42,8 @@ const getLiveSettings = async () => {
       defaultButtonLayout: 'rich',
       catalogButtonsStyle: 'rich',
     });
+  } else if (typeof settings.achievementRewardsEnabled !== 'boolean') {
+    settings.achievementRewardsEnabled = false;
   }
   return settings;
 };
@@ -63,6 +66,8 @@ const showSettings = async (ctx) => {
   const bybitBtnStr = settings.bybitEnabled !== false ? '📊 Bybit: Выкл' : '📊 Bybit: Вкл';
   const cleanChatStatusText = settings.cleanChatEnabled ? '🟢 Вкл' : '🔴 Выкл';
   const cleanChatBtnStr = settings.cleanChatEnabled ? '🧹 Чистый чат: Выкл' : '🧹 Чистый чат: Вкл';
+  const achievementRewardsStatusText = settings.achievementRewardsEnabled ? '🟢 Вкл' : '🔴 Выкл';
+  const achievementRewardsBtnStr = settings.achievementRewardsEnabled ? '🏆 Награды ачивок: Выкл' : '🏆 Награды ачивок: Вкл';
 
   const globalButtonsMode = settings.globalButtonsMode || 'by_user';
   const buttonLayoutLabels = {
@@ -109,6 +114,7 @@ const showSettings = async (ctx) => {
     `⭐ Реферальный бонус: <b>${settings.referralBonus} USDT</b>\n\n` +
     `💸 Мин. вывод продавца: <b>${settings.minSellerWithdraw ?? 5} USDT</b>\n` +
     `⏱ Авто-подтверждение заказа: <b>${settings.autoConfirmHours ?? 24} ч.</b>\n\n` +
+    `🏆 Награды ачивок: <b>${achievementRewardsStatusText}</b>\n` +
     `🚕 Умные цены (x1.2 при &lt;10 шт): <b>${smartPriceText}</b>\n` +
     `📉 Умная уценка (-${settings.autoMarkdownPercent}% / ${settings.autoMarkdownDays}дн): <b>${settings.autoMarkdownEnabled ? '🔴 Вкл' : '🟢 Выкл'}</b>\n` +
     `📬 Сводка уведомлений (digest): <b>${settings.adminDigestEnabled ? `🔴 Вкл (каждые ${settings.adminDigestIntervalMinutes || 60} мин)` : '🟢 Выкл (всё сразу)'}</b>\n` +
@@ -140,6 +146,7 @@ const showSettings = async (ctx) => {
     ],
     [Markup.button.callback(cleanChatBtnStr, 'admin:settings:toggle_clean_chat')],
     [Markup.button.callback(`🎨 Формат кнопок: ${shortButtonLayoutLabel}`, 'admin:settings:toggle_button_layout')],
+    [Markup.button.callback(achievementRewardsBtnStr, 'settings:toggle:achievementRewards')],
     [Markup.button.callback('✨ API GEMINI', 'admin:settings:edit:geminiApiKey')],
     [Markup.button.callback('✏️ Platega Merchant ID', 'admin:settings:edit:plategaMerchantId')],
     [Markup.button.callback('✏️ Platega Secret Key', 'admin:settings:edit:plategaSecret')],
@@ -267,6 +274,19 @@ const toggleCleanChat = async (ctx) => {
   await settings.save();
   invalidateCache();
   await ctx.answerCbQuery(settings.cleanChatEnabled ? '🧹 Чистый чат включён' : '✅ Чистый чат выключен');
+  await showSettings(ctx);
+};
+
+const toggleAchievementRewards = async (ctx) => {
+  const settings = await getLiveSettings();
+  settings.achievementRewardsEnabled = !settings.achievementRewardsEnabled;
+  await settings.save();
+  await invalidateCache(settings);
+  if (ctx && typeof ctx.answerCbQuery === 'function') {
+    await ctx.answerCbQuery(
+      settings.achievementRewardsEnabled ? '🏆 Награды ачивок включены' : '🏆 Награды ачивок выключены'
+    ).catch(() => {});
+  }
   await showSettings(ctx);
 };
 
@@ -421,6 +441,8 @@ module.exports = {
   toggleButtonLayout,
   toggleCatalogStyle,
   toggleCurrencyMode,
+  toggleAchievementRewards,
+  'settings:toggle:achievementRewards': toggleAchievementRewards,
   startEditSetting,
   handleSettingsInput,
   resetAllUserToS,

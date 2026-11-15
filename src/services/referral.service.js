@@ -22,6 +22,10 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
     const bonusAmount = Number(settings?.referralBonus || 0.5);
 
     if (!bonusAmount || bonusAmount <= 0) {
+      try {
+        const { checkAndGrantAchievements } = require('./achievements.service');
+        await checkAndGrantAchievements(userId);
+      } catch (_) {}
       return { granted: false, reason: 'disabled' };
     }
 
@@ -95,6 +99,7 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
       result = {
         granted: true,
         amount: bonusAmount,
+        referrerId: referrer._id,
         referrerTelegramId: referrer.telegramId,
         referrerBalance: referrer.balance,
         referredTelegramId: claimedUser.telegramId,
@@ -120,10 +125,14 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
     try {
       const { checkAndGrantAchievements } = require('./achievements.service');
       await checkAndGrantAchievements(userId);
-      if (result.granted && result.referrerTelegramId) {
-        const referrerUser = await User.findOne({ telegramId: result.referrerTelegramId });
-        if (referrerUser) {
-          await checkAndGrantAchievements(referrerUser._id);
+      if (result.granted) {
+        if (result.referrerId) {
+          await checkAndGrantAchievements(result.referrerId);
+        } else if (result.referrerTelegramId) {
+          const referrerUser = await User.findOne({ telegramId: result.referrerTelegramId });
+          if (referrerUser) {
+            await checkAndGrantAchievements(referrerUser._id);
+          }
         }
       }
     } catch (err) {

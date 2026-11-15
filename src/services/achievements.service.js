@@ -1,6 +1,10 @@
+const crypto = require('crypto');
 const logger = require('../config/logger');
 const Order = require('../models/Order');
 const User = require('../models/User');
+const PromoCode = require('../models/PromoCode');
+const Settings = require('../models/Settings');
+const { getSettings, getCachedSettingsSync } = require('./settingsCache.service');
 
 /**
  * Сервис достижений (№20).
@@ -8,25 +12,27 @@ const User = require('../models/User');
  * Архитектура:
  *   - Описание ачивок статично в этом файле (см. ACHIEVEMENTS).
  *   - Прогресс пользователя считается on-the-fly из существующих данных
- *     (User.totalSpent, количество completed orders, кол-во рефералов).
+ *     (User.totalSpent, количество completed orders, кол-во активных рефералов с заказами).
  *   - Разблокировка записывается в User.achievements как { code, unlockedAt }.
- *   - Бонус (если есть) зачисляется в User.balance и пишется Transaction.
- *
- * Вызов `checkAndGrantAchievements(userId)` после значимых событий
- * (completed order, реферал, пополнение) идемпотентен: уже разблокированные
- * ачивки не перевыдаются.
+ *   - Если settings.achievementRewardsEnabled === true:
+ *     НЕ начисляет сырой USDT на баланс! Генерирует персональный разовый PromoCode
+ *     со скидкой и минимальной суммой заказа (MOV).
+ *   - Если settings.achievementRewardsEnabled !== true:
+ *     Финансовые награды отключены, ачивки открываются как косметические бейджи.
  */
 
 // ─── Описание всех ачивок ──────────────────────────────────────────────────
 /**
  * @typedef {Object} Achievement
- * @property {string} code         Уникальный ID
- * @property {Object|string} title        Название
- * @property {Object|string} description  Что нужно сделать
- * @property {string} icon         Эмодзи
- * @property {number} bonus        USDT на баланс при разблокировке (0 = без бонуса)
- * @property {Function} check      async (user, stats) => boolean - условие выполнено
- * @property {Function} progress   async (user, stats) => {current,target} - для прогресс-бара
+ * @property {string} code               Уникальный ID
+ * @property {Object|string} title       Название
+ * @property {Object|string} description Что нужно сделать
+ * @property {string} icon               Эмодзи
+ * @property {number} bonus              Всегда 0 (баланс сырыми USDT не пополняется)
+ * @property {number} rewardDiscount     Сумма скидки по купону ($)
+ * @property {number} minOrderAmount     Минимальная сумма заказа для купона ($)
+ * @property {Function} check            async (user, stats) => boolean - условие выполнено
+ * @property {Function} progress         async (user, stats) => {current,target} - для прогресс-бара
  */
 const ACHIEVEMENTS = [
   {
@@ -34,7 +40,9 @@ const ACHIEVEMENTS = [
     title: { ru: 'Первая покупка', en: 'First Purchase' },
     description: { ru: 'Совершите первую успешную покупку', en: 'Make your first successful purchase' },
     icon: '🎉',
-    bonus: 0.2,
+    bonus: 0,
+    rewardDiscount: 0.50,
+    minOrderAmount: 10,
     check: (_user, stats) => stats.completedOrdersCount >= 1,
     progress: (_user, stats) => ({ current: Math.min(stats.completedOrdersCount, 1), target: 1 }),
   },
@@ -43,7 +51,9 @@ const ACHIEVEMENTS = [
     title: { ru: 'Постоянный клиент', en: 'Regular Customer' },
     description: { ru: 'Совершите 5 успешных покупок', en: 'Make 5 successful purchases' },
     icon: '🛍️',
-    bonus: 0.5,
+    bonus: 0,
+    rewardDiscount: 1.50,
+    minOrderAmount: 20,
     check: (_user, stats) => stats.completedOrdersCount >= 5,
     progress: (_user, stats) => ({ current: Math.min(stats.completedOrdersCount, 5), target: 5 }),
   },
@@ -52,7 +62,9 @@ const ACHIEVEMENTS = [
     title: { ru: 'Опытный покупатель', en: 'Experienced Buyer' },
     description: { ru: 'Совершите 10 успешных покупок', en: 'Make 10 successful purchases' },
     icon: '🏅',
-    bonus: 1,
+    bonus: 0,
+    rewardDiscount: 3.00,
+    minOrderAmount: 40,
     check: (_user, stats) => stats.completedOrdersCount >= 10,
     progress: (_user, stats) => ({ current: Math.min(stats.completedOrdersCount, 10), target: 10 }),
   },
@@ -61,57 +73,107 @@ const ACHIEVEMENTS = [
     title: { ru: 'Активный участник', en: 'Active Member' },
     description: { ru: 'Потратьте 20 USDT', en: 'Spend 20 USDT' },
     icon: '💸',
-    bonus: 0.5,
-    check: (user) => user.totalSpent >= 20,
-    progress: (user) => ({ current: Math.min(user.totalSpent, 20), target: 20 }),
+    bonus: 0,
+    rewardDiscount: 1.00,
+    minOrderAmount: 15,
+    check: (user) => (user.totalSpent || 0) >= 20,
+    progress: (user) => ({ current: Math.min(user.totalSpent || 0, 20), target: 20 }),
   },
   {
     code: 'spent_50',
     title: { ru: 'VIP-статус', en: 'VIP Status' },
     description: { ru: 'Потратьте 50 USDT', en: 'Spend 50 USDT' },
     icon: '💎',
-    bonus: 2,
-    check: (user) => user.totalSpent >= 50,
-    progress: (user) => ({ current: Math.min(user.totalSpent, 50), target: 50 }),
+    bonus: 0,
+    rewardDiscount: 2.50,
+    minOrderAmount: 35,
+    check: (user) => (user.totalSpent || 0) >= 50,
+    progress: (user) => ({ current: Math.min(user.totalSpent || 0, 50), target: 50 }),
   },
   {
     code: 'spent_100',
     title: { ru: 'Элита', en: 'Elite' },
     description: { ru: 'Потратьте 100 USDT', en: 'Spend 100 USDT' },
     icon: '👑',
-    bonus: 5,
-    check: (user) => user.totalSpent >= 100,
-    progress: (user) => ({ current: Math.min(user.totalSpent, 100), target: 100 }),
+    bonus: 0,
+    rewardDiscount: 5.00,
+    minOrderAmount: 60,
+    check: (user) => (user.totalSpent || 0) >= 100,
+    progress: (user) => ({ current: Math.min(user.totalSpent || 0, 100), target: 100 }),
   },
   {
     code: 'first_referral',
     title: { ru: 'Первый приглашённый', en: 'First Referral' },
-    description: { ru: 'Пригласите первого друга', en: 'Invite your first friend' },
+    description: { ru: 'Пригласите первого друга с покупкой', en: 'Invite your first friend with a purchase' },
     icon: '🎁',
-    bonus: 0.3,
+    bonus: 0,
+    rewardDiscount: 0.50,
+    minOrderAmount: 10,
     check: (_user, stats) => stats.referredCount >= 1,
     progress: (_user, stats) => ({ current: Math.min(stats.referredCount, 1), target: 1 }),
   },
   {
     code: 'five_referrals',
-    title: 'Амбассадор',
-    description: 'Пригласите 5 друзей',
+    title: { ru: 'Амбассадор', en: 'Ambassador' },
+    description: { ru: 'Пригласите 5 друзей с покупками', en: 'Invite 5 friends with purchases' },
     icon: '🤝',
-    bonus: 2,
+    bonus: 0,
+    rewardDiscount: 2.50,
+    minOrderAmount: 30,
     check: (_user, stats) => stats.referredCount >= 5,
     progress: (_user, stats) => ({ current: Math.min(stats.referredCount, 5), target: 5 }),
   },
 ];
 
 /**
+ * Получение настроек магазина: приоритет Settings.findOne({ name: 'global' }),
+ * с fallback на getSettings() из кеша.
+ */
+const getCachedSettings = async () => {
+  try {
+    if (Settings && typeof Settings.findOne === 'function') {
+      const s = await Settings.findOne({ name: 'global' }).lean();
+      if (s) return s;
+    }
+  } catch (_) {}
+  try {
+    if (typeof getSettings === 'function') {
+      const s = await getSettings();
+      if (s) return s;
+    }
+  } catch (_) {}
+  return {};
+};
+
+/**
  * Собирает статистику пользователя, необходимую для проверки всех ачивок.
- * Одним махом, чтобы не делать 10 запросов по каждой ачивке.
+ * Защита от реферального абуза: учитываются только приглашённые пользователи,
+ * у которых есть хотя бы 1 завершённый заказ (status: 'completed').
+ * Пустышки, просто нажавшие /start, не учитываются!
  */
 const computeUserStats = async (userId) => {
-  const [completedOrdersCount, referredCount] = await Promise.all([
+  const [completedOrdersCount, rawReferredUsers] = await Promise.all([
     Order.countDocuments({ userId, status: 'completed' }),
-    User.countDocuments({ referredBy: userId }),
+    typeof User.distinct === 'function'
+      ? User.distinct('_id', { referredBy: userId }).catch(() => null)
+      : null,
   ]);
+
+  let referredUserIds = Array.isArray(rawReferredUsers) ? rawReferredUsers : null;
+  if (!referredUserIds) {
+    const users = await User.find({ referredBy: userId }).select('_id').lean();
+    referredUserIds = users.map((u) => u._id);
+  }
+
+  let referredCount = 0;
+  if (referredUserIds && referredUserIds.length > 0) {
+    const activeReferred = await Order.distinct('userId', {
+      userId: { $in: referredUserIds },
+      status: 'completed',
+    });
+    referredCount = activeReferred ? activeReferred.length : 0;
+  }
+
   return { completedOrdersCount, referredCount };
 };
 
@@ -121,14 +183,17 @@ const computeUserStats = async (userId) => {
  * @param {string} userId Mongo _id пользователя
  * @param {Object} opts
  * @param {boolean} [opts.silent] Если true - не шлём уведомления в Telegram.
- *                                 Useful для массовых reconcile-операций.
- * @returns {Promise<Array<{achievement, bonusGranted}>>} Список новых ачивок
+ * @param {Object} [opts.settings] Переопределение настроек (для тестов).
+ * @returns {Promise<Array<{achievement, bonusGranted, rewardGranted, promo, promoCode}>>} Список новых ачивок
  */
 const checkAndGrantAchievements = async (userId, opts = {}) => {
   const { silent = false } = opts;
 
   const user = await User.findById(userId);
   if (!user) return [];
+
+  const settings = opts.settings || await getCachedSettings();
+  const achievementRewardsEnabled = settings?.achievementRewardsEnabled === true;
 
   const stats = await computeUserStats(userId);
 
@@ -143,17 +208,53 @@ const checkAndGrantAchievements = async (userId, opts = {}) => {
         const updateDoc = {
           $push: { achievements: { code: ach.code, unlockedAt: new Date() } },
         };
-        if (ach.bonus > 0) {
-          updateDoc.$inc = { balance: ach.bonus };
-        }
+        // ВНИМАНИЕ: баланс пользователя сырыми USDT НИКОГДА не пополняется!
         const updated = await User.findOneAndUpdate(
           { _id: userId, 'achievements.code': { $ne: ach.code } },
           updateDoc,
           { new: true }
         );
         if (updated) {
-          newlyUnlocked.push({ achievement: ach, bonusGranted: ach.bonus > 0 });
-          logger.info(`[Achievements] unlock user=${user.telegramId} code=${ach.code} bonus=${ach.bonus}`);
+          let promo = null;
+          if (achievementRewardsEnabled && ach.rewardDiscount > 0) {
+            try {
+              let promoCodeStr = '';
+              for (let i = 0; i < 5; i++) {
+                const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+                const candidate = `ACH-${ach.code.toUpperCase().replace(/[^A-Z0-9]/g, '')}-${suffix}`;
+                const exists = await PromoCode.findOne({ code: candidate });
+                if (!exists) {
+                  promoCodeStr = candidate;
+                  break;
+                }
+              }
+              if (!promoCodeStr) {
+                promoCodeStr = `ACH-${ach.code.toUpperCase().replace(/[^A-Z0-9]/g, '')}-${Date.now().toString(36).toUpperCase()}`;
+              }
+
+              promo = await PromoCode.create({
+                code: promoCodeStr,
+                type: 'fixed',
+                value: ach.rewardDiscount,
+                minOrderAmount: ach.minOrderAmount || 0,
+                maxActivations: 1,
+                currentActivations: 0,
+                maxPerUser: 1,
+                isActive: true,
+              });
+            } catch (pErr) {
+              logger.error(`[Achievements] PromoCode creation error for ${ach.code}: ${pErr.message}`);
+            }
+          }
+
+          newlyUnlocked.push({
+            achievement: ach,
+            bonusGranted: false, // На баланс не начисляем
+            rewardGranted: !!promo,
+            promo: promo || null,
+            promoCode: promo ? promo.code : null,
+          });
+          logger.info(`[Achievements] unlock user=${user.telegramId} code=${ach.code} promo=${promo?.code || 'none'}`);
         }
       }
     } catch (err) {
@@ -163,36 +264,29 @@ const checkAndGrantAchievements = async (userId, opts = {}) => {
 
   if (newlyUnlocked.length === 0) return [];
 
-  // Пишем transactions для бонусов
-  if (newlyUnlocked.some((n) => n.bonusGranted)) {
-    const Transaction = require('../models/Transaction');
-    for (const { achievement, bonusGranted } of newlyUnlocked) {
-      if (!bonusGranted) continue;
-      await new Transaction({
-        userId: user._id,
-        type: 'manual_credit',
-        amount: achievement.bonus,
-        description: `🏆 Ачивка: ${achievement.title}`,
-      }).save().catch((err) => logger.error(`[Achievements] tx save failed: ${err.message}`));
-    }
-  }
-
   // Уведомление пользователю - одно сообщение на все новые ачивки.
   if (!silent) {
     try {
       const notif = require('./notification.service');
-      const lines = newlyUnlocked.map(({ achievement: a, bonusGranted }) =>
-        `${a.icon} <b>${a.title}</b> - ${a.description}` +
-        (bonusGranted ? `\n   💰 +${a.bonus} USDT на баланс` : '')
-      );
-      const totalBonus = newlyUnlocked
-        .filter((n) => n.bonusGranted)
-        .reduce((s, n) => s + n.achievement.bonus, 0);
+      const lines = newlyUnlocked.map(({ achievement: a, promoCode }) => {
+        const title = typeof a.title === 'object' ? (a.title.ru || a.title.en) : a.title;
+        const desc = typeof a.description === 'object' ? (a.description.ru || a.description.en) : a.description;
+        let line = `${a.icon} <b>${title}</b> - ${desc}`;
+        if (promoCode) {
+          const formattedReward = Number(a.rewardDiscount).toFixed(2);
+          const formattedMin = Number(a.minOrderAmount).toFixed(0);
+          line += `\n   🎁 <b>Купон:</b> <code>${promoCode}</code> (скидка $${formattedReward} от $${formattedMin})`;
+        }
+        return line;
+      });
 
+      const hasCoupons = newlyUnlocked.some((n) => n.promoCode);
       const text =
         `🏆 <b>Новое достижение${newlyUnlocked.length > 1 ? 'я' : ''}!</b>\n\n` +
         lines.join('\n\n') +
-        (totalBonus > 0 ? `\n\n<blockquote>💰 Всего начислено: <b>+${totalBonus.toFixed(2)} USDT</b></blockquote>` : '');
+        (hasCoupons
+          ? `\n\n<blockquote>🎟 <i>Используйте промокод при заказе для получения скидки!</i></blockquote>`
+          : '');
 
       await notif.sendToUser(user.telegramId, text);
     } catch (err) {
@@ -231,7 +325,9 @@ const getAllWithProgress = async (userId) => {
       title: ach.title,
       description: ach.description,
       icon: ach.icon,
-      bonus: ach.bonus,
+      bonus: 0,
+      rewardDiscount: ach.rewardDiscount,
+      minOrderAmount: ach.minOrderAmount,
       unlocked: !!unlockedAt,
       unlockedAt,
       progress,
@@ -243,9 +339,27 @@ const getAllWithProgress = async (userId) => {
 
 /**
  * Хелпер: рендерит список ачивок в HTML для профиля.
+ *
+ * @param {Array} items Список ачивок с прогрессом
+ * @param {string} [lang='ru'] Язык интерфейса
+ * @param {Object|boolean} [options={}] Опции отображения или флаг achievementRewardsEnabled
  */
-const renderAchievementsText = (items, lang = 'ru') => {
+const renderAchievementsText = (items, lang = 'ru', options = {}) => {
   const t = (obj) => (typeof obj === 'object' ? (obj[lang] || obj.ru) : obj);
+
+  let achievementRewardsEnabled = false;
+  if (typeof options === 'boolean') {
+    achievementRewardsEnabled = options;
+  } else if (options && typeof options.achievementRewardsEnabled === 'boolean') {
+    achievementRewardsEnabled = options.achievementRewardsEnabled;
+  } else {
+    try {
+      const s = getCachedSettingsSync();
+      if (s?.achievementRewardsEnabled === true) {
+        achievementRewardsEnabled = true;
+      }
+    } catch (_) {}
+  }
 
   const emptyTitle = lang === 'en' ? 'Achievements' : 'Достижения';
   if (!items.length) return `🏆 <b>${emptyTitle}</b>\n\n${lang === 'en' ? 'The list is empty.' : 'Список пуст.'}`;
@@ -271,8 +385,18 @@ const renderAchievementsText = (items, lang = 'ru') => {
       const bar = '▓'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
       lines.push(`  🔒 <b>${t(a.title)}</b> - ${t(a.description)}`);
       lines.push(`     ${bar} ${pct}% (${Math.floor(a.progress.current)}/${a.progress.target})`);
-      const rewardLabel = lang === 'en' ? 'Reward' : 'Награда';
-      if (a.bonus > 0) lines.push(`     💰 ${rewardLabel}: +${a.bonus} USDT`);
+      if (achievementRewardsEnabled) {
+        const reward = a.rewardDiscount || a.bonus || 0;
+        if (reward > 0) {
+          const formattedReward = reward.toFixed(2);
+          const formattedMin = a.minOrderAmount || 0;
+          if (lang === 'en') {
+            lines.push(`     🎁 Reward: coupon $${formattedReward} off orders >= $${formattedMin}`);
+          } else {
+            lines.push(`     🎁 Награда: купон $${formattedReward} от $${formattedMin}`);
+          }
+        }
+      }
     }
   }
 
@@ -281,6 +405,7 @@ const renderAchievementsText = (items, lang = 'ru') => {
 
 module.exports = {
   ACHIEVEMENTS,
+  getCachedSettings,
   computeUserStats,
   checkAndGrantAchievements,
   getAllWithProgress,

@@ -1074,6 +1074,10 @@ module.exports = (bot) => {
     await settingsScene.toggleCurrencyMode(ctx);
   });
 
+  bot.action(['settings:toggle:achievementRewards', 'admin:settings:toggle_achievement_rewards'], adminMiddleware, async (ctx) => {
+    await settingsScene.toggleAchievementRewards(ctx);
+  });
+
   bot.action(/^admin:settings:edit:(\w+)$/, adminMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     await settingsScene.startEditSetting(ctx, ctx.match[1]);
