@@ -291,38 +291,49 @@ const checkInvoice = async (invoiceId, options = {}) => {
       .update(timestamp + apiKey + recvWindow + qs)
       .digest('hex');
 
-    try {
-      const res = await axios.get(
-        `https://api.bybit.com/v5/asset/deposit/query-internal-record?${qs}`,
-        {
-          headers: {
-            'User-Agent': 'shop-bot/1.0 (+https://t.me/Tigrano_o)',
-            Accept: 'application/json',
-            'X-BAPI-API-KEY': apiKey,
-            'X-BAPI-TIMESTAMP': timestamp,
-            'X-BAPI-SIGN': signature,
-            'X-BAPI-SIGN-TYPE': '2',
-            'X-BAPI-RECV-WINDOW': recvWindow,
-          },
-          timeout: 10000,
-          validateStatus: () => true,
+    const BYBIT_HOSTS = ['https://api.bybit.com', 'https://api.bytick.com'];
+    let lastError = null;
+    let requestSucceeded = false;
+
+    for (const host of BYBIT_HOSTS) {
+      try {
+        const res = await axios.get(
+          `${host}/v5/asset/deposit/query-internal-record?${qs}`,
+          {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              Accept: 'application/json',
+              'X-BAPI-API-KEY': apiKey,
+              'X-BAPI-TIMESTAMP': timestamp,
+              'X-BAPI-SIGN': signature,
+              'X-BAPI-SIGN-TYPE': '2',
+              'X-BAPI-RECV-WINDOW': recvWindow,
+            },
+            timeout: 10000,
+            validateStatus: () => true,
+          }
+        );
+
+        if (res.status === 200 && res.data) {
+          if (res.data.retCode !== 0) {
+            logger.warn(`[Bybit UID] retCode=${res.data.retCode} msg=${res.data.retMsg}`);
+            return { success: false, reason: res.data.retMsg || 'Bybit API error' };
+          }
+          rows = res.data.result?.rows || [];
+          requestSucceeded = true;
+          break;
+        } else {
+          lastError = `HTTP ${res.status}`;
+          logger.warn(`[Bybit UID] ${host} HTTP ${res.status}: ${JSON.stringify(res.data).slice(0, 200)}`);
         }
-      );
-
-      if (res.status !== 200 || !res.data) {
-        logger.warn(`[Bybit UID] HTTP ${res.status}: ${JSON.stringify(res.data).slice(0, 200)}`);
-        return { success: false, reason: `Bybit API HTTP ${res.status}` };
+      } catch (err) {
+        lastError = err.message;
+        logger.error(`[Bybit UID] ${host} error: ${err.message}`);
       }
+    }
 
-      if (res.data.retCode !== 0) {
-        logger.warn(`[Bybit UID] retCode=${res.data.retCode} msg=${res.data.retMsg}`);
-        return { success: false, reason: res.data.retMsg || 'Bybit API error' };
-      }
-
-      rows = res.data.result?.rows || [];
-    } catch (err) {
-      logger.error(`[Bybit UID] Network error: ${err.message}`);
-      return { success: false, reason: `Network error: ${err.message}` };
+    if (!requestSucceeded) {
+      return { success: false, reason: lastError || 'Bybit API error' };
     }
   }
 
@@ -625,52 +636,55 @@ const testConnection = async () => {
     .update(timestamp + apiKey + recvWindow + qs)
     .digest('hex');
 
-  try {
-    const res = await axios.get(
-      `https://api.bybit.com/v5/asset/deposit/query-internal-record?${qs}`,
-      {
-        headers: {
-          'User-Agent': 'shop-bot/1.0',
-          Accept: 'application/json',
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp,
-          'X-BAPI-SIGN': signature,
-          'X-BAPI-SIGN-TYPE': '2',
-          'X-BAPI-RECV-WINDOW': recvWindow,
-        },
-        timeout: 10000,
-        validateStatus: () => true,
+  const BYBIT_HOSTS = ['https://api.bybit.com', 'https://api.bytick.com'];
+  let lastRes = null;
+
+  for (const host of BYBIT_HOSTS) {
+    try {
+      const res = await axios.get(
+        `${host}/v5/asset/deposit/query-internal-record?${qs}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            Accept: 'application/json',
+            'X-BAPI-API-KEY': apiKey,
+            'X-BAPI-TIMESTAMP': timestamp,
+            'X-BAPI-SIGN': signature,
+            'X-BAPI-SIGN-TYPE': '2',
+            'X-BAPI-RECV-WINDOW': recvWindow,
+          },
+          timeout: 10000,
+          validateStatus: () => true,
+        }
+      );
+
+      lastRes = res;
+      if (res.status === 200 && res.data?.retCode === 0) {
+        return {
+          ok: true,
+          retCode: 0,
+          message: 'Bybit API подключён и работает! Доступ к истории переводов подтверждён.',
+          rowsCount: res.data?.result?.rows?.length || 0,
+        };
       }
-    );
 
-    if (res.data?.retCode === 0) {
-      return {
-        ok: true,
-        retCode: 0,
-        message: 'Bybit API подключён и работает! Доступ к истории переводов подтверждён.',
-        rowsCount: res.data?.result?.rows?.length || 0,
-      };
+      if (res.data?.retCode === 33004) {
+        return {
+          ok: false,
+          retCode: 33004,
+          message: 'Срок действия API-ключа истёк (Your api key has expired). Пересоздайте ключ в ЛК Bybit.',
+        };
+      }
+    } catch (err) {
+      lastRes = { status: 500, data: { retMsg: err.message } };
     }
-
-    if (res.data?.retCode === 33004) {
-      return {
-        ok: false,
-        retCode: 33004,
-        message: 'Срок действия API-ключа истёк (Your api key has expired). Пересоздайте ключ в ЛК Bybit.',
-      };
-    }
-
-    return {
-      ok: false,
-      retCode: res.data?.retCode || res.status,
-      message: res.data?.retMsg || `Ошибка HTTP ${res.status}`,
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      message: `Ошибка сети при запросе к Bybit: ${err.message}`,
-    };
   }
+
+  return {
+    ok: false,
+    retCode: lastRes?.data?.retCode || lastRes?.status || 500,
+    message: lastRes?.data?.retMsg || `Ошибка HTTP ${lastRes?.status || 500}`,
+  };
 };
 
 module.exports = {
