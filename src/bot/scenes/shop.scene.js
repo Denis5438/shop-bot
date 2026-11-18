@@ -20,6 +20,7 @@ const Seller = require('../../models/Seller');
 const promoService = require('../../services/promo.service');
 const { balanceHeader, errorScreen, escapeHtml, formatDateTimeMSK, formatDigitalItem, get2FAButtonLabel, has2FASecret, safeEdit, safeEditRich, isRichActive, toRichHtmlText } = require('../utils/ui');
 const { mainKeyboard } = require('../keyboards/main.keyboard');
+const logger = require('../../config/logger');
 
 const PRIVACY_URL = 'https://telegra.ph/Politika-konfidencialnosti-08-17-78';
 const AGREEMENT_URL = 'https://telegra.ph/Polzovatelskoe-soglashenie-08-17-44';
@@ -1195,15 +1196,28 @@ const handleBybitUidCheck = async (ctx, invoiceId) => {
     if (isCompleted) {
       await ctx.answerCbQuery('✅ Оплата успешно подтверждена!', { show_alert: true }).catch(() => {});
       const invoice = result?.invoice || result;
-      const text =
-        `✅ <b>Оплата через Bybit UID подтверждена!</b>\n\n` +
-        `Счёт: <code>${invoice?.invoiceNumber || invoiceId}</code>\n` +
-        `Сумма: <b>${invoice?.exactAmount || invoice?.baseAmount} USDT</b>\n\n` +
-        `<i>Заказ успешно оплачен и передан на выдачу!</i>`;
-      const buttons = [
-        [Markup.button.callback('🛍 В магазин', 'shop:main')],
-        [Markup.button.callback('👤 В профиль', 'menu:profile')],
-      ];
+      const isTopup =
+        invoice?.orderType === 'topup' ||
+        invoice?.invoiceNumber?.startsWith('TOP-') ||
+        (!invoice?.productId && !invoice?.orderId);
+      const text = isTopup
+        ? `✅ <b>Пополнение через Bybit UID подтверждено!</b>\n\n` +
+          `Счёт: <code>${invoice?.invoiceNumber || invoiceId}</code>\n` +
+          `Зачислено: <b>${Number(invoice?.baseAmount || invoice?.exactAmount || 0).toFixed(2)} USDT</b>\n\n` +
+          `<i>Баланс успешно пополнен!</i>`
+        : `✅ <b>Оплата через Bybit UID подтверждена!</b>\n\n` +
+          `Счёт: <code>${invoice?.invoiceNumber || invoiceId}</code>\n` +
+          `Сумма: <b>${invoice?.exactAmount || invoice?.baseAmount} USDT</b>\n\n` +
+          `<i>Заказ успешно оплачен и передан на выдачу!</i>`;
+      const buttons = isTopup
+        ? [
+            [Markup.button.callback('👤 В профиль', 'menu:profile')],
+            [Markup.button.callback('🛍 В магазин', 'shop:main')],
+          ]
+        : [
+            [Markup.button.callback('🛍 В магазин', 'shop:main')],
+            [Markup.button.callback('👤 В профиль', 'menu:profile')],
+          ];
       return await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
     }
 
@@ -1250,11 +1264,33 @@ const handleBybitUidCancel = async (ctx, invoiceId) => {
     if (productId) {
       await handlePayStep(ctx, productId, safePage, qty);
     } else {
+      const isTopup =
+        invoice?.orderType === 'topup' ||
+        invoice?.invoiceNumber?.startsWith('TOP-') ||
+        ctx.session?.bybitUidInvoice?.isTopup ||
+        Boolean(ctx.session?.topup);
+      if (isTopup) {
+        const topupScene = require('./topup.scene');
+        if (!ctx.session?.topup && invoice?.baseAmount) {
+          ctx.session = ctx.session || {};
+          ctx.session.topup = {
+            amountUSDT: invoice.baseAmount,
+            step: 'method',
+          };
+        }
+        if (topupScene.showBybitOptions) {
+          return await topupScene.showBybitOptions(ctx);
+        }
+      }
       await showShopPage(ctx);
     }
   } catch (err) {
     logger.error('Error in handleBybitUidCancel:', err);
     await ctx.answerCbQuery('Счёт отменён', { show_alert: true }).catch(() => {});
+    if (ctx.session?.topup?.amountUSDT) {
+      const topupScene = require('./topup.scene');
+      return await topupScene.showBybitOptions(ctx).catch(() => showShopPage(ctx));
+    }
     await showShopPage(ctx);
   }
 };

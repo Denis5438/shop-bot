@@ -78,7 +78,7 @@ const buildTopupMethodsRichHtml = ({
   settings,
   sbpLabel = '⚡ СБП',
   idbankLabel = '🏦 Карта IDBank',
-  bybitLabel = '📊 Bybit',
+  bybitLabel = '📊 Bybit / USDT (UID, TRC-20, BEP-20)',
   changeAmountLabel = '⬅️ Изменить сумму',
   cancelLabel = '❌ Отмена',
   supportLabel = '🆘 Поддержка',
@@ -235,7 +235,7 @@ const showPaymentMethods = async (ctx) => {
 
   const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
   const idbankLabel = lang === 'en' ? '🏦 IDBank Card (Manual)' : '🏦 Перевод на IDBank (Вручную)';
-  const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (TRC-20, BEP-20)' : '📊 Bybit / USDT (TRC-20, BEP-20)';
+  const bybitLabel = lang === 'en' ? '📊 Bybit / USDT (UID, TRC-20, BEP-20)' : '📊 Bybit / USDT (UID, TRC-20, BEP-20)';
   const changeAmountLabel = t('btn_change_amount') || (lang === 'en' ? '⬅️ Change amount' : '⬅️ Изменить сумму');
   const cancelLabel = t('btn_cancel') || (lang === 'en' ? '❌ Cancel' : '❌ Отмена');
 
@@ -376,18 +376,25 @@ const showBybitOptions = async (ctx) => {
   }
   ctx.session.topup.method = 'bybit';
   const topup = ctx.session.topup;
+  const rate = getRate(settings);
+  if (topup.amountRUB === undefined || topup.amountRUB === null) {
+    topup.amountRUB = (topup.amountUSDT || 0) * rate;
+  }
+  const amountRubStr = Math.round(topup.amountRUB || 0);
   const lang = ctx.user?.language || 'ru';
   const title = lang === 'en' ? 'Top Up via Bybit (USDT)' : 'Пополнение через Bybit (USDT)';
   const chooseLbl = lang === 'en' ? 'Choose a network:' : 'Выберите сеть:';
   const amountLbl = lang === 'en' ? 'Top-up amount' : 'Сумма к пополнению';
+  const uidBtnLabel = lang === 'en' ? '🆔 Bybit UID (Internal)' : '🆔 Bybit UID (Внутренний)';
 
   await editOrReply(ctx,
     `📊 <b>${title}</b>\n\n` +
-    `<blockquote>💰 ${amountLbl}: <b>${topup.amountUSDT} USDT</b> (~${topup.amountRUB.toFixed(0)} ₽)</blockquote>\n\n` +
+    `<blockquote>💰 ${amountLbl}: <b>${topup.amountUSDT} USDT</b> (~${amountRubStr} ₽)</blockquote>\n\n` +
     `${chooseLbl}`,
     {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
+        [Markup.button.callback(uidBtnLabel, 'topup:network:uid')],
         [Markup.button.callback('🔴 TRC-20 (Tron)', 'topup:network:trc20')],
         [Markup.button.callback('🟡 BEP-20 (BSC)', 'topup:network:bep20')],
         [Markup.button.callback(lang === 'en' ? '⬅️ Payment methods' : '⬅️ К способам оплаты', 'topup:methods:back')],
@@ -412,6 +419,38 @@ const getBybitAddresses = async () => {
   };
 };
 
+const handleBybitUidTopup = async (ctx) => {
+  ctx.session = ctx.session || {};
+  const topup = ctx.session.topup;
+  if (!topup || !topup.amountUSDT) {
+    return startTopup(ctx);
+  }
+  const bybitUidPaymentService = require('../../services/bybitUidPayment.service');
+  const shopScene = require('./shop.scene');
+  try {
+    const invoice = await bybitUidPaymentService.createInvoice({
+      userId: ctx.user?._id || ctx.user?.id || ctx.from?.id,
+      baseAmount: topup.amountUSDT,
+    });
+
+    ctx.session.bybitUidInvoice = {
+      invoiceId: invoice._id,
+      isTopup: true,
+      amountUSDT: topup.amountUSDT,
+    };
+
+    return await shopScene.showBybitUidInvoiceScreen(ctx, invoice);
+  } catch (err) {
+    const logger = require('../../config/logger');
+    logger.error('Error creating Bybit UID topup invoice:', err);
+    await ctx.answerCbQuery(
+      ctx.user?.language === 'en' ? '⚠️ Failed to create Bybit UID invoice' : '⚠️ Ошибка при создании счёта Bybit UID',
+      { show_alert: true }
+    ).catch(() => {});
+    return showBybitOptions(ctx);
+  }
+};
+
 const showBybitNetwork = async (ctx, network) => {
   ctx.session = ctx.session || {};
   ctx.session.topup = ctx.session.topup || {};
@@ -420,6 +459,11 @@ const showBybitNetwork = async (ctx, network) => {
   }
   ctx.session.topup.method = 'bybit';
   ctx.session.topup.network = network;
+
+  if (network === 'uid') {
+    return handleBybitUidTopup(ctx);
+  }
+
   return generateRequisitesAndShow(ctx);
 };
 
@@ -528,6 +572,10 @@ const generateRequisitesAndShow = async (ctx) => {
   const { method, network, amountUSDT } = topup;
   const amountRUB = amountUSDT * rate;
   topup.amountRUB = amountRUB;
+
+  if (method === 'bybit' && network === 'uid') {
+    return handleBybitUidTopup(ctx);
+  }
 
   // ─── Обработка пополнения через СБП (Platega) ──────────────────────────────
   if (method === 'platega') {
@@ -1425,6 +1473,7 @@ module.exports = {
   showPlategaDetails,
   showBybitOptions,
   showBybitNetwork,
+  handleBybitUidTopup,
   showCardDetails,
   handleAmountInput,
   handleTopupProof,
