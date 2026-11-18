@@ -38,7 +38,7 @@ const escapeHtml = (text) => {
 
 /**
  * Retrieves admin Bybit UID from Settings.bybitUid
- * (fallback to process.env.BYBIT_UID || '547343159').
+ * (fallback to process.env.BYBIT_UID || '554135317').
  */
 const getAdminUid = async () => {
   try {
@@ -53,7 +53,7 @@ const getAdminUid = async () => {
   } catch (err) {
     logger.warn(`[Bybit UID] Failed to read admin UID from settings: ${err.message}`);
   }
-  return (process.env.BYBIT_UID || '547343159').trim();
+  return (process.env.BYBIT_UID || '554135317').trim();
 };
 
 /**
