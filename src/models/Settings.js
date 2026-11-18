@@ -17,10 +17,12 @@ const settingsSchema = new mongoose.Schema({
   // Реквизиты карты
   cardNumber: { type: String, default: '' },
   cardHolder: { type: String, default: '' },
-  // Bybit адреса
+  // Bybit адреса и API ключи
   bybitTrc20Address: { type: String, default: '' },
   bybitBep20Address: { type: String, default: '' },
   bybitUid: { type: String, default: '' },
+  bybitApiKey: { type: String, default: '' },
+  bybitApiSecret: { type: String, default: '' },
   // #17 Admin digest: если включён - обычные уведомления агрегируются
   // в почасовую сводку, критичные уходят сразу как раньше.
   adminDigestEnabled: { type: Boolean, default: false },

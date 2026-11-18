@@ -212,6 +212,21 @@ const cancelInvoice = async (invoiceId, userId = null) => {
  * @param {Array} [options.mockRecords]
  * @returns {Promise<{ success: boolean, reason?: string, invoice?: Object, order?: Object, topupRequest?: Object, alreadyCompleted?: boolean }>}
  */
+const getBybitCredentials = async () => {
+  let apiKey = BYBIT_API_KEY || '';
+  let apiSecret = BYBIT_API_SECRET || '';
+  try {
+    const settings = await getSettings();
+    if (settings && typeof settings.bybitApiKey === 'string' && settings.bybitApiKey.trim()) {
+      apiKey = settings.bybitApiKey.trim();
+    }
+    if (settings && typeof settings.bybitApiSecret === 'string' && settings.bybitApiSecret.trim()) {
+      apiSecret = settings.bybitApiSecret.trim();
+    }
+  } catch (_) {}
+  return { apiKey, apiSecret };
+};
+
 const checkInvoice = async (invoiceId, options = {}) => {
   let invoice = null;
   const isObjectId =
@@ -261,8 +276,9 @@ const checkInvoice = async (invoiceId, options = {}) => {
   if (Array.isArray(options?.mockRecords)) {
     rows = options.mockRecords;
   } else {
-    if (!BYBIT_API_KEY || !BYBIT_API_SECRET) {
-      logger.warn('[Bybit UID] BYBIT_API_KEY or BYBIT_API_SECRET is missing');
+    const { apiKey, apiSecret } = await getBybitCredentials();
+    if (!apiKey || !apiSecret) {
+      logger.warn('[Bybit UID] Bybit API Key or Secret is missing');
       return { success: false, reason: 'Bybit API credentials not configured' };
     }
 
@@ -271,8 +287,8 @@ const checkInvoice = async (invoiceId, options = {}) => {
     const qs = 'coin=USDT&limit=50';
 
     const signature = crypto
-      .createHmac('sha256', BYBIT_API_SECRET)
-      .update(timestamp + BYBIT_API_KEY + recvWindow + qs)
+      .createHmac('sha256', apiSecret)
+      .update(timestamp + apiKey + recvWindow + qs)
       .digest('hex');
 
     try {
@@ -282,7 +298,7 @@ const checkInvoice = async (invoiceId, options = {}) => {
           headers: {
             'User-Agent': 'shop-bot/1.0 (+https://t.me/Tigrano_o)',
             Accept: 'application/json',
-            'X-BAPI-API-KEY': BYBIT_API_KEY,
+            'X-BAPI-API-KEY': apiKey,
             'X-BAPI-TIMESTAMP': timestamp,
             'X-BAPI-SIGN': signature,
             'X-BAPI-SIGN-TYPE': '2',

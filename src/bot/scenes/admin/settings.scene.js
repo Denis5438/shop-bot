@@ -109,7 +109,10 @@ const showSettings = async (ctx) => {
     `🏦 Карта: <code>${fmt(settings.cardNumber, 'не задана')}</code>\n` +
     `👤 Держатель: <code>${fmt(settings.cardHolder)}</code>\n\n` +
     `🔴 TRC-20: <code>${fmt(settings.bybitTrc20Address)}</code>\n` +
-    `🟡 BEP-20: <code>${fmt(settings.bybitBep20Address)}</code>\n\n` +
+    `🟡 BEP-20: <code>${fmt(settings.bybitBep20Address)}</code>\n` +
+    `📊 Bybit UID: <code>${fmt(settings.bybitUid)}</code>\n` +
+    `🔑 Bybit API Key: <code>${settings.bybitApiKey ? '••••••••' + String(settings.bybitApiKey).slice(-4) : (process.env.BYBIT_API_KEY ? '••••••••' + String(process.env.BYBIT_API_KEY).slice(-4) + ' (.env)' : 'не задан')}</code>\n` +
+    `🔐 Bybit API Secret: <code>${settings.bybitApiSecret ? '••••••••' + String(settings.bybitApiSecret).slice(-4) : (process.env.BYBIT_API_SECRET ? '••••••••' + String(process.env.BYBIT_API_SECRET).slice(-4) + ' (.env)' : 'не задан')}</code>\n\n` +
     `💵 Минимум пополнения: <b>${settings.minTopup} USDT</b>\n` +
     `⭐ Реферальный бонус: <b>${settings.referralBonus} USDT</b>\n\n` +
     `💸 Мин. вывод продавца: <b>${settings.minSellerWithdraw ?? 5} USDT</b>\n` +
@@ -156,6 +159,9 @@ const showSettings = async (ctx) => {
     [Markup.button.callback('✏️ Держатель карты', 'admin:settings:edit:cardHolder')],
     [Markup.button.callback('✏️ TRC-20 адрес', 'admin:settings:edit:bybitTrc20Address')],
     [Markup.button.callback('✏️ BEP-20 адрес', 'admin:settings:edit:bybitBep20Address')],
+    [Markup.button.callback('✏️ Bybit UID', 'admin:settings:edit:bybitUid')],
+    [Markup.button.callback('🔑 Bybit API Key', 'admin:settings:edit:bybitApiKey')],
+    [Markup.button.callback('🔐 Bybit API Secret', 'admin:settings:edit:bybitApiSecret')],
     [Markup.button.callback('✏️ Минимальное пополнение', 'admin:settings:edit:minTopup')],
     [Markup.button.callback('✏️ Реферальный бонус', 'admin:settings:edit:referralBonus')],
     [Markup.button.callback('💸 Мин. вывод продавца (USDT)', 'admin:settings:edit:minSellerWithdraw')],
@@ -341,7 +347,9 @@ const startEditSetting = async (ctx, field) => {
     cardHolder: 'имя держателя карты',
     bybitTrc20Address: 'адрес Bybit TRC-20',
     bybitBep20Address: 'адрес Bybit BEP-20',
-    bybitUid: 'Bybit UID',
+    bybitUid: 'Bybit UID (например: 554135317)',
+    bybitApiKey: 'Bybit API Key (из личного кабинета Bybit API)',
+    bybitApiSecret: 'Bybit API Secret (секретный ключ Bybit API)',
     adminDigestIntervalMinutes: 'интервал сводки уведомлений в минутах (от 5 до 1440)',
     minSellerWithdraw: 'минимальную сумму вывода для продавцов (в USDT, например: 5)',
     autoConfirmHours: 'кол-во часов на проверку заказа (после чего деньги уходят продавцу)',

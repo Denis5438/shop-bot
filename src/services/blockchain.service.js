@@ -14,8 +14,22 @@ const crypto = require('crypto');
  *     перевести заявку на ручную проверку.
  */
 const verifyUidUsdt = async (senderUid) => {
-  const { BYBIT_API_KEY, BYBIT_API_SECRET } = require('../config');
-  if (!BYBIT_API_KEY || !BYBIT_API_SECRET) {
+  const config = require('../config');
+  let apiKey = config.BYBIT_API_KEY;
+  let apiSecret = config.BYBIT_API_SECRET;
+
+  try {
+    const Settings = require('../models/Settings');
+    const settings = await Settings.findOne({ name: 'global' }).lean();
+    if (settings?.bybitApiKey && String(settings.bybitApiKey).trim()) {
+      apiKey = String(settings.bybitApiKey).trim();
+    }
+    if (settings?.bybitApiSecret && String(settings.bybitApiSecret).trim()) {
+      apiSecret = String(settings.bybitApiSecret).trim();
+    }
+  } catch (_) {}
+
+  if (!apiKey || !apiSecret) {
     return { success: false, reason: 'API ключи не настроены (Обратитесь к администратору)' };
   }
 
@@ -29,8 +43,8 @@ const verifyUidUsdt = async (senderUid) => {
   const recvWindow = '5000';
   const qs = 'limit=50';
 
-  const signature = crypto.createHmac('sha256', BYBIT_API_SECRET)
-    .update(timestamp + BYBIT_API_KEY + recvWindow + qs)
+  const signature = crypto.createHmac('sha256', apiSecret)
+    .update(timestamp + apiKey + recvWindow + qs)
     .digest('hex');
 
   try {
@@ -39,7 +53,7 @@ const verifyUidUsdt = async (senderUid) => {
         // Bybit's CloudFront отбивает запросы без User-Agent с 403 - добавляем явный UA.
         'User-Agent': 'shop-bot/1.0 (+https://t.me/Tigrano_o)',
         'Accept': 'application/json',
-        'X-BAPI-API-KEY': BYBIT_API_KEY,
+        'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp,
         'X-BAPI-SIGN': signature,
         'X-BAPI-SIGN-TYPE': '2',
