@@ -1076,14 +1076,187 @@ const handlePayStep = async (ctx, productId, fromPage = 1, qty = 1) => {
       Markup.button.callback(`💰 Криптой · USDT/TON`, `topup:quick:${diff}`),
     ],
     [
-      Markup.button.callback(`📊 Bybit · UID · ${diff} USDT`, `topup:quick:${diff}`),
-      Markup.button.callback(`⭐ Telegram Stars`, `topup:quick:${diff}`),
+      Markup.button.callback(`📊 Bybit · UID · ${diff} USDT`, `shop:bybit_uid:pay:${productId}:${safePage}:${qty}`),
     ],
     [Markup.button.callback(lang === 'en' ? '⬅️ Back' : '⬅️ Назад к условиям', `shop:buy:${productId}:${safePage}:${qty}`)],
   ];
 
   await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
   await ctx.answerCbQuery().catch(() => {});
+};
+
+const showCheckoutPaymentOptions = handlePayStep;
+
+const formatTime = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return String(date);
+  return d.toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' });
+};
+
+const showBybitUidInvoiceScreen = async (ctx, invoice, product, qty) => {
+  const baseAmountNum = Number(invoice.baseAmount) || 0;
+  const text =
+    `Bybit UID\n\n` +
+    `К переводу\n` +
+    `<code>${invoice.exactAmount}</code> USDT\n` +
+    `Будет зачислено: <b>${baseAmountNum.toFixed(2)} USDT</b>\n\n` +
+    `UID получателя\n` +
+    `<code>${invoice.adminUid}</code>\n` +
+    `<i>Нажмите на UID или сумму, чтобы скопировать.</i>\n\n` +
+    `<b>Как перевести</b>\n` +
+    `В Bybit: Вывод ➔ Внутренний перевод ➔ UID.\n\n` +
+    `⚠️ <b>Только USDT. Переведите точную сумму, не округляйте.</b>\n` +
+    `<i>Зачисление автоматическое.</i>\n\n` +
+    `Оплатить до: <b>${formatTime(invoice.expiresAt)}</b>\n` +
+    `Счёт: <code>${invoice.invoiceNumber}</code>\n\n` +
+    `⏳ <b>Ожидаем перевод</b>`;
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔄 Проверить перевод', `bybit_uid:check:${invoice._id}`)],
+    [Markup.button.callback('❌ Отменить счёт', `bybit_uid:cancel:${invoice._id}`)],
+  ]);
+
+  return await safeEdit(ctx, text, { parse_mode: 'HTML', ...keyboard });
+};
+
+const handleBybitUidPay = async (ctx, productId, fromPage = 1, qty = 1) => {
+  qty = parseInt(qty, 10);
+  if (isNaN(qty) || qty < 1) qty = 1;
+  const user = ctx.user;
+  const product = await Product.findById(productId);
+  const t = ctx.t || ((k) => k);
+  const lang = ctx.user?.language || 'ru';
+
+  if (!product || !product.isActive) {
+    return ctx.answerCbQuery(t('err_not_found'), { show_alert: true });
+  }
+
+  const stock = await getStock(product);
+  if (stock !== '∞' && stock < qty) {
+    return ctx.answerCbQuery(t('shop_qty_not_enough', { stock }), { show_alert: true });
+  }
+
+  const safePage = Math.max(1, parseInt(fromPage, 10) || 1);
+  const activePromo = await getActivePromoFromCtx(ctx);
+  const baseEffectivePrice = await getEffectivePrice(product, stock, null);
+  const promoDiscount = activePromo
+    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: user?._id, lang })
+    : { valid: false, discountAmount: 0 };
+  const totalCost = promoDiscount.valid
+    ? promoDiscount.finalPrice
+    : parseFloat((baseEffectivePrice * qty).toFixed(2));
+
+  if (user && user.balance >= totalCost) {
+    return await processPurchase(ctx, productId, safePage, qty);
+  }
+
+  const diff = parseFloat((totalCost - (user?.balance || 0)).toFixed(2));
+  const baseAmount = diff > 0 ? diff : totalCost;
+
+  try {
+    const bybitUidPaymentService = require('../../services/bybitUidPayment.service');
+    const invoice = await bybitUidPaymentService.createInvoice({
+      userId: user?._id || user?.id || ctx.from?.id,
+      productId: product._id,
+      qty,
+      baseAmount,
+    });
+
+    ctx.session = ctx.session || {};
+    ctx.session.bybitUidInvoice = {
+      invoiceId: invoice._id,
+      productId: product._id.toString(),
+      safePage,
+      qty,
+    };
+
+    await showBybitUidInvoiceScreen(ctx, invoice, product, qty);
+    await ctx.answerCbQuery().catch(() => {});
+  } catch (err) {
+    logger.error('Error in handleBybitUidPay:', err);
+    await ctx.answerCbQuery('⚠️ Ошибка при создании счёта Bybit UID', { show_alert: true }).catch(() => {});
+  }
+};
+
+const handleBybitUidCheck = async (ctx, invoiceId) => {
+  try {
+    const bybitUidPaymentService = require('../../services/bybitUidPayment.service');
+    const result = await bybitUidPaymentService.checkInvoice(invoiceId, {
+      bot: ctx.telegram ? { telegram: ctx.telegram } : undefined,
+    });
+
+    const isCompleted =
+      result?.success === true ||
+      result?.status === 'completed' ||
+      result?.completed === true ||
+      result?.invoice?.status === 'completed';
+
+    if (isCompleted) {
+      await ctx.answerCbQuery('✅ Оплата успешно подтверждена!', { show_alert: true }).catch(() => {});
+      const invoice = result?.invoice || result;
+      const text =
+        `✅ <b>Оплата через Bybit UID подтверждена!</b>\n\n` +
+        `Счёт: <code>${invoice?.invoiceNumber || invoiceId}</code>\n` +
+        `Сумма: <b>${invoice?.exactAmount || invoice?.baseAmount} USDT</b>\n\n` +
+        `<i>Заказ успешно оплачен и передан на выдачу!</i>`;
+      const buttons = [
+        [Markup.button.callback('🛍 В магазин', 'shop:main')],
+        [Markup.button.callback('👤 В профиль', 'menu:profile')],
+      ];
+      return await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+    }
+
+    if (result?.reason === 'Invoice is cancelled' || result?.status === 'cancelled') {
+      await ctx.answerCbQuery('❌ Счёт был отменён', { show_alert: true }).catch(() => {});
+      return;
+    }
+
+    if (result?.expired || result?.reason === 'Invoice expired' || result?.status === 'expired') {
+      await ctx.answerCbQuery('⏳ Срок действия счёта истёк', { show_alert: true }).catch(() => {});
+      return;
+    }
+
+    // Pending
+    await ctx.answerCbQuery('⏳ Перевод пока не обнаружен. Зачисление обычно занимает 1-2 минуты.', { show_alert: true });
+  } catch (err) {
+    logger.error('Error in handleBybitUidCheck:', err);
+    await ctx.answerCbQuery('⏳ Перевод пока не обнаружен. Зачисление обычно занимает 1-2 минуты.', { show_alert: true }).catch(() => {});
+  }
+};
+
+const handleBybitUidCancel = async (ctx, invoiceId) => {
+  try {
+    const user = ctx.user;
+    const bybitUidPaymentService = require('../../services/bybitUidPayment.service');
+    const invoice = await bybitUidPaymentService.cancelInvoice(invoiceId, user?._id || user?.id || null);
+    await ctx.answerCbQuery('Счёт отменён', { show_alert: true }).catch(() => {});
+
+    let productId = invoice?.productId || ctx.session?.bybitUidInvoice?.productId;
+    let qty = invoice?.qty || ctx.session?.bybitUidInvoice?.qty || 1;
+    let safePage = ctx.session?.bybitUidInvoice?.safePage || 1;
+
+    if (!productId) {
+      try {
+        const BybitInvoice = require('../../models/BybitInvoice');
+        const inv = await BybitInvoice.findById(invoiceId);
+        if (inv?.productId) {
+          productId = inv.productId;
+          qty = inv.qty || 1;
+        }
+      } catch (_) {}
+    }
+
+    if (productId) {
+      await handlePayStep(ctx, productId, safePage, qty);
+    } else {
+      await showShopPage(ctx);
+    }
+  } catch (err) {
+    logger.error('Error in handleBybitUidCancel:', err);
+    await ctx.answerCbQuery('Счёт отменён', { show_alert: true }).catch(() => {});
+    await showShopPage(ctx);
+  }
 };
 
 const showTermsInfo = async (ctx, productId, fromPage = 1, qty = 1, isPreorder = false) => {
@@ -2263,6 +2436,12 @@ module.exports = {
   toggleOutOfStock,
   toggleShopMainOutOfStock,
   handlePayStep,
+  showCheckoutPaymentOptions,
+  showBybitUidInvoiceScreen,
+  handleBybitUidPay,
+  handleBybitUidCheck,
+  handleBybitUidCancel,
+  formatTime,
   showTermsInfo,
   showProductDescInfo,
   startCheckoutPromo,

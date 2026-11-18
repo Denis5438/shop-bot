@@ -522,6 +522,22 @@ module.exports = (bot) => {
     await topupScene.showBybitNetwork(ctx, ctx.match[1]);
   });
 
+  // Bybit UID переводы (проверка и отмена счёта)
+  bot.action(/^shop:bybit_uid:pay:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.handleBybitUidPay(ctx, productId, page, qty);
+  });
+
+  bot.action(/^bybit_uid:check:(.+)$/, async (ctx) => {
+    await shopScene.handleBybitUidCheck(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^bybit_uid:cancel:(.+)$/, async (ctx) => {
+    await shopScene.handleBybitUidCancel(ctx, ctx.match[1]);
+  });
+
   // UX-1: быстрые пресеты сумм на экране ввода.
   bot.action(/^topup:preset:(usdt|rub):(\d+(?:\.\d+)?)$/, async (ctx) => {
     await topupScene.handlePresetAmount(ctx, ctx.match[1], ctx.match[2]);

@@ -14,6 +14,7 @@ let botInstance = null;
 const h = (value, fallback = '') => escapeHtml(value ?? fallback);
 
 const setBot = (bot) => { botInstance = bot; };
+const getBotInstance = () => botInstance;
 
 // ─── Уведомление продавцу о назначении ───────────────────────────────────────
 const notifySellerWelcome = async (seller) => {
@@ -1004,6 +1005,7 @@ const notifyPublicRestockAndNew = async (supplier, { restocked = [], newlyImport
 
 module.exports = {
   setBot,
+  getBotInstance,
   sendToAdmins,
   sendAdminAlertThrottled,
   sendToUser,

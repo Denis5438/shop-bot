@@ -186,6 +186,21 @@ module.exports = (bot) => {
     await shopScene.handlePayStep(ctx, productId, page, qty);
   });
 
+  bot.action(/^shop:bybit_uid:pay:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
+    const productId = ctx.match[1];
+    const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;
+    const qty = ctx.match[3] ? parseInt(ctx.match[3], 10) : 1;
+    await shopScene.handleBybitUidPay(ctx, productId, page, qty);
+  });
+
+  bot.action(/^bybit_uid:check:(.+)$/, async (ctx) => {
+    await shopScene.handleBybitUidCheck(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^bybit_uid:cancel:(.+)$/, async (ctx) => {
+    await shopScene.handleBybitUidCancel(ctx, ctx.match[1]);
+  });
+
   bot.action(/^shop:terms_info:([^:]+)(?::(\d+))?(?::(\d+))?$/, async (ctx) => {
     const productId = ctx.match[1];
     const page = ctx.match[2] ? parseInt(ctx.match[2], 10) : 1;

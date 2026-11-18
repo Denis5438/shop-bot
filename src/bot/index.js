@@ -157,6 +157,7 @@ const createBot = () => {
   cronHandles.push(require('../cron/staleOrders.cron').start(bot));
   cronHandles.push(require('../cron/retryActivation.cron').start(bot));
   cronHandles.push(require('../cron/referralReconcile.cron').start());
+  cronHandles.push(require('../cron/bybitUidPoller.cron').start(bot));
 
   require('./routes/admin_catalog.routes')(bot);
 
