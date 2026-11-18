@@ -1086,6 +1086,9 @@ module.exports = (bot) => {
   bot.action('admin:settings:refresh_rate', adminMiddleware, async (ctx) => {
     await settingsScene.refreshRate(ctx);
   });
+  bot.action('admin:settings:test_bybit_api', adminMiddleware, async (ctx) => {
+    await settingsScene.testBybitApi(ctx);
+  });
   bot.action('admin:settings:reset_tos', adminMiddleware, async (ctx) => {
     await settingsScene.resetAllUserToS(ctx);
   });

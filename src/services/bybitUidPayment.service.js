@@ -607,6 +607,72 @@ const checkInvoice = async (invoiceId, options = {}) => {
   return { success: true, invoice, order };
 };
 
+/**
+ * Tests connection to Bybit API with the configured credentials.
+ * @returns {Promise<{ ok: boolean, retCode?: number, message: string, rowsCount?: number }>}
+ */
+const testConnection = async () => {
+  const { apiKey, apiSecret } = await getBybitCredentials();
+  if (!apiKey || !apiSecret) {
+    return { ok: false, message: 'Bybit API-ключ или Secret не настроены в боте' };
+  }
+
+  const timestamp = Date.now().toString();
+  const recvWindow = '5000';
+  const qs = 'coin=USDT&limit=5';
+  const signature = crypto
+    .createHmac('sha256', apiSecret)
+    .update(timestamp + apiKey + recvWindow + qs)
+    .digest('hex');
+
+  try {
+    const res = await axios.get(
+      `https://api.bybit.com/v5/asset/deposit/query-internal-record?${qs}`,
+      {
+        headers: {
+          'User-Agent': 'shop-bot/1.0',
+          Accept: 'application/json',
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-SIGN': signature,
+          'X-BAPI-SIGN-TYPE': '2',
+          'X-BAPI-RECV-WINDOW': recvWindow,
+        },
+        timeout: 10000,
+        validateStatus: () => true,
+      }
+    );
+
+    if (res.data?.retCode === 0) {
+      return {
+        ok: true,
+        retCode: 0,
+        message: 'Bybit API подключён и работает! Доступ к истории переводов подтверждён.',
+        rowsCount: res.data?.result?.rows?.length || 0,
+      };
+    }
+
+    if (res.data?.retCode === 33004) {
+      return {
+        ok: false,
+        retCode: 33004,
+        message: 'Срок действия API-ключа истёк (Your api key has expired). Пересоздайте ключ в ЛК Bybit.',
+      };
+    }
+
+    return {
+      ok: false,
+      retCode: res.data?.retCode || res.status,
+      message: res.data?.retMsg || `Ошибка HTTP ${res.status}`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      message: `Ошибка сети при запросе к Bybit: ${err.message}`,
+    };
+  }
+};
+
 module.exports = {
   allocateUniqueAmount,
   createInvoice,
@@ -614,4 +680,5 @@ module.exports = {
   checkInvoice,
   getAdminUid,
   setBot,
+  testConnection,
 };

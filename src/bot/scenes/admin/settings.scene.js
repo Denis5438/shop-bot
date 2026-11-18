@@ -162,6 +162,7 @@ const showSettings = async (ctx) => {
     [Markup.button.callback('✏️ Bybit UID', 'admin:settings:edit:bybitUid')],
     [Markup.button.callback('🔑 Bybit API Key', 'admin:settings:edit:bybitApiKey')],
     [Markup.button.callback('🔐 Bybit API Secret', 'admin:settings:edit:bybitApiSecret')],
+    [Markup.button.callback('🔍 Проверить Bybit API', 'admin:settings:test_bybit_api')],
     [Markup.button.callback('✏️ Минимальное пополнение', 'admin:settings:edit:minTopup')],
     [Markup.button.callback('✏️ Реферальный бонус', 'admin:settings:edit:referralBonus')],
     [Markup.button.callback('💸 Мин. вывод продавца (USDT)', 'admin:settings:edit:minSellerWithdraw')],
@@ -332,6 +333,27 @@ const toggleCurrencyMode = async (ctx) => {
   await showSettings(ctx);
 };
 
+const testBybitApi = async (ctx) => {
+  await ctx.answerCbQuery('⏳ Проверяю Bybit API...').catch(() => {});
+  const bybitUidPaymentService = require('../../../services/bybitUidPayment.service');
+  const result = await bybitUidPaymentService.testConnection();
+  if (result.ok) {
+    await ctx.reply(
+      `✅ <b>Bybit API активен и работает!</b>\n\n` +
+      `📬 ${result.message}\n` +
+      `📊 Транзакций в недавней истории: <b>${result.rowsCount}</b>`,
+      { parse_mode: 'HTML' }
+    );
+  } else {
+    await ctx.reply(
+      `❌ <b>Проверка Bybit API не прошла:</b>\n\n` +
+      `Код ответа Bybit: <code>${result.retCode || '—'}</code>\n` +
+      `Причина: <b>${result.message}</b>`,
+      { parse_mode: 'HTML' }
+    );
+  }
+};
+
 // Запрос на редактирование поля
 const startEditSetting = async (ctx, field) => {
   const fieldNames = {
@@ -452,6 +474,7 @@ module.exports = {
   toggleAchievementRewards,
   'settings:toggle:achievementRewards': toggleAchievementRewards,
   startEditSetting,
+  testBybitApi,
   handleSettingsInput,
   resetAllUserToS,
 };
