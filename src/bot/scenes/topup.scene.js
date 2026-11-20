@@ -7,6 +7,7 @@ const { parseAmount, copyHint, escapeHtml, safeEditRich, isRichActive, toRichHtm
 const { SLA, TEXTS } = require('../constants/ux');
 const { startProgress } = require('../utils/progress');
 const { getSettings } = require('../../services/settingsCache.service');
+const { roundMoney } = require('../../utils/money');
 
 // ─── Вспомогательная функция ──────────────────────────────────────────────────
 const editOrReply = async (ctx, text, extra) => {
@@ -230,7 +231,7 @@ const showPaymentMethods = async (ctx) => {
 
   const settings = await getSettings();
   const rate = getRate(settings);
-  topup.amountRUB = topup.amountUSDT * rate;
+  topup.amountRUB = Math.round(topup.amountUSDT * rate);
   const buttons = [];
 
   const sbpLabel = lang === 'en' ? '⚡ SBP (Instant)' : '⚡ СБП (Автоматически)';
@@ -483,8 +484,8 @@ const handlePresetAmount = async (ctx, currency, amountStr) => {
   const rate = getRate(settings);
   const val = parsed.value;
   topup.currency = currency;
-  topup.amountUSDT = currency === 'usdt' ? val : val / rate;
-  topup.amountRUB = currency === 'usdt' ? val * rate : val;
+  topup.amountUSDT = currency === 'usdt' ? roundMoney(val) : roundMoney(val / rate);
+  topup.amountRUB = currency === 'usdt' ? Math.round(val * rate) : Math.round(val);
 
   await ctx.answerCbQuery(lang === 'en' ? `💵 Amount: ${amountStr} USDT` : `💵 Сумма: ${amountStr} USDT`).catch(() => null);
 
@@ -528,11 +529,11 @@ const handleAmountInput = async (ctx, rawAmount = null) => {
 
   let amountUSDT, amountRUB;
   if (currency === 'usdt') {
-    amountUSDT = inputAmount;
-    amountRUB = inputAmount * rate;
+    amountUSDT = roundMoney(inputAmount);
+    amountRUB = Math.round(inputAmount * rate);
   } else {
-    amountRUB = inputAmount;
-    amountUSDT = inputAmount / rate;
+    amountRUB = Math.round(inputAmount);
+    amountUSDT = roundMoney(inputAmount / rate);
   }
 
   if (amountUSDT < minTopup) {
@@ -570,7 +571,7 @@ const generateRequisitesAndShow = async (ctx) => {
   const rate = getRate(settings);
   const minTopup = settings?.minTopup || 1;
   const { method, network, amountUSDT } = topup;
-  const amountRUB = amountUSDT * rate;
+  const amountRUB = Math.round(amountUSDT * rate);
   topup.amountRUB = amountRUB;
 
   if (method === 'bybit' && network === 'uid') {
@@ -594,9 +595,10 @@ const generateRequisitesAndShow = async (ctx) => {
     }
 
     const roundedRub = Math.max(1, Math.round(amountRUB));
+    const normalizedUsdt = roundMoney(amountUSDT || roundedRub / rate);
     const request = new TopupRequest({
       userId: ctx.user._id,
-      amount: amountUSDT,
+      amount: normalizedUsdt,
       amountRub: roundedRub,
       method: 'platega',
       status: 'pending',
@@ -607,7 +609,7 @@ const generateRequisitesAndShow = async (ctx) => {
     try {
       pRes = await plategaService.createPayment({
         amountRub: roundedRub,
-        description: `Пополнение баланса @${ctx.user.username || ctx.user.telegramId} (${amountUSDT} USDT)`,
+        description: `Пополнение баланса @${ctx.user.username || ctx.user.telegramId} (${normalizedUsdt} USDT)`,
         payload: String(request._id),
         userId: ctx.user.telegramId,
         userName: ctx.user.username,
@@ -967,10 +969,14 @@ const handleTopupProof = async (ctx) => {
       bResult = await blockchain.verifyUidUsdt(proofText);
       if (bResult.success && bResult.matches) {
         let foundUnclaimed = false;
+        const BybitInvoice = require('../../models/BybitInvoice');
         // Ищем среди успешных переводов от этого пользователя тот, которого еще нет в базе
         for (const match of bResult.matches) {
-          const exists = await TopupRequest.findOne({ txid: match.txID });
-          if (!exists) {
+          const [existsTopup, existsInvoice] = await Promise.all([
+            TopupRequest.findOne({ txid: match.txID }),
+            BybitInvoice.findOne({ txId: match.txID }),
+          ]);
+          if (!existsTopup && !existsInvoice) {
             finalTxid = match.txID; // Это настоящий скрытый TXID из API
             bResult.amount = match.amount;
             foundUnclaimed = true;
@@ -1300,6 +1306,13 @@ const confirmPlategaPayment = async (requestOrId, plategaData = {}) => {
     { $inc: { balance: request.amount } }
   );
 
+  // Сбрасываем кэш пользователя для мгновенного отображения обновлённого баланса
+  const { invalidateUserCache } = require('../middlewares/user');
+  if (user.telegramId) {
+    invalidateUserCache(user.telegramId);
+  }
+  invalidateUserCache(request.userId?._id || request.userId);
+
   // Создаём запись в истории транзакций
   const Transaction = require('../../models/Transaction');
   await new Transaction({
@@ -1456,6 +1469,19 @@ const handlePlategaWebhook = async (payload = {}) => {
   if (request.status === 'confirmed') {
     logger.info(`[Platega Webhook] Заявка ${request._id} уже подтверждена`);
     return { status: 'already_confirmed' };
+  }
+
+  const currency = String(payload.currency || payload.paymentDetails?.currency || 'RUB').toUpperCase();
+  if (currency !== 'RUB') {
+    logger.warn(`[Platega Webhook] Неверная валюта ${currency} для транзакции ${transactionId}`);
+    return { status: 'invalid_currency' };
+  }
+
+  const rawAmount = payload.amount !== undefined ? payload.amount : payload.paymentDetails?.amount;
+  const incomingAmount = Number(rawAmount);
+  if (isNaN(incomingAmount) || (request.amountRub !== null && request.amountRub !== undefined && Math.abs(incomingAmount - request.amountRub) >= 0.01)) {
+    logger.warn(`[Platega Webhook] Несовпадение суммы: получено ${incomingAmount}, ожидалось ${request.amountRub}`);
+    return { status: 'amount_mismatch' };
   }
 
   const confirmed = await confirmPlategaPayment(request, payload);

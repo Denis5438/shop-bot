@@ -29,7 +29,16 @@ const topupRequestSchema = new mongoose.Schema({
   processedAt: { type: Date, default: null },
 });
 
-topupRequestSchema.index({ paymentId: 1 }, { sparse: true });
+topupRequestSchema.index(
+  { paymentId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      paymentId: { $type: 'string' },
+    },
+    name: 'paymentId_string_unique',
+  }
+);
 
 topupRequestSchema.index(
   { txid: 1 },

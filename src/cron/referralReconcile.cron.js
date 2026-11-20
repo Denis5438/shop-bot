@@ -13,6 +13,43 @@ const { grantReferralBonusForFirstCompletedOrder } = require('../services/referr
 const INTERVAL_MS = 10 * 60_000;
 
 /**
+ * @returns {Promise<void>}
+ */
+const reconcileReferralBonuses = async () => {
+  const BATCH_SIZE = 100;
+  let lastId = null;
+
+  let hasMore = true;
+  while (hasMore) {
+    const query = {
+      referredBy: { $ne: null },
+      referralBonusGrantedAt: null,
+      ...(lastId ? { _id: { $gt: lastId } } : {}),
+    };
+
+    const batch = await User.find(query)
+      .sort({ _id: 1 })
+      .select('_id')
+      .limit(BATCH_SIZE)
+      .lean();
+
+    if (!batch.length) {
+      hasMore = false;
+      break;
+    }
+
+    for (const user of batch) {
+      await grantReferralBonusForFirstCompletedOrder(user._id);
+    }
+
+    lastId = batch[batch.length - 1]._id;
+    if (batch.length < BATCH_SIZE) {
+      hasMore = false;
+    }
+  }
+};
+
+/**
  * @returns {NodeJS.Timeout} handle интервала
  */
 const start = () => {
@@ -22,22 +59,7 @@ const start = () => {
     busy = true;
     try {
       if (mongoose.connection.readyState !== 1) return;
-
-      // Курсор по ВСЕМ кандидатам (запрос покрыт индексом referredBy+
-      // referralBonusGrantedAt). limit здесь недопустим: «вечные» кандидаты
-      // без покупок стабильно занимали бы первые позиции и новые пользователи
-      // никогда не попадали бы в выборку.
-      const cursor = User.find({
-        referredBy: { $ne: null },
-        referralBonusGrantedAt: null,
-      })
-        .select('_id')
-        .lean()
-        .cursor();
-
-      for await (const user of cursor) {
-        await grantReferralBonusForFirstCompletedOrder(user._id);
-      }
+      await reconcileReferralBonuses();
     } catch (err) {
       logger.error(`Ошибка reconcile реферальных бонусов: ${err.message}`);
     } finally {
@@ -48,4 +70,4 @@ const start = () => {
   return handle;
 };
 
-module.exports = { start };
+module.exports = { start, reconcileReferralBonuses };

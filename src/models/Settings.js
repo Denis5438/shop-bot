@@ -1,4 +1,19 @@
 const mongoose = require('mongoose');
+const { PREFIX, encryptSecret, decryptSecret } = require('../services/secretBox.service');
+
+const secretGetter = (val) => {
+  if (typeof val === 'string' && val.startsWith(PREFIX)) {
+    return decryptSecret(val);
+  }
+  return val;
+};
+
+const secretSetter = (val) => {
+  if (typeof val === 'string' && val.trim() !== '') {
+    return encryptSecret(val);
+  }
+  return val;
+};
 
 const settingsSchema = new mongoose.Schema({
   name: { type: String, default: 'global', unique: true },
@@ -8,21 +23,21 @@ const settingsSchema = new mongoose.Schema({
   minTopup: { type: Number, default: 1 },
   referralBonus: { type: Number, default: 0.5 },
   smartPricing: { type: Boolean, default: false },
-  geminiApiKey: { type: String, default: '' },
+  geminiApiKey: { type: String, default: '', get: secretGetter, set: secretSetter },
   smartPricingPreset: { type: String, default: 'gemini_ai' },
   // Умная уценка
   autoMarkdownEnabled: { type: Boolean, default: false },
   autoMarkdownDays: { type: Number, default: 3 },
   autoMarkdownPercent: { type: Number, default: 5 },
   // Реквизиты карты
-  cardNumber: { type: String, default: '' },
-  cardHolder: { type: String, default: '' },
+  cardNumber: { type: String, default: '', get: secretGetter, set: secretSetter },
+  cardHolder: { type: String, default: '', get: secretGetter, set: secretSetter },
   // Bybit адреса и API ключи
   bybitTrc20Address: { type: String, default: '' },
   bybitBep20Address: { type: String, default: '' },
   bybitUid: { type: String, default: '' },
-  bybitApiKey: { type: String, default: '' },
-  bybitApiSecret: { type: String, default: '' },
+  bybitApiKey: { type: String, default: '', get: secretGetter, set: secretSetter },
+  bybitApiSecret: { type: String, default: '', get: secretGetter, set: secretSetter },
   // #17 Admin digest: если включён - обычные уведомления агрегируются
   // в почасовую сводку, критичные уходят сразу как раньше.
   adminDigestEnabled: { type: Boolean, default: false },
@@ -34,8 +49,8 @@ const settingsSchema = new mongoose.Schema({
   requiredChannelsEnabled: { type: Boolean, default: false },
   // Способы оплаты (Вкл / Выкл)
   plategaEnabled: { type: Boolean, default: true },
-  plategaMerchantId: { type: String, default: '' },
-  plategaSecret: { type: String, default: '' },
+  plategaMerchantId: { type: String, default: '', get: secretGetter, set: secretSetter },
+  plategaSecret: { type: String, default: '', get: secretGetter, set: secretSetter },
   cardEnabled: { type: Boolean, default: true },
   bybitEnabled: { type: Boolean, default: true },
   // Чистый чат (автоудаление старых сообщений бота)
@@ -53,7 +68,9 @@ const settingsSchema = new mongoose.Schema({
   // Формат кнопок по умолчанию для новых пользователей
   defaultButtonLayout: { type: String, enum: ['rich', 'classic'], default: 'rich' },
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { getters: true },
+  toObject: { getters: true },
 });
 
 module.exports = mongoose.model('Settings', settingsSchema);

@@ -1,10 +1,17 @@
 const mongoose = require('mongoose');
 
 const transactionSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: function () {
+      return !this.sellerId;
+    },
+  },
+  sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },
   type: {
     type: String,
-    enum: ['topup', 'purchase', 'refund', 'referral_bonus', 'manual_credit', 'manual_debit'],
+    enum: ['topup', 'purchase', 'refund', 'referral_bonus', 'manual_credit', 'manual_debit', 'seller_payout'],
     required: true,
   },
   amount: { type: Number, required: true },
@@ -17,6 +24,7 @@ const transactionSchema = new mongoose.Schema({
 // История операций пользователя (админка) и статистика по типам за период -
 // раньше у коллекции не было ни одного индекса
 transactionSchema.index({ userId: 1, createdAt: -1 });
+transactionSchema.index({ sellerId: 1, createdAt: -1 });
 transactionSchema.index({ type: 1, createdAt: -1 });
 transactionSchema.index({ topupRequestId: 1, createdAt: -1 });
 

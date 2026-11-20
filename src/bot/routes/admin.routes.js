@@ -1133,7 +1133,10 @@ module.exports = (bot) => {
     await settingsScene.testBybitApi(ctx);
   });
   bot.action('admin:settings:reset_tos', adminMiddleware, async (ctx) => {
-    await settingsScene.resetAllUserToS(ctx);
+    await settingsScene.confirmResetToS(ctx);
+  });
+  bot.action('admin:settings:reset_tos:confirm', adminMiddleware, async (ctx) => {
+    await settingsScene.executeResetAllUserToS(ctx);
   });
 
   // ─── ADMIN: Написать пользователю ───

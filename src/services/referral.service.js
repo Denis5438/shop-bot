@@ -38,17 +38,15 @@ const grantReferralBonusForFirstCompletedOrder = async (userId) => {
         return;
       }
 
-      const completedOrdersCount = await Order.countDocuments(
-        { userId: user._id, status: 'completed' },
+      // [SEC-CAT-04] Anti-Sybil protection: referral bonus requires at least one completed order >= 3.00 USDT
+      const qualifyingOrder = await Order.findOne(
+        { userId: user._id, status: 'completed', price: { $gte: 3.00 } },
+        null,
         sessionOptions
       );
 
-      // Было `!== 1`: если два заказа завершались почти одновременно, счётчик
-      // сразу становился 2 и бонус не выдавался НИКОГДА (а реконсиляция в кроне
-      // вечно перебирала такого пользователя). Достаточно >= 1: от повторной
-      // выдачи защищает атомарный захват referralBonusGrantedAt ниже.
-      if (completedOrdersCount < 1) {
-        result = { granted: false, reason: 'no_completed_orders' };
+      if (!qualifyingOrder) {
+        result = { granted: false, reason: 'order_below_threshold' };
         return;
       }
 

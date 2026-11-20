@@ -2,6 +2,7 @@ const { Markup } = require('telegraf');
 const Order = require('../../../models/Order');
 const Seller = require('../../../models/Seller');
 const User = require('../../../models/User');
+const Transaction = require('../../../models/Transaction');
 const notif = require('../../../services/notification.service');
 const { escapeHtml, safeEdit } = require('../../utils/ui');
 
@@ -94,7 +95,6 @@ const resolveRefundBuyer = async (ctx, orderId) => {
   // Раньше два клика (или два админа) проходили проверку оба → двойной возврат.
   // Захват и возврат - в одной транзакции.
   const { withTransaction } = require('../../../services/transactionHelper.service');
-  const User = require('../../../models/User');
   let order = null;
   await withTransaction(async (session) => {
     const sessionOpt = session ? { session } : {};
@@ -111,9 +111,30 @@ const resolveRefundBuyer = async (ctx, orderId) => {
     ).populate('userId').populate('sellerId');
     if (!order) return;
 
-    // Return money to buyer
+    // Return money to buyer, decrement totalSpent safely (clamp to 0), and create Transaction audit record
     if (order.userId) {
-      await User.updateOne({ _id: order.userId._id }, { $inc: { balance: order.price } }, sessionOpt);
+      const refundAmount = (typeof order.price === 'number' && Number.isFinite(order.price) && order.price > 0)
+        ? order.price
+        : 0;
+
+      await User.updateOne(
+        { _id: order.userId._id },
+        { $inc: { balance: refundAmount, totalSpent: -refundAmount } },
+        sessionOpt
+      );
+      await User.updateOne(
+        { _id: order.userId._id, totalSpent: { $lt: 0 } },
+        { $set: { totalSpent: 0 } },
+        sessionOpt
+      );
+
+      await new Transaction({
+        userId: order.userId._id,
+        orderId: order._id,
+        type: 'refund',
+        amount: refundAmount,
+        description: `Возврат средств по спору (заказ #${order._id})`,
+      }).save(sessionOpt);
     }
   });
   if (!order) return ctx.answerCbQuery('Спор не найден или уже обработан', { show_alert: true });
@@ -137,7 +158,6 @@ const resolvePaySeller = async (ctx, orderId) => {
   // Атомарный захват спора (см. resolveRefundBuyer): двойной клик раньше
   // приводил к двойной выплате продавцу. Захват и выплата - в одной транзакции.
   const { withTransaction } = require('../../../services/transactionHelper.service');
-  const Seller = require('../../../models/Seller');
   let order = null;
   await withTransaction(async (session) => {
     const sessionOpt = session ? { session } : {};
@@ -163,6 +183,16 @@ const resolvePaySeller = async (ctx, orderId) => {
         sessionOpt
       );
       await Order.updateOne({ _id: order._id }, { $set: { sellerPaidAt: new Date() } }, sessionOpt);
+
+      const sellerUserId = order.sellerId.userId || (order.userId?._id ? order.userId._id : null);
+      await new Transaction({
+        userId: sellerUserId,
+        sellerId: order.sellerId._id,
+        orderId: order._id,
+        type: 'seller_payout',
+        amount: order.sellerPayout,
+        description: `Выплата продавцу по спору (заказ #${order._id})`,
+      }).save(sessionOpt);
     }
   });
   if (!order) return ctx.answerCbQuery('Спор не найден или уже обработан', { show_alert: true });

@@ -448,7 +448,24 @@ const handleSettingsInput = async (ctx) => {
   return true;
 };
 
-const resetAllUserToS = async (ctx) => {
+const confirmResetToS = async (ctx) => {
+  await ctx.answerCbQuery().catch(() => {});
+  const text =
+    '⚠️ <b>Подтверждение сброса Оферты (ToS)</b>\n\n' +
+    'Вы действительно хотите сбросить принятие оферты у <b>ВСЕХ</b> пользователей?\n\n' +
+    'Все пользователи будут заблокированы до повторного принятия соглашения!';
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('⚠️ Да, сбросить у всех', 'admin:settings:reset_tos:confirm')],
+    [Markup.button.callback('❌ Отмена', 'admin:settings')],
+  ]);
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+  } catch (_) {
+    await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  }
+};
+
+const executeResetAllUserToS = async (ctx) => {
   const User = require('../../../models/User');
   const res = await User.updateMany({}, { $set: { acceptedToS: false, acceptedToSAt: null } });
   // Массовое изменение затрагивает всех - сбрасываем весь кэш пользователей
@@ -456,6 +473,8 @@ const resetAllUserToS = async (ctx) => {
   await ctx.answerCbQuery(`📜 Оферта сброшена у ${res.modifiedCount} пользователей!`, { show_alert: true });
   await showSettings(ctx);
 };
+
+const resetAllUserToS = executeResetAllUserToS;
 
 module.exports = {
   showSettings,
@@ -476,5 +495,7 @@ module.exports = {
   startEditSetting,
   testBybitApi,
   handleSettingsInput,
+  confirmResetToS,
+  executeResetAllUserToS,
   resetAllUserToS,
 };

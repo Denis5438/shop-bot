@@ -618,6 +618,9 @@ const confirmWithdraw = async (ctx, amountStr) => {
   } catch (err) {
     // Заявка не создалась - возвращаем зарезервированное
     await Seller.updateOne({ _id: seller._id }, { $inc: { balance: amount } }).catch(() => {});
+    if (err && err.code === 11000) {
+      return ctx.answerCbQuery(ctx.t('seller_withdraw_pending_error'), { show_alert: true });
+    }
     throw err;
   }
 

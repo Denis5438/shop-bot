@@ -205,6 +205,7 @@ const approveTopupRequest = async (ctx, requestId, amount) => {
         userId: approvedUser._id,
         type: 'topup',
         amount,
+        topupRequestId: approvedRequest._id,
         description: `Пополнение подтверждено администратором (${amount} USDT)`,
       }).save(sessionOptions);
     });
@@ -320,6 +321,7 @@ module.exports = {
   showPaymentDetail,
   confirmPayment,
   approvePayment,
+  approveTopupRequest,
   editPaymentAmount,
   finalizeTopup,
   rejectPayment,

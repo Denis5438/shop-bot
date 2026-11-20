@@ -1,6 +1,6 @@
 const User = require('../../models/User');
 const Seller = require('../../models/Seller');
-const { ADMIN_IDS } = require('../../config');
+const config = require('../../config');
 const logger = require('../../config/logger');
 
 // ─── Кэш пользователей ────────────────────────────────────────────────────────
@@ -32,9 +32,32 @@ const cacheCleanup = () => {
   }
 };
 
-// Точечная инвалидация (например, из админки после бана/смены роли/зачисления)
-const invalidateUserCache = (telegramId) => {
-  userCache.delete(telegramId);
+// Точечная инвалидация (полиморфно: telegramId, User-документ или ObjectId/_id)
+const invalidateUserCache = (target) => {
+  if (!target) return;
+
+  if (typeof target === 'object' && target.telegramId != null) {
+    const tid = Number(target.telegramId);
+    if (!Number.isNaN(tid)) {
+      userCache.delete(tid);
+    }
+  }
+
+  const num = Number(target);
+  if (Number.isInteger(num) && num > 0) {
+    userCache.delete(num);
+  }
+
+  const targetIdStr = String(target._id || target);
+  for (const [key, entry] of userCache.entries()) {
+    if (
+      String(key) === targetIdStr ||
+      entry?.user?._id?.toString() === targetIdStr ||
+      String(entry?.user?.telegramId) === targetIdStr
+    ) {
+      userCache.delete(key);
+    }
+  }
 };
 
 // Полный сброс кэша (массовые операции: сброс ToS всем пользователям и т.п.)
@@ -55,7 +78,7 @@ const userMiddleware = async (ctx, next) => {
       ctx.user = cached.user;
       ctx.isSeller = cached.isSeller;
 
-      if (global.MAINTENANCE_MODE && ctx.user.role !== 'admin') {
+      if (global.MAINTENANCE_MODE && ctx.user.role !== 'admin' && ctx.user.role !== 'superadmin') {
         if (ctx.callbackQuery) {
           await ctx.answerCbQuery('🛠 Тех. обслуживание', { show_alert: true }).catch(() => {});
         }
@@ -86,7 +109,9 @@ const userMiddleware = async (ctx, next) => {
 
     if (!user) {
       // Создаём нового пользователя
-      const isAdmin = ADMIN_IDS.includes(telegramId);
+      const isSuperAdmin = Array.isArray(config.SUPERADMIN_IDS) && config.SUPERADMIN_IDS.includes(telegramId);
+      const isAdmin = isSuperAdmin ? false : (Array.isArray(config.ADMIN_IDS) && config.ADMIN_IDS.includes(telegramId));
+      const initialRole = isSuperAdmin ? 'superadmin' : isAdmin ? 'admin' : 'user';
 
       // Проверяем реферальный код из start команды.
       // ctx.startPayload не устанавливается в обычном middleware - его выставляет
@@ -110,11 +135,11 @@ const userMiddleware = async (ctx, next) => {
         firstName: ctx.from.first_name || '',
         lastName: ctx.from.last_name || '',
         language: ctx.from.language_code === 'ru' ? 'ru' : 'en',
-        role: isAdmin ? 'admin' : 'user',
+        role: initialRole,
         referredBy,
       });
       await user.save();
-      logger.info(`Новый пользователь: ${telegramId} (@${ctx.from.username || 'no_username'})`);
+      logger.info(`Новый пользователь: ${telegramId} (@${ctx.from.username || 'no_username'}) [role: ${initialRole}]`);
     } else {
       // Обновляем имя/username только если изменились
       let changed = false;
@@ -126,12 +151,33 @@ const userMiddleware = async (ctx, next) => {
       if (user.firstName !== newFirstName) { user.firstName = newFirstName; changed = true; }
       if (user.lastName !== newLastName) { user.lastName = newLastName; changed = true; }
 
-      // Автоматически повышаем до админа если в списке
-      if (ADMIN_IDS.includes(telegramId) && user.role !== 'admin') {
-        user.role = 'admin';
-        changed = true;
+      // Синхронизация ролей в соответствии с RBAC hierarchy
+      const isSuperAdmin = Array.isArray(config.SUPERADMIN_IDS) && config.SUPERADMIN_IDS.includes(telegramId);
+      const isConfigAdmin = Array.isArray(config.ADMIN_IDS) && config.ADMIN_IDS.includes(telegramId);
+
+      if (isSuperAdmin) {
+        if (user.role !== 'superadmin') {
+          user.role = 'superadmin';
+          changed = true;
+        }
+      } else {
+        if (user.role === 'superadmin') {
+          user.role = isConfigAdmin ? 'admin' : 'user';
+          changed = true;
+        }
+        if (user.role === 'admin') {
+          // Если убран из ADMIN_IDS и не был назначен вручную через UI - отзываем права
+          if (!isConfigAdmin && !user.promotedBy) {
+            user.role = 'user';
+            changed = true;
+            logger.warn(`[RBAC] Revoked admin role for ${telegramId} (not in ADMIN_IDS and no promotedBy)`);
+          }
+        } else if (user.role === 'user' && isConfigAdmin) {
+          user.role = 'admin';
+          changed = true;
+        }
       }
-      if (changed) await user.save();
+      if (changed && typeof user.save === 'function') await user.save();
     }
 
     ctx.user = user;
@@ -141,7 +187,7 @@ const userMiddleware = async (ctx, next) => {
     const entry = { user, isSeller: ctx.isSeller, ts: Date.now() };
     userCache.set(telegramId, entry);
 
-    if (global.MAINTENANCE_MODE && user.role !== 'admin') {
+    if (global.MAINTENANCE_MODE && user.role !== 'admin' && user.role !== 'superadmin') {
       if (ctx.callbackQuery) {
         await ctx.answerCbQuery('🛠 Тех. обслуживание', { show_alert: true }).catch(() => {});
       }

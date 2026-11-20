@@ -1,7 +1,7 @@
 const logger = require('../config/logger');
 const { ADMIN_IDS } = require('../config');
 const { toRub } = require('./currency.service');
-const { getProviderLabel, resolveOrderProvider, resolveProductProvider } = require('./provider.service');
+const { getProviderLabel, resolveOrderProvider, resolveProductProvider, isSupplierProvider, isTransientSupplierError } = require('./provider.service');
 const { Markup } = require('telegraf');
 const { escapeHtml, get2FAButtonLabel, has2FASecret } = require('../bot/utils/ui');
 const User = require('../models/User');
@@ -693,7 +693,7 @@ const notifyWaitlist = async (product) => {
 };
 
 const fulfillPreorders = async (product) => {
-  if (!botInstance || !product) return;
+  if (!product) return;
 
   const Order = require('../models/Order');
   const Key = require('../models/Key');
@@ -708,19 +708,12 @@ const fulfillPreorders = async (product) => {
   if (!pendingPreorders.length) return;
 
   for (const preorder of pendingPreorders) {
-    if (!preorder.userId || !preorder.userId.telegramId) continue;
+    if (!preorder.userId) continue;
 
     if (product.type === 'manual') {
       const orderQty = preorder.qty || 1;
-      if (product.manualStock !== -1) {
-        const Product = require('../models/Product');
-        const stockRes = await Product.updateOne(
-          { _id: product._id, manualStock: { $gte: orderQty } },
-          { $inc: { manualStock: -orderQty } }
-        );
-        if (!stockRes.modifiedCount) break;
-      }
 
+      // [SEC-CAT-01] Atomically claim preorder FIRST before decrementing manualStock
       const claimedPreorder = await Order.findOneAndUpdate(
         { _id: preorder._id, status: 'preorder_pending' },
         { $set: { status: 'pending' } },
@@ -728,28 +721,154 @@ const fulfillPreorders = async (product) => {
       );
       if (!claimedPreorder) continue;
 
+      if (product.manualStock !== -1) {
+        const Product = require('../models/Product');
+        const stockRes = await Product.updateOne(
+          { _id: product._id, manualStock: { $gte: orderQty } },
+          { $inc: { manualStock: -orderQty } }
+        );
+        if (!stockRes.modifiedCount) {
+          // Stock update failed: roll back order status from 'pending' to 'preorder_pending' and break
+          await Order.updateOne(
+            { _id: preorder._id, status: 'pending' },
+            { $set: { status: 'preorder_pending' } }
+          ).catch(() => {});
+          break;
+        }
+      }
+
       const Waitlist = require('../models/Waitlist');
       await Waitlist.findOneAndDelete({ userId: preorder.userId._id, productId: product._id }).catch(() => {});
 
-      try {
-        const userLang = preorder.userId.language || 'ru';
-        const msgText = userLang === 'en'
-          ? `🎉 <b>Your Pre-order #${preorder._id} is now being processed!</b>\n\n` +
-            `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n\n` +
-            `<i>Operator will deliver the goods shortly!</i>`
-          : `🎉 <b>Ваш предзаказ #${preorder._id} передан на выдачу!</b>\n\n` +
-            `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n\n` +
-            `<i>Оператор скоро передаст вам данные.</i>`;
+      if (botInstance?.telegram && preorder.userId.telegramId) {
+        try {
+          const userLang = preorder.userId.language || 'ru';
+          const msgText = userLang === 'en'
+            ? `🎉 <b>Your Pre-order #${preorder._id} is now being processed!</b>\n\n` +
+              `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n\n` +
+              `<i>Operator will deliver the goods shortly!</i>`
+            : `🎉 <b>Ваш предзаказ #${preorder._id} передан на выдачу!</b>\n\n` +
+              `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n\n` +
+              `<i>Оператор скоро передаст вам данные.</i>`;
 
-        await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [[{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]],
-          },
-        });
-      } catch (e) {
-        logger.warn(`❌ Не удалось отправить уведомление о ручном предзаказе: ${e.message}`);
+          await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]],
+            },
+          });
+        } catch (e) {
+          logger.warn(`❌ Не удалось отправить уведомление о ручном предзаказе: ${e.message}`);
+        }
       }
+      await new Promise((r) => setTimeout(r, 40));
+      continue;
+    }
+
+    // [SEC-DROP-07] Dropshipping pre-orders auto-purchase
+    if (isSupplierProvider(product.provider) || product.provider === 'jaha') {
+      const supplierManager = require('./supplierManager.service');
+
+      const claimedPreorder = await Order.findOneAndUpdate(
+        { _id: preorder._id, status: 'preorder_pending' },
+        { $set: { status: 'activating' } },
+        { new: true }
+      );
+      if (!claimedPreorder) continue;
+
+      const Waitlist = require('../models/Waitlist');
+      await Waitlist.findOneAndDelete({ userId: preorder.userId._id, productId: product._id }).catch(() => {});
+
+      const orderQty = preorder.qty || 1;
+      const idempotencyKey = preorder.supplierIdempotencyKey || `ord-${preorder._id}`;
+
+      let suppRes;
+      try {
+        suppRes = await supplierManager.fulfillSupplierOrder(
+          product,
+          orderQty,
+          preorder.userId,
+          { orderId: preorder._id, idempotencyKey }
+        );
+      } catch (err) {
+        suppRes = { success: false, error: err.message };
+      }
+
+      if (suppRes && suppRes.success && suppRes.deliveryData) {
+        await Order.updateOne(
+          { _id: preorder._id },
+          {
+            $set: {
+              status: 'completed',
+              confirmedAt: new Date(),
+              deliveryData: String(suppRes.deliveryData),
+              supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
+              activationResult: 'Автовыдача через API поставщика (предзаказ) ⚡',
+            },
+          }
+        );
+
+        if (preorder.userId?._id) {
+          const { grantReferralBonusForFirstCompletedOrder } = require('./referral.service');
+          await grantReferralBonusForFirstCompletedOrder(preorder.userId._id).catch(() => {});
+        }
+
+        if (botInstance?.telegram && preorder.userId.telegramId) {
+          try {
+            const userLang = preorder.userId.language || 'ru';
+            const formattedItem = formatDigitalItem(suppRes.deliveryData, userLang);
+            const msgText = userLang === 'en'
+              ? `🎉 <b>Your Pre-order #${preorder._id} has been fulfilled!</b>\n\n` +
+                `📦 <b>Product:</b> ${escapeHtml(product.nameEn || product.name)}\n\n` +
+                `🔑 <b>Your access data:</b>\n${formattedItem}\n\n` +
+                `<i>Thank you for your order!</i>`
+              : `🎉 <b>Ваш предзаказ #${preorder._id} выполнен!</b>\n\n` +
+                `📦 <b>Товар:</b> ${escapeHtml(product.name)}\n\n` +
+                `🔑 <b>Ваши данные для доступа:</b>\n${formattedItem}\n\n` +
+                `<i>Спасибо за заказ!</i>`;
+
+            const inlineKeyboard = [];
+            if (has2FASecret(suppRes.deliveryData)) {
+              inlineKeyboard.push([{ text: get2FAButtonLabel(userLang), callback_data: `profile:order:2fa:${preorder._id}` }]);
+            }
+            inlineKeyboard.push([{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]);
+
+            await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
+              parse_mode: 'HTML',
+              reply_markup: {
+                inline_keyboard: inlineKeyboard,
+              },
+            });
+          } catch (e) {
+            logger.warn(`❌ Не удалось отправить предзаказанный товар пользователю: ${e.message}`);
+          }
+        }
+      } else if (suppRes && suppRes.success) {
+        await Order.updateOne(
+          { _id: preorder._id },
+          {
+            $set: {
+              status: 'activating',
+              supplierOrderId: String(suppRes.orderNumber || suppRes.orderId || ''),
+              notes: 'Предзаказ принят поставщиком, ожидается выдача товара',
+            },
+          }
+        );
+      } else {
+        const isTransient = isTransientSupplierError(suppRes?.error);
+        await Order.updateOne(
+          { _id: preorder._id },
+          {
+            $set: {
+              status: isTransient ? 'retry' : 'pending',
+              nextRetryAt: isTransient ? new Date(Date.now() + 60 * 1000) : null,
+              retryCount: 0,
+              notes: `Ошибка API поставщика при предзаказе: ${suppRes?.error || 'неизвестно'}`,
+            },
+          }
+        );
+      }
+
       await new Promise((r) => setTimeout(r, 40));
       continue;
     }
@@ -806,12 +925,14 @@ const fulfillPreorders = async (product) => {
       // Роут ожидает profile:order:detail:<id> - без ":detail" кнопка мёртвая
       inlineKeyboard.push([{ text: '📋 Мои заказы', callback_data: `profile:order:detail:${preorder._id}` }]);
 
-      await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: inlineKeyboard,
-        },
-      });
+      if (botInstance?.telegram && preorder.userId.telegramId) {
+        await botInstance.telegram.sendMessage(preorder.userId.telegramId, msgText, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: inlineKeyboard,
+          },
+        });
+      }
     } catch (e) {
       logger.warn(`❌ Не удалось отправить предзаказанный товар пользователю ${preorder.userId.telegramId}: ${e.message}`);
     }

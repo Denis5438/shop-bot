@@ -10,7 +10,7 @@ const authMiddleware = (ctx, next) => {
 };
 
 const adminMiddleware = (ctx, next) => {
-  if (!ctx.user || ctx.user.role !== 'admin') {
+  if (!ctx.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'superadmin')) {
     if (ctx.callbackQuery) {
       ctx.answerCbQuery('🚫 Нет доступа', { show_alert: true }).catch(() => {});
     }
@@ -19,4 +19,14 @@ const adminMiddleware = (ctx, next) => {
   return next();
 };
 
-module.exports = { authMiddleware, adminMiddleware };
+const superadminMiddleware = (ctx, next) => {
+  if (!ctx.user || ctx.user.role !== 'superadmin') {
+    if (ctx.callbackQuery) {
+      ctx.answerCbQuery('🚫 Доступно только главному администратору', { show_alert: true }).catch(() => {});
+    }
+    return ctx.reply('🚫 Доступно только главному администратору.');
+  }
+  return next();
+};
+
+module.exports = { authMiddleware, adminMiddleware, superadminMiddleware };

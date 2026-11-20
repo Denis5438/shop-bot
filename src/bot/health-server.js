@@ -80,10 +80,10 @@ function startHealthServer(port = 3000) {
             logger.info(`[Platega Webhook] Получено уведомление: id=${payload.id}, status=${payload.status}, amount=${payload.amount}`);
 
             const topupScene = require('./scenes/topup.scene');
-            await topupScene.handlePlategaWebhook(payload);
+            const result = await topupScene.handlePlategaWebhook(payload);
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ status: 'ok' }));
+            return res.end(JSON.stringify(result || { status: 'ok' }));
           } catch (err) {
             logger.error(`❌ [Platega Webhook Error]: ${err.message}`);
             res.writeHead(400, { 'Content-Type': 'application/json' });

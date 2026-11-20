@@ -26,7 +26,7 @@ const getSettings = async () => {
 
   if (mongoose.connection?.readyState === 1) {
     try {
-      const settings = await Settings.findOne({ name: 'global' }).lean({ defaults: true });
+      const settings = await Settings.findOne({ name: 'global' }).lean({ getters: true, defaults: true });
       cachedSettings = settings || {};
       cachedAt = now;
       return cachedSettings;
@@ -52,12 +52,12 @@ const getCachedSettingsSync = () => cachedSettings;
 const invalidateCache = (newSettings = null) => {
   cachedAt = 0;
   if (newSettings) {
-    cachedSettings = typeof newSettings.toObject === 'function' ? newSettings.toObject() : { ...newSettings };
+    cachedSettings = typeof newSettings.toObject === 'function' ? newSettings.toObject({ getters: true }) : { ...newSettings };
     cachedAt = Date.now();
     return;
   }
   if (mongoose.connection?.readyState === 1) {
-    Settings.findOne({ name: 'global' }).lean({ defaults: true }).then((settings) => {
+    Settings.findOne({ name: 'global' }).lean({ getters: true, defaults: true }).then((settings) => {
       if (settings) {
         cachedSettings = settings;
         cachedAt = Date.now();

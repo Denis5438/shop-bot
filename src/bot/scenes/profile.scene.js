@@ -785,6 +785,16 @@ const cancelPreorder = async (ctx, orderId) => {
     description: 'Отмена предзаказа',
   }).save().catch(() => {});
 
+  // [SEC-CAT-07] Clean up waitlist entry on preorder cancellation
+  const Waitlist = require('../../models/Waitlist');
+  await Waitlist.findOneAndDelete({
+    userId: ctx.user._id,
+    productId: order.productId?._id || order.productId,
+  }).catch(() => {});
+
+  const { invalidateUserCache } = require('../middlewares/user');
+  invalidateUserCache(ctx.user._id);
+
   const isRu = (ctx.user.language || 'ru') === 'ru';
   const alertMsg = isRu
     ? `✅ Предзаказ отменён. ${order.price} USDT возвращены на ваш баланс!`

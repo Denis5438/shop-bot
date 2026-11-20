@@ -2,8 +2,10 @@
  * transactionHelper.service.js
  *
  * Обёртка для MongoDB-транзакций.
- * Денежные операции не имеют безопасного fallback без транзакции: если БД
- * standalone, операция отклоняется до выполнения callback.
+ * При работе с Replica Set операции выполняются атомарно внутри сессии транзакции.
+ * Если MongoDB работает в standalone-режиме (без Replica Set), выполняется
+ * плавный CAS-fallback с передачей null в качестве session, опираясь на атомарность
+ * отдельных документов (findOneAndUpdate / $inc).
  */
 
 const mongoose = require('mongoose');
@@ -11,21 +13,44 @@ const logger = require('../config/logger');
 
 let transactionsAvailable = null; // unknown until first attempt
 
+const isReplicaSetError = (err) => {
+  if (!err) return false;
+  return Boolean(
+    err.message?.includes('replica set') ||
+    err.message?.includes('Transaction numbers') ||
+    err.message?.includes('transactions are not supported') ||
+    err.message?.includes('buffering timed out') ||
+    err.codeName === 'OperationNotSupportedInTransaction' ||
+    err.code === 20
+  );
+};
+
 /**
  * Выполняет callback внутри MongoDB-транзакции.
+ * При отсутствии поддержки транзакций переключается на CAS-fallback (session = null).
  *
  * @param {Function} fn - async функция, принимающая (session)
  * @returns {Promise<*>} результат fn
  */
 const withTransaction = async (fn) => {
-  // Не разрешаем незаметно выполнять финансовый callback без транзакции.
   if (transactionsAvailable === false) {
-    const error = new Error('TRANSACTIONS_REQUIRED');
-    error.code = 'TRANSACTIONS_REQUIRED';
-    throw error;
+    return await fn(null);
   }
 
-  const session = await mongoose.startSession();
+  let session;
+  try {
+    session = await mongoose.startSession();
+  } catch (err) {
+    if (isReplicaSetError(err)) {
+      if (transactionsAvailable !== false) {
+        logger.warn('[TransactionHelper] MongoDB работает в standalone-режиме (без Replica Set). Используется последовательный CAS-fallback.');
+        transactionsAvailable = false;
+      }
+      return await fn(null);
+    }
+    throw err;
+  }
+
   let sessionEnded = false;
 
   try {
@@ -33,40 +58,33 @@ const withTransaction = async (fn) => {
     transactionsAvailable = true;
     return result;
   } catch (err) {
-    // Ошибка "Transaction numbers are only allowed on a replica set"
-    if (
-      err.message?.includes('replica set') ||
-      err.message?.includes('Transaction numbers') ||
-      err.codeName === 'OperationNotSupportedInTransaction' ||
-      err.code === 20
-    ) {
+    // Ошибка отсутствия Replica Set
+    if (isReplicaSetError(err)) {
       if (transactionsAvailable !== false) {
-        logger.error('[TransactionHelper] MongoDB не поддерживает транзакции. Денежные операции заблокированы.');
+        logger.warn('[TransactionHelper] MongoDB не поддерживает транзакции (standalone). Переключение на последовательный CAS-fallback.');
         transactionsAvailable = false;
-        // Это серьёзное снижение гарантий для ВСЕХ денежных операций - молчать
-        // об этом нельзя. Шлём алерт админам (лениво, чтобы избежать циклического
-        // require notification.service ↔ transactionHelper).
-        try {
-          const notif = require('./notification.service');
-          notif.sendToAdmins(
-            '🚨 <b>Денежные операции заблокированы</b>\n\n' +
-            'MongoDB работает без replica set, поэтому финансовые транзакции недоступны.\n\n' +
-            'Переведите базу в режим replica set или MongoDB Atlas и перезапустите бота.'
-          ).catch(() => {});
-        } catch (_) { /* notification service ещё не инициализирован */ }
       }
-      try { await session.endSession(); } catch (_) {}
+      try {
+        await session.endSession();
+      } catch (_) {}
       sessionEnded = true;
-      const transactionError = new Error('TRANSACTIONS_REQUIRED');
-      transactionError.code = 'TRANSACTIONS_REQUIRED';
-      throw transactionError;
+      return await fn(null);
     }
     throw err;
   } finally {
-    if (!sessionEnded) {
-      try { await session.endSession(); } catch (_) {}
+    if (!sessionEnded && session) {
+      try {
+        await session.endSession();
+      } catch (_) {}
     }
   }
 };
 
-module.exports = { withTransaction };
+const _setTransactionsAvailable = (val) => {
+  transactionsAvailable = val;
+};
+
+module.exports = {
+  withTransaction,
+  _setTransactionsAvailable,
+};

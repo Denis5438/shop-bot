@@ -17,17 +17,22 @@ const getEffectivePrice = async (product, stockCount, activePromo = null, option
     }
   }
 
-  if (settings?.autoMarkdownEnabled && settings?.autoMarkdownPercent > 0 && settings?.autoMarkdownDays > 0) {
-    const lastSaleBase = product.lastSoldAt || product.createdAt;
-    const lastSaleAt = lastSaleBase ? new Date(lastSaleBase).getTime() : Date.now();
-    const daysSinceLastSale = (Date.now() - lastSaleAt) / (1000 * 60 * 60 * 24);
-    const periods = Math.floor(daysSinceLastSale / settings.autoMarkdownDays);
+  if (settings?.autoMarkdownEnabled) {
+    const autoMarkdownDays = Math.max(1, Math.floor(Number(settings?.autoMarkdownDays) || 1));
+    const autoMarkdownPercent = Math.min(99, Math.max(0, Number(settings?.autoMarkdownPercent) || 0));
 
-    if (periods > 0) {
-      const discountMult = Math.pow(1 - (settings.autoMarkdownPercent / 100), periods);
-      const discountedPrice = price * discountMult;
-      const costLimit = Number(product.costPrice) || 0;
-      price = Number(Math.max(discountedPrice, costLimit).toFixed(2));
+    if (autoMarkdownPercent > 0 && autoMarkdownDays > 0) {
+      const lastSaleBase = product.lastSoldAt || product.createdAt;
+      const lastSaleAt = lastSaleBase ? new Date(lastSaleBase).getTime() : Date.now();
+      const daysSinceLastSale = Math.max(0, (Date.now() - lastSaleAt) / (1000 * 60 * 60 * 24));
+      const periods = Math.max(0, Math.floor(daysSinceLastSale / autoMarkdownDays));
+
+      if (periods > 0) {
+        const discountMult = Math.pow(1 - (autoMarkdownPercent / 100), periods);
+        const discountedPrice = price * discountMult;
+        const costLimit = Number(product.costPrice) || 0;
+        price = Number(Math.max(discountedPrice, costLimit).toFixed(2));
+      }
     }
   }
 
@@ -51,11 +56,14 @@ const getEffectivePrice = async (product, stockCount, activePromo = null, option
       qty,
       costPrice: product.costPrice,
     });
-    if (discountRes.valid) price = discountRes.finalPrice / qty;
+    if (discountRes.valid && qty >= 1) price = discountRes.finalPrice / qty;
   }
 
   // [SEC-CAT-03] Enforce minimum price floor against wholesale cost and zero pricing
   const costLimit = Number(product.costPrice) || 0;
+  if (!Number.isFinite(price) || price < 0) {
+    price = Math.max(0.01, costLimit);
+  }
   const minAllowedPrice = Math.min(price, Math.max(0.01, costLimit));
   price = Math.max(minAllowedPrice, price);
 

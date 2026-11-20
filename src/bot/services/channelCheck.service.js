@@ -1,5 +1,7 @@
 const RequiredChannel = require('../../models/RequiredChannel');
+const ChannelVerification = require('../../models/ChannelVerification');
 const { getSettings } = require('../../services/settingsCache.service');
+const logger = require('../../config/logger');
 
 /**
  * Проверяет подписку пользователя на ВСЕ активные обязательные каналы.
@@ -40,10 +42,10 @@ const checkUserSubscriptions = async (telegram, userId) => {
         isSubscribed = false;
       } else if (msg.includes('chat not found') || msg.includes('bot was kicked') || msg.includes('not enough rights') || msg.includes('forbidden')) {
         // Если у самого бота нет прав на канал - не блокируем пользователя наглухо
-        console.warn(`[ChannelCheck] Bot lacks access to channel ${ch.chatId}: ${err.message}`);
+        logger.warn(`[ChannelCheck] Bot lacks access to channel ${ch.chatId}: ${err.message}`);
         isSubscribed = true;
       } else {
-        console.warn(`[ChannelCheck] Error checking subscription for chat ${ch.chatId} user ${userId}: ${err.message}`);
+        logger.warn(`[ChannelCheck] Error checking subscription for chat ${ch.chatId} user ${userId}: ${err.message}`);
         isSubscribed = false;
       }
     }
@@ -62,13 +64,18 @@ const checkUserSubscriptions = async (telegram, userId) => {
 
 const recordChannelSubscription = async (channelId, userId) => {
   const strUserId = String(userId);
-  await RequiredChannel.findOneAndUpdate(
-    { _id: channelId, verifiedUserIds: { $ne: strUserId } },
-    {
-      $addToSet: { verifiedUserIds: strUserId },
-      $inc: { subscribersCount: 1 },
+  try {
+    const res = await ChannelVerification.updateOne(
+      { channelId, userId: strUserId },
+      { $setOnInsert: { verifiedAt: new Date() } },
+      { upsert: true }
+    );
+    if (res.upsertedCount > 0) {
+      await RequiredChannel.updateOne({ _id: channelId }, { $inc: { subscribersCount: 1 } });
     }
-  ).catch((err) => console.warn(`[ChannelCheck] Failed to record subscription: ${err.message}`));
+  } catch (err) {
+    logger.warn(`[ChannelCheck] Failed to record subscription: ${err.message}`);
+  }
 };
 
-module.exports = { checkUserSubscriptions };
+module.exports = { checkUserSubscriptions, recordChannelSubscription };

@@ -41,7 +41,7 @@ const verifyUidUsdt = async (senderUid) => {
 
   const timestamp = Date.now().toString();
   const recvWindow = '5000';
-  const qs = 'limit=50';
+  const qs = 'coin=USDT&limit=50';
 
   const signature = crypto.createHmac('sha256', apiSecret)
     .update(timestamp + apiKey + recvWindow + qs)

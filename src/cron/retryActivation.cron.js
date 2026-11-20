@@ -16,7 +16,9 @@ const { grantReferralBonusForFirstCompletedOrder } = require('../services/referr
 const { failOrderWithRefund } = require('../services/refund.service');
 const { decryptSecret } = require('../services/secretBox.service');
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
+const RETRY_DELAYS = [60_000, 300_000, 900_000, 3_600_000, 14_400_000];
+const getRetryDelay = (attempt) => RETRY_DELAYS[Math.min(Math.max(0, (attempt || 1) - 1), RETRY_DELAYS.length - 1)];
 const RETRY_DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 60_000;
 
@@ -251,7 +253,7 @@ const start = (bot) => {
             } else {
               // Планируем следующий retry
               fresh.retryCount += 1;
-              fresh.nextRetryAt = new Date(Date.now() + RETRY_DELAY_MS);
+              fresh.nextRetryAt = new Date(Date.now() + getRetryDelay(fresh.retryCount));
               fresh.activationResult = result.message;
               await fresh.save();
               logger.info(`[Retry] Заказ ${fresh._id}: попытка ${fresh.retryCount}/${MAX_RETRIES} отложена`);
@@ -276,7 +278,7 @@ const start = (bot) => {
           } else {
             // Откладываем retry
             fresh.retryCount = nextCount;
-            fresh.nextRetryAt = new Date(Date.now() + RETRY_DELAY_MS);
+            fresh.nextRetryAt = new Date(Date.now() + getRetryDelay(nextCount));
             await fresh.save();
           }
         }
@@ -398,8 +400,16 @@ const handleSupplierRetry = async (order, provider, bot) => {
 
   let suppRes;
   try {
-    if (order.supplierOrderId) {
-      suppRes = await supplierManager.getSupplierOrder(provider, order.supplierOrderId);
+    const lookupKey = order.supplierOrderId || order.supplierIdempotencyKey || `ord-${order._id}`;
+    let existingOrder = null;
+    try {
+      existingOrder = await supplierManager.getSupplierOrder(provider, lookupKey);
+    } catch (_) {}
+
+    if (existingOrder && existingOrder.success && (existingOrder.deliveryData || existingOrder.orderNumber || existingOrder.status)) {
+      suppRes = existingOrder;
+    } else if (order.supplierOrderId) {
+      suppRes = existingOrder || await supplierManager.getSupplierOrder(provider, order.supplierOrderId);
     } else {
       suppRes = await supplierManager.fulfillSupplierOrder(
         order.productId,
@@ -494,33 +504,33 @@ const handleSupplierRetry = async (order, provider, bot) => {
       {
         $set: {
           retryCount: currentAttempt,
-          nextRetryAt: new Date(Date.now() + 2 * 60 * 1000),
+          nextRetryAt: new Date(Date.now() + getRetryDelay(currentAttempt)),
           notes: `Retry #${currentAttempt} не удался: ${suppRes.error || 'неизвестно'}`,
         },
       }
     );
   } else {
     const finalNote = `Сбой API поставщика (${currentAttempt} попыток): ${suppRes.error || 'неизвестно'}`;
-    const pendingOrder = await Order.findOneAndUpdate(
-      { _id: order._id, status: 'retry' },
-      {
-        $set: {
-          status: 'pending',
-          nextRetryAt: null,
-          retryCount: currentAttempt,
-          notes: finalNote,
-        },
-      },
-      { new: true }
-    ).populate('userId').populate('productId');
+    logger.warn(`[Supplier Retry] Заказ #${order._id} исчерпал попытки retry (${currentAttempt}/${MAX_RETRIES}): ${finalNote}`);
+    const { user, cancelledOrder } = await failOrderWithRefund(
+      order._id,
+      finalNote,
+      `Автовозврат: сбой поставщика (${currentAttempt} попыток)`
+    );
 
-    if (pendingOrder) {
-      logger.warn(`[Supplier Retry] Заказ #${order._id} переведён в pending: ${finalNote}`);
-      const user = pendingOrder.userId;
-      const product = pendingOrder.productId;
-      await notif.notifyAdminNewOrder(pendingOrder, user, product).catch(() => {});
+    if (user && bot?.telegram) {
+      bot.telegram.sendMessage(
+        user.telegramId,
+        `❌ <b>Ошибка поставщика</b>\n\nЗаказ <code>${order._id}</code> не удалось выполнить после ${currentAttempt} попыток. Средства возвращены на баланс.`,
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
+    }
+
+    if (cancelledOrder) {
+      const product = await mongoose.model('Product').findById(cancelledOrder.productId);
+      await notif.notifyAdminNewOrder(cancelledOrder, user, product).catch(() => {});
     }
   }
 };
 
-module.exports = { start };
+module.exports = { start, handleSupplierRetry, MAX_RETRIES, RETRY_DELAYS, getRetryDelay };

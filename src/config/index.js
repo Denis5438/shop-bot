@@ -1,9 +1,13 @@
 require('dotenv').config();
 
+const parsedAdmins = (process.env.ADMIN_IDS || '').split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean);
+const parsedSuperadmins = (process.env.SUPERADMIN_IDS || '').split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean);
+
 module.exports = {
   BOT_TOKEN: process.env.BOT_TOKEN,
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/shopbot',
-  ADMIN_IDS: (process.env.ADMIN_IDS || '').split(',').map(id => parseInt(id.trim())).filter(Boolean),
+  ADMIN_IDS: parsedAdmins,
+  SUPERADMIN_IDS: parsedSuperadmins.length > 0 ? parsedSuperadmins : parsedAdmins.slice(0, 1),
   REFERRAL_BONUS: parseFloat(process.env.REFERRAL_BONUS) || 0.5,
   MIN_TOPUP: parseFloat(process.env.MIN_TOPUP) || 1,
   ITEMS_PER_PAGE: parseInt(process.env.ITEMS_PER_PAGE) || 5,

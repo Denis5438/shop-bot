@@ -1,4 +1,19 @@
 const mongoose = require('mongoose');
+const { PREFIX, encryptSecret, decryptSecret } = require('../services/secretBox.service');
+
+const secretGetter = (val) => {
+  if (typeof val === 'string' && val.startsWith(PREFIX)) {
+    return decryptSecret(val);
+  }
+  return val;
+};
+
+const secretSetter = (val) => {
+  if (typeof val === 'string' && val.trim() !== '') {
+    return encryptSecret(val);
+  }
+  return val;
+};
 
 const supplierConfigSchema = new mongoose.Schema({
   supplierId: {
@@ -8,7 +23,7 @@ const supplierConfigSchema = new mongoose.Schema({
     unique: true,
   },
   title: { type: String, required: true },
-  apiKey: { type: String, default: null },
+  apiKey: { type: String, default: null, get: secretGetter, set: secretSetter },
   baseUrl: { type: String, default: null },
   isEnabled: { type: Boolean, default: true },
   marginPercent: { type: Number, default: 30 }, // Наценка в % (по умолчанию 30%)
@@ -39,6 +54,9 @@ const supplierConfigSchema = new mongoose.Schema({
   geminiMinProfitUsd: { type: Number, default: 1.0 },         // Мин. чистая прибыль магазина ($)
   geminiStrategy: { type: String, enum: ['discount', 'balanced', 'margin'], default: 'balanced' },
   updatedAt: { type: Date, default: Date.now },
+}, {
+  toJSON: { getters: true },
+  toObject: { getters: true },
 });
 
 module.exports = mongoose.model('SupplierConfig', supplierConfigSchema);

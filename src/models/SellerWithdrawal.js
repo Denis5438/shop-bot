@@ -19,4 +19,14 @@ const sellerWithdrawalSchema = new mongoose.Schema({
 sellerWithdrawalSchema.index({ sellerId: 1, status: 1 });
 sellerWithdrawalSchema.index({ status: 1, createdAt: 1 });
 
+// Атомарный замок: у одного продавца может быть не более одной заявки в статусе pending
+sellerWithdrawalSchema.index(
+  { sellerId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'pending' },
+    name: 'unique_pending_seller_withdrawal',
+  }
+);
+
 module.exports = mongoose.model('SellerWithdrawal', sellerWithdrawalSchema);

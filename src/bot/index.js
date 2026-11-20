@@ -25,6 +25,7 @@ const { escapeHtml } = require('./utils/ui');
 
 // Models & Core
 const User = require('../models/User');
+const { createMongoSessionStore } = require('../models/TelegrafSession');
 
 const createBot = () => {
   if (!BOT_TOKEN) throw new Error('BOT_TOKEN не задан в .env');
@@ -50,7 +51,10 @@ const createBot = () => {
   })();
 
   // Session
-  bot.use(session({ defaultSession: () => ({}) }));
+  bot.use(session({
+    store: createMongoSessionStore(),
+    defaultSession: () => ({}),
+  }));
   bot.use(sessionClearMiddleware());
 
   // Scenes (Stage)

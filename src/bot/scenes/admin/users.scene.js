@@ -24,7 +24,7 @@ const showAllUsers = async (ctx, page = 1) => {
   const [total, banned, admins] = await Promise.all([
     User.countDocuments(),
     User.countDocuments({ isBanned: true }),
-    User.countDocuments({ role: 'admin' }),
+    User.countDocuments({ role: { $in: ['admin', 'superadmin'] } }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -47,7 +47,7 @@ const showAllUsers = async (ctx, page = 1) => {
   const buttons = [];
 
   for (const user of users) {
-    const statusIcon = user.isBanned ? '🚫' : user.role === 'admin' ? '🔧' : '👤';
+    const statusIcon = user.isBanned ? '🚫' : user.role === 'superadmin' ? '👑' : user.role === 'admin' ? '🔧' : '👤';
     const name = escapeHtml(
       (user.firstName || '') + (user.username ? ` (@${user.username})` : ` [${user.telegramId}]`)
     ).substring(0, 28);
@@ -119,7 +119,7 @@ const showUsersWithBalance = async (ctx, page = 1) => {
     const buttons = [];
 
     for (const user of users) {
-      const statusIcon = user.isBanned ? '🚫' : user.role === 'admin' ? '🔧' : '👤';
+      const statusIcon = user.isBanned ? '🚫' : user.role === 'superadmin' ? '👑' : user.role === 'admin' ? '🔧' : '👤';
       const cleanName = (user.firstName || '').replace(/[\r\n\t]+/g, ' ').trim();
       const namePart = cleanName + (user.username ? ` (@${user.username})` : ` [${user.telegramId}]`);
       const displayName = (namePart.trim() || `ID: ${user.telegramId}`).substring(0, 24);
@@ -308,6 +308,11 @@ const showUserProfile = async (ctx, userId) => {
     const userBalance = typeof user.balance === 'number' ? user.balance : (parseFloat(user.balance) || 0);
     const userSpent = typeof user.totalSpent === 'number' ? user.totalSpent : (parseFloat(user.totalSpent) || 0);
     const regDate = user.createdAt ? formatDateMSK(user.createdAt) : 'Неизвестно';
+    const roleDisplay = user.role === 'superadmin'
+      ? '👑 Главный администратор'
+      : user.role === 'admin'
+        ? '🔧 Администратор'
+        : '👤 Пользователь';
 
     const text =
       `👤 <b>Пользователь</b>\n\n` +
@@ -315,7 +320,7 @@ const showUserProfile = async (ctx, userId) => {
       `📛 Имя: ${nameDisplay}\n` +
       `👤 Username: ${usernameDisplay}\n` +
       `🌐 Язык: ${escapeHtml(user.language || 'ru')}\n` +
-      `🔘 Роль: ${escapeHtml(user.role || 'user')}\n` +
+      `🔘 Роль: ${roleDisplay}\n` +
       `🚫 Бан: ${user.isBanned ? 'Да' : 'Нет'}\n` +
       tosLine +
       tosLegalProof + '\n' +
@@ -333,15 +338,22 @@ const showUserProfile = async (ctx, userId) => {
       buttons.push([Markup.button.callback('🧹 Списать всё (Обнулить)', `admin:user:zero_balance:${user._id}`)]);
     }
 
-    buttons.push(
-      [
-        user.isBanned
-          ? Markup.button.callback('✅ Разбанить', `admin:user:unban:${user._id}`)
-          : Markup.button.callback('🚫 Забанить', `admin:user:ban:${user._id}`),
+    const banBtn = user.isBanned
+      ? Markup.button.callback('✅ Разбанить', `admin:user:unban:${user._id}`)
+      : Markup.button.callback('🚫 Забанить', `admin:user:ban:${user._id}`);
+
+    const banAndRoleRow = [banBtn];
+    // Изменять роли может строго супер-администратор, и супер-администратора нельзя разжаловать через интерфейс
+    if (ctx.user?.role === 'superadmin' && user.role !== 'superadmin') {
+      banAndRoleRow.push(
         user.role === 'admin'
           ? Markup.button.callback('👤 Снять права', `admin:user:demote:${user._id}`)
-          : Markup.button.callback('🔧 Сделать админом', `admin:user:promote:${user._id}`),
-      ],
+          : Markup.button.callback('🔧 Сделать админом', `admin:user:promote:${user._id}`)
+      );
+    }
+
+    buttons.push(
+      banAndRoleRow,
       [
         isSeller
           ? Markup.button.callback('👔 Снять селлера', `admin:user:seller_toggle:${user._id}`)
@@ -547,9 +559,21 @@ const toggleBan = async (ctx, userId) => {
 };
 
 const toggleRole = async (ctx, userId) => {
+  if (ctx.user?.role !== 'superadmin') {
+    return ctx.answerCbQuery('❌ Только главный администратор может изменять роли', { show_alert: true });
+  }
   const user = await User.findById(userId);
   if (!user) return ctx.answerCbQuery('❌ Не найден', { show_alert: true });
-  user.role = user.role === 'admin' ? 'user' : 'admin';
+  if (user.role === 'superadmin') {
+    return ctx.answerCbQuery('❌ Нельзя изменить роль главного администратора', { show_alert: true });
+  }
+  if (user.role === 'admin') {
+    user.role = 'user';
+    user.promotedBy = null;
+  } else {
+    user.role = 'admin';
+    user.promotedBy = ctx.user.telegramId;
+  }
   await user.save();
   // Сброс кэша middleware, чтобы смена роли применилась мгновенно
   require('../../middlewares/user').invalidateUserCache(user.telegramId);

@@ -44,7 +44,7 @@ const getAllSuppliers = async () => {
 /**
  * Сохранение API-ключа и наценки поставщика
  */
-const saveSupplierKey = async (supplierId, apiKey, marginPercent = 30, marginFixed = 0) => {
+const saveSupplierKey = async (supplierId, apiKey, marginPercent, marginFixed) => {
   const cleanKey = String(apiKey || '').trim();
   const adapter = ADAPTERS[supplierId];
   let balance = 0;
@@ -56,16 +56,41 @@ const saveSupplierKey = async (supplierId, apiKey, marginPercent = 30, marginFix
     }
   }
 
+  const setFields = {
+    apiKey: cleanKey,
+    cachedBalance: balance,
+    lastSyncAt: new Date(),
+    isEnabled: Boolean(cleanKey),
+  };
+
+  const setOnInsertFields = {};
+
+  if (marginPercent !== undefined && marginPercent !== null && marginPercent !== '') {
+    const parsedPercent = parseFloat(marginPercent);
+    if (Number.isFinite(parsedPercent)) {
+      setFields.marginPercent = parsedPercent;
+    }
+  } else {
+    setOnInsertFields.marginPercent = 30;
+  }
+
+  if (marginFixed !== undefined && marginFixed !== null && marginFixed !== '') {
+    const parsedFixed = parseFloat(marginFixed);
+    if (Number.isFinite(parsedFixed)) {
+      setFields.marginFixed = parsedFixed;
+    }
+  } else {
+    setOnInsertFields.marginFixed = 0;
+  }
+
+  const updateDoc = { $set: setFields };
+  if (Object.keys(setOnInsertFields).length > 0) {
+    updateDoc.$setOnInsert = setOnInsertFields;
+  }
+
   const updated = await SupplierConfig.findOneAndUpdate(
     { supplierId },
-    {
-      apiKey: cleanKey,
-      marginPercent: parseFloat(marginPercent) || 30,
-      marginFixed: parseFloat(marginFixed) || 0,
-      cachedBalance: balance,
-      lastSyncAt: new Date(),
-      isEnabled: Boolean(cleanKey),
-    },
+    updateDoc,
     { new: true, upsert: true }
   );
 
