@@ -164,10 +164,10 @@ async function runTestSuite() {
     });
 
     const res1 = await bybitUidPaymentService.allocateUniqueAmount(15.0);
-    assert(res1.suffix >= 10 && res1.suffix <= 99, 'Suffix should be integer between 10 and 99');
+    assert(res1.suffix >= 1 && res1.suffix <= 99, 'Suffix should be integer between 1 and 99');
     assert(
-      res1.suffixFractional >= 0.001 && res1.suffixFractional <= 0.0099,
-      'Fractional suffix should be between 0.0010 and 0.0099'
+      res1.suffixFractional >= 0.0001 && res1.suffixFractional <= 0.0099,
+      'Fractional suffix should be between 0.0001 and 0.0099'
     );
     const expectedDiff = Number((res1.exactAmount - 15.0).toFixed(4));
     assert.strictEqual(
@@ -178,6 +178,7 @@ async function runTestSuite() {
 
     // 2.2 Collision avoidance: simulate active invoices with existing suffixes
     const occupiedList = [
+      { exactAmount: 15.0001, suffix: 1 },
       { exactAmount: 15.001, suffix: 10 },
       { exactAmount: 15.0011, suffix: 11 },
       { exactAmount: 15.0012, suffix: 12 },
@@ -191,15 +192,16 @@ async function runTestSuite() {
 
     for (let i = 0; i < 20; i++) {
       const res = await bybitUidPaymentService.allocateUniqueAmount(15.0);
+      assert.notStrictEqual(res.suffix, 1, 'Must not allocate occupied suffix 1');
       assert.notStrictEqual(res.suffix, 10, 'Must not allocate occupied suffix 10');
       assert.notStrictEqual(res.suffix, 11, 'Must not allocate occupied suffix 11');
       assert.notStrictEqual(res.suffix, 12, 'Must not allocate occupied suffix 12');
       assert.notStrictEqual(res.suffix, 38, 'Must not allocate occupied suffix 38 (15.0038)');
     }
 
-    // 2.3 Collision avoidance when all but one suffix are occupied
+    // 2.3 Collision avoidance when all but one suffix are occupied (1..98 occupied, only 99 free)
     const allExcept99 = [];
-    for (let s = 10; s <= 98; s++) {
+    for (let s = 1; s <= 98; s++) {
       allExcept99.push({
         exactAmount: Number((15.0 + s / 10000).toFixed(4)),
         suffix: s,
@@ -215,7 +217,7 @@ async function runTestSuite() {
     assert.strictEqual(resOnly99.suffix, 99, 'Only available suffix 99 must be chosen');
     assert.strictEqual(resOnly99.exactAmount, 15.0099, 'exactAmount must be 15.0099');
 
-    // 2.4 Error when all 90 suffixes are occupied
+    // 2.4 Error when all 99 suffixes are occupied
     const allOccupied = [...allExcept99, { exactAmount: 15.0099, suffix: 99 }];
     BybitInvoice.find = () => ({
       select: () => ({
@@ -229,6 +231,23 @@ async function runTestSuite() {
       },
       /заняты/i,
       'Must reject when all suffixes are occupied'
+    );
+
+    // 2.5 Query checks both pending and processing invoices
+    let capturedFindFilter = null;
+    BybitInvoice.find = (filter) => {
+      capturedFindFilter = filter;
+      return {
+        select: () => ({
+          lean: async () => [],
+        }),
+      };
+    };
+    await bybitUidPaymentService.allocateUniqueAmount(15.0);
+    assert.deepStrictEqual(
+      capturedFindFilter.status,
+      { $in: ['pending', 'processing'] },
+      'allocateUniqueAmount must query both pending and processing invoices'
     );
 
     console.log('  ✅ Test 2 Passed: Suffix allocation generates unique 4-decimal amounts and prevents collisions.\n');
@@ -325,8 +344,8 @@ async function runTestSuite() {
     'Text must contain warning about USDT and exact amount'
   );
   assert.ok(
-    renderedScreenText.includes('<i>Зачисление автоматическое.</i>'),
-    'Text must state automatic credit'
+    renderedScreenText.includes('⚡ <b>Оплата зачисляется автоматически в течение 10–30 секунд после перевода. Нажимать ничего не нужно — бот сам пришлёт подтверждение.</b>'),
+    'Text must state automatic credit within 10-30 seconds'
   );
 
   // 7. Expiry & Bill number
@@ -346,32 +365,27 @@ async function runTestSuite() {
     'Text must contain waiting status with hourglass'
   );
 
-  // 9. Keyboard buttons
+  // 9. Keyboard buttons: Only Cancel invoice button (Check button removed to prevent race conditions)
   assert(renderedScreenKeyboard, 'Invoice card must have inline keyboard');
-  assert.strictEqual(renderedScreenKeyboard.length, 2, 'Keyboard must have 2 rows');
+  assert.strictEqual(renderedScreenKeyboard.length, 1, 'Keyboard must have 1 row');
 
-  // Row 1: Check payment
+  // Row 1: Cancel invoice
   assert.strictEqual(renderedScreenKeyboard[0].length, 1);
   assert.ok(
-    renderedScreenKeyboard[0][0].text.includes('Проверить перевод'),
-    'Row 1 must be Check payment button'
+    renderedScreenKeyboard[0][0].text.includes('Отменить счёт'),
+    'Row 1 must be Cancel invoice button'
   );
   assert.strictEqual(
     renderedScreenKeyboard[0][0].callback_data,
-    `bybit_uid:check:${mockInvoice._id}`,
-    'Row 1 callback must be bybit_uid:check:invoiceId'
+    `bybit_uid:cancel:${mockInvoice._id}`,
+    'Row 1 callback must be bybit_uid:cancel:invoiceId'
   );
 
-  // Row 2: Cancel invoice
-  assert.strictEqual(renderedScreenKeyboard[1].length, 1);
-  assert.ok(
-    renderedScreenKeyboard[1][0].text.includes('Отменить счёт'),
-    'Row 2 must be Cancel invoice button'
-  );
+  // Verify check button is absent
   assert.strictEqual(
-    renderedScreenKeyboard[1][0].callback_data,
-    `bybit_uid:cancel:${mockInvoice._id}`,
-    'Row 2 callback must be bybit_uid:cancel:invoiceId'
+    renderedScreenKeyboard.flat().some((b) => b.callback_data.startsWith('bybit_uid:check')),
+    false,
+    'Manual check button must be absent'
   );
 
   console.log('  ✅ Test 3 Passed: Invoice card text, HTML tags, and callbacks match user screenshot 1:1.\n');
@@ -616,9 +630,9 @@ async function runTestSuite() {
     );
 
     // 5.3 Verify that suffix is now free in allocateUniqueAmount
-    // (Only pending invoices with status: 'pending' are considered occupied)
+    // (Only active invoices with status in ['pending', 'processing'] are considered occupied)
     BybitInvoice.find = (filter) => {
-      assert.strictEqual(filter.status, 'pending', 'Allocator must only query pending invoices');
+      assert.deepStrictEqual(filter.status, { $in: ['pending', 'processing'] }, 'Allocator queries pending and processing invoices');
       return {
         select: () => ({
           lean: async () => [], // Cancelled invoice is not returned
@@ -627,7 +641,7 @@ async function runTestSuite() {
     };
 
     const reallocated = await bybitUidPaymentService.allocateUniqueAmount(15.0);
-    assert(reallocated.suffix >= 10 && reallocated.suffix <= 99, 'Reallocation succeeds');
+    assert(reallocated.suffix >= 1 && reallocated.suffix <= 99, 'Reallocation succeeds');
 
     // 5.4 Test handleBybitUidCancel route handler
     assert.strictEqual(
@@ -718,6 +732,268 @@ async function runTestSuite() {
     BybitInvoice.updateMany = origUpdateMany;
     BybitInvoice.find = origInvoiceFind;
     Object.defineProperty(mongoose.connection, 'readyState', { value: origReadyState, configurable: true });
+  }
+
+  // =========================================================================
+  // Test 7: CAS Lock Concurrency & Stuck Processing Auto-Unlock
+  // =========================================================================
+  console.log('Test 7: CAS Lock Concurrency & Stuck Processing Recovery');
+
+  const origFindOneAndUpdate = BybitInvoice.findOneAndUpdate;
+  const origUpdateOne = BybitInvoice.updateOne;
+  const origFindByIdT7 = BybitInvoice.findById;
+  const origUpdateManyT7 = BybitInvoice.updateMany;
+  const origTopupSaveT7 = TopupRequest.prototype.save;
+  const origTxSaveT7 = Transaction.prototype.save;
+  const origUserUpdateOneT7 = User.updateOne;
+  const origUserFindByIdT7 = User.findById;
+
+  TopupRequest.prototype.save = async function () { return this; };
+  Transaction.prototype.save = async function () { return this; };
+  User.updateOne = async () => ({ modifiedCount: 1 });
+  User.findById = async () => ({
+    _id: testUserId,
+    telegramId: 888777,
+    balance: 0,
+    language: 'ru',
+  });
+
+  try {
+    // 7.1 Concurrency simulation: Two simultaneous calls to checkInvoice
+    const concurrentInvoice = {
+      _id: new mongoose.Types.ObjectId(),
+      invoiceNumber: 'INV-CAS-CONC-001',
+      userId: testUserId,
+      baseAmount: 20.0,
+      exactAmount: 20.0015,
+      status: 'pending',
+      lockedAt: null,
+      save: async function () {
+        return this;
+      },
+    };
+
+    BybitInvoice.findById = async (id) => {
+      if (String(id) === String(concurrentInvoice._id)) return concurrentInvoice;
+      return null;
+    };
+
+    // Atomic CAS mock: only succeeds if status === 'pending'
+    BybitInvoice.findOneAndUpdate = async (filter, update) => {
+      if (
+        String(filter._id) === String(concurrentInvoice._id) &&
+        concurrentInvoice.status === filter.status
+      ) {
+        concurrentInvoice.status = update.$set.status;
+        concurrentInvoice.lockedAt = update.$set.lockedAt;
+        return concurrentInvoice;
+      }
+      return null; // CAS lock failed
+    };
+
+    const mockRecordsForCas = [
+      { id: 'tx-cas-conc-99', coin: 'USDT', amount: '20.0015', status: 2 },
+    ];
+
+    BybitInvoice.findOne = async () => null;
+    TopupRequest.findOne = async () => null;
+
+    const [resFirst, resSecond] = await Promise.all([
+      bybitUidPaymentService.checkInvoice(concurrentInvoice._id, {
+        mockRecords: mockRecordsForCas,
+      }),
+      bybitUidPaymentService.checkInvoice(concurrentInvoice._id, {
+        mockRecords: mockRecordsForCas,
+      }),
+    ]);
+
+    const oneSucceeded = (resFirst.success && !resSecond.success) || (!resFirst.success && resSecond.success);
+    assert.strictEqual(oneSucceeded, true, 'Exactly one concurrent request must succeed and acquire CAS lock');
+
+    const failedResult = resFirst.success ? resSecond : resFirst;
+    assert.ok(
+      failedResult.reason.includes('already processing') || failedResult.reason.includes('locked'),
+      'Failed caller must be rejected due to CAS lock'
+    );
+    assert.strictEqual(concurrentInvoice.status, 'completed', 'Winner must set status to completed');
+
+    // 7.2 Release lock on unmatched records
+    const releaseInvoice = {
+      _id: new mongoose.Types.ObjectId(),
+      invoiceNumber: 'INV-CAS-RELEASE-001',
+      userId: testUserId,
+      baseAmount: 20.0,
+      exactAmount: 20.0088,
+      status: 'pending',
+      lockedAt: null,
+      save: async function () {
+        return this;
+      },
+    };
+    BybitInvoice.findById = async () => releaseInvoice;
+    BybitInvoice.findOneAndUpdate = async (filter, update) => {
+      if (String(filter._id) === String(releaseInvoice._id) && releaseInvoice.status === filter.status) {
+        releaseInvoice.status = update.$set.status;
+        releaseInvoice.lockedAt = update.$set.lockedAt;
+        return releaseInvoice;
+      }
+      return null;
+    };
+    BybitInvoice.updateOne = async (filter, update) => {
+      if (String(filter._id) === String(releaseInvoice._id)) {
+        releaseInvoice.status = update.$set.status;
+        releaseInvoice.lockedAt = update.$set.lockedAt;
+      }
+      return { modifiedCount: 1 };
+    };
+
+    const unmatchedRes = await bybitUidPaymentService.checkInvoice(releaseInvoice._id, {
+      mockRecords: [], // empty -> unmatched
+    });
+    assert.strictEqual(unmatchedRes.success, false);
+    assert.strictEqual(releaseInvoice.status, 'pending', 'Status must be safely released back to pending');
+    assert.strictEqual(releaseInvoice.lockedAt, null, 'lockedAt must be cleared on release');
+
+    // 7.3 Auto-unlock stuck processing invoices in poller
+    let unlockFilter = null;
+    let unlockAction = null;
+    const origFindT7 = BybitInvoice.find;
+    BybitInvoice.find = () => ({
+      sort: () => Promise.resolve([]),
+    });
+    BybitInvoice.updateMany = async (filter, action) => {
+      if (filter.status === 'processing') {
+        unlockFilter = filter;
+        unlockAction = action;
+        return { modifiedCount: 2 };
+      }
+      return { modifiedCount: 0 };
+    };
+
+    const origReadyState = mongoose.connection.readyState;
+    Object.defineProperty(mongoose.connection, 'readyState', { value: 1, configurable: true });
+
+    await bybitUidPoller.poll();
+
+    assert(unlockFilter, 'updateMany must be called for stuck processing invoices');
+    assert.strictEqual(unlockFilter.status, 'processing');
+    assert.deepStrictEqual(unlockAction, { $set: { status: 'pending', lockedAt: null } });
+
+    BybitInvoice.find = origFindT7;
+    Object.defineProperty(mongoose.connection, 'readyState', { value: origReadyState, configurable: true });
+
+    console.log('  ✅ Test 7 Passed: CAS lock prevents concurrent races, releases on unmatched, and poller auto-unlocks stuck invoices.\n');
+  } finally {
+    BybitInvoice.findOneAndUpdate = origFindOneAndUpdate;
+    BybitInvoice.updateOne = origUpdateOne;
+    BybitInvoice.findById = origFindByIdT7;
+    BybitInvoice.updateMany = origUpdateManyT7;
+    TopupRequest.prototype.save = origTopupSaveT7;
+    Transaction.prototype.save = origTxSaveT7;
+    User.updateOne = origUserUpdateOneT7;
+    User.findById = origUserFindByIdT7;
+  }
+
+  // =========================================================================
+  // Test 8: Legacy Button Safeguard
+  // =========================================================================
+  console.log('Test 8: Legacy Button Safeguard & Race Prevention');
+
+  let alertAnswered = null;
+  const mockLegacyCtx = {
+    answerCbQuery: async (msg, opts) => {
+      alertAnswered = { msg, opts };
+    },
+  };
+
+  const pendingInvoiceDoc = {
+    _id: new mongoose.Types.ObjectId(),
+    status: 'pending',
+  };
+  BybitInvoice.findById = async () => pendingInvoiceDoc;
+
+  await shopScene.handleBybitUidCheck(mockLegacyCtx, pendingInvoiceDoc._id);
+
+  assert(alertAnswered, 'answerCbQuery must be called');
+  assert.strictEqual(alertAnswered.opts?.show_alert, true, 'Must display as alert');
+  assert.ok(
+    alertAnswered.msg.includes('Оплата проверяется автоматически') ||
+      alertAnswered.msg.includes('нажимать кнопку не требуется'),
+    'Alert text must notify user that check is automatic without racing'
+  );
+  assert.strictEqual(pendingInvoiceDoc.status, 'pending', 'Pending status must not be modified');
+
+  console.log('  ✅ Test 8 Passed: Legacy button clicks trigger safe alert without racing background poller.\n');
+
+  // =========================================================================
+  // Test 9: Poller Batching (Single Bybit API Call per 20s Cycle)
+  // =========================================================================
+  console.log('Test 9: Poller Batching & Single API Request per Cycle');
+
+  const origFetchRecentTransfers = bybitUidPaymentService.fetchRecentTransfers;
+  const origReadyStateT9 = mongoose.connection.readyState;
+  Object.defineProperty(mongoose.connection, 'readyState', { value: 1, configurable: true });
+
+  let fetchCallsCount = 0;
+  bybitUidPaymentService.fetchRecentTransfers = async (limit = 50) => {
+    fetchCallsCount += 1;
+    return {
+      ok: true,
+      rows: [
+        { id: 'tx-batch-101', coin: 'USDT', amount: '10.0002', status: 2 },
+      ],
+    };
+  };
+
+  const batchInvoices = [
+    {
+      _id: new mongoose.Types.ObjectId(),
+      invoiceNumber: 'INV-BATCH-01',
+      exactAmount: 10.0001,
+      baseAmount: 10.0,
+      status: 'pending',
+    },
+    {
+      _id: new mongoose.Types.ObjectId(),
+      invoiceNumber: 'INV-BATCH-02',
+      exactAmount: 10.0002, // Matches tx-batch-101
+      baseAmount: 10.0,
+      status: 'pending',
+    },
+    {
+      _id: new mongoose.Types.ObjectId(),
+      invoiceNumber: 'INV-BATCH-03',
+      exactAmount: 10.0003,
+      baseAmount: 10.0,
+      status: 'pending',
+    },
+  ];
+
+  BybitInvoice.find = () => ({
+    sort: () => Promise.resolve(batchInvoices),
+  });
+  BybitInvoice.updateMany = async () => ({ modifiedCount: 0 });
+
+  let checkedInvoices = [];
+  const origCheckInvoice = bybitUidPaymentService.checkInvoice;
+  bybitUidPaymentService.checkInvoice = async (invId, opts) => {
+    checkedInvoices.push({ invId, opts });
+    return { success: true, alreadyCompleted: false };
+  };
+
+  try {
+    await bybitUidPoller.poll();
+
+    assert.strictEqual(fetchCallsCount, 1, 'fetchRecentTransfers must be called exactly ONCE per cycle (no N+1 storm)');
+    assert.strictEqual(checkedInvoices.length, 1, 'Only pre-matched candidate invoice should trigger checkInvoice');
+    assert.strictEqual(String(checkedInvoices[0].invId), String(batchInvoices[1]._id));
+    assert(Array.isArray(checkedInvoices[0].opts?.mockRecords), 'Batch records must be forwarded to checkInvoice');
+
+    console.log('  ✅ Test 9 Passed: Poller queries Bybit API once for all pending invoices and pre-filters in memory.\n');
+  } finally {
+    bybitUidPaymentService.fetchRecentTransfers = origFetchRecentTransfers;
+    bybitUidPaymentService.checkInvoice = origCheckInvoice;
+    Object.defineProperty(mongoose.connection, 'readyState', { value: origReadyStateT9, configurable: true });
   }
 
   console.log('🎉 ALL TESTS PASSED! Bybit UID System verified with 100% compliance. 🚀\n');

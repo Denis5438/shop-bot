@@ -52,22 +52,43 @@ const refundAndCloseOrder = async ({ orderId, statusFilter, newStatus, activatio
 
     if (!order) return;
 
-    // Атомарный $inc: не теряет параллельные изменения баланса
+    const refundAmount = (typeof order.price === 'number' && Number.isFinite(order.price) && order.price > 0)
+      ? order.price
+      : 0;
+
+    // Атомарный $inc: не теряет параллельные изменения баланса и totalSpent.
+    // Уменьшаем totalSpent для предотвращения VIP-фарминга [SEC-CAT-02].
     user = await User.findOneAndUpdate(
       { _id: order.userId },
-      { $inc: { balance: order.price } },
+      {
+        $inc: {
+          balance: refundAmount,
+          totalSpent: -refundAmount,
+        },
+      },
       { new: true, ...(sessionOptions || {}) }
     );
+
+    // Защита от отрицательного totalSpent: если сумма списания превысила
+    // накопленный totalSpent (например при сбросе или аномалии), фиксируем на 0.
+    if (user && typeof user.totalSpent === 'number' && user.totalSpent < 0) {
+      user = await User.findOneAndUpdate(
+        { _id: order.userId, totalSpent: { $lt: 0 } },
+        { $set: { totalSpent: 0 } },
+        { new: true, ...(sessionOptions || {}) }
+      );
+    }
 
     await new Transaction({
       userId: order.userId,
       type: 'refund',
-      amount: order.price,
+      amount: refundAmount,
       orderId: order._id,
       description: txDescription,
     }).save(sessionOptions);
 
-    await Key.updateOne(
+    // Возвращаем ВСЕ цифровые ключи заказа через updateMany (было updateOne) [SEC-FIN-07]
+    await Key.updateMany(
       { usedByOrder: order._id },
       { $set: { isUsed: false, usedByOrder: null, usedAt: null } },
       sessionOptions

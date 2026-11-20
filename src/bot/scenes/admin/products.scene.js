@@ -5,6 +5,7 @@ const Order = require('../../../models/Order');
 const Seller = require('../../../models/Seller');
 const keysScene = require('./keys.scene');
 const notif = require('../../../services/notification.service');
+const logger = require('../../../config/logger');
 const geminiPricing = require('../../../services/geminiPricing.service');
 const { escapeHtml, extractTextWithEmojis, safeEdit } = require('../../utils/ui');
 const {
@@ -90,7 +91,7 @@ const showProductsList = async (ctx, page = 1, searchQuery = undefined) => {
     const autoKeys = (c[prov] || 0) + (c['__null__'] || 0);
     const stock = autoKeys > 0
       ? autoKeys
-      : (product.type === 'manual' || ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider)
+      : (product.type === 'manual' || product.provider === 'jaha'
           ? (product.manualStock === -1 ? '∞' : product.manualStock)
           : 0);
     const status = product.isActive ? '✅' : '🔴';
@@ -139,7 +140,7 @@ const showProductEdit = async (ctx, productId, page = 1) => {
   const autoKeysCount = await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   const stock = autoKeysCount > 0
     ? `${autoKeysCount} шт. (автовыдача ⚡)`
-    : (product.type === 'manual' || ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider)
+    : (product.type === 'manual' || product.provider === 'jaha'
         ? (product.manualStock === -1 ? '∞ (ручной остаток)' : `${product.manualStock} шт.`)
         : '0 шт. (нет в наличии)');
 
@@ -683,8 +684,7 @@ const handleProductInput = async (ctx) => {
     ctx.session.productId = null;
 
     if (updatedProduct && (stock > 0 || stock === -1)) {
-      const notif = require('../../../services/notification.service');
-      notif.broadcastRestock(updatedProduct).catch(() => {});
+      notif.notifyWaitlist(updatedProduct).catch((e) => logger.warn(`notifyWaitlist: ${e.message}`));
     }
 
     await ctx.reply(`✅ Остаток установлен: <b>${stock === -1 ? '∞' : stock}</b> шт.!`, { parse_mode: 'HTML' });

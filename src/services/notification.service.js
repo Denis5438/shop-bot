@@ -11,6 +11,42 @@ const { runBroadcastQueue } = require('./rateLimiter.service');
 
 let botInstance = null;
 
+// ─── Broadcast Singleton Lock & Abort Support ──────────────────────────────
+let activeBroadcast = null;
+// activeBroadcast: { id, type, adminId, startedAt, abortController, total, sent, failed, blocked }
+
+const isBroadcastActive = () => Boolean(activeBroadcast);
+
+const getActiveBroadcastInfo = () => activeBroadcast;
+
+const acquireBroadcastLock = ({ type = 'custom', adminId = null, total = 0 } = {}) => {
+  if (activeBroadcast) return false;
+  activeBroadcast = {
+    id: Date.now().toString(),
+    type,
+    adminId,
+    startedAt: new Date(),
+    total,
+    sent: 0,
+    failed: 0,
+    blocked: 0,
+    abortController: new AbortController(),
+  };
+  return activeBroadcast;
+};
+
+const releaseBroadcastLock = () => {
+  activeBroadcast = null;
+};
+
+const cancelActiveBroadcast = () => {
+  if (activeBroadcast?.abortController) {
+    activeBroadcast.abortController.abort();
+    return true;
+  }
+  return false;
+};
+
 const h = (value, fallback = '') => escapeHtml(value ?? fallback);
 
 const setBot = (bot) => { botInstance = bot; };
@@ -496,8 +532,8 @@ const sendTestBroadcast = async (adminTelegramId, product, stock) => {
 };
 
 // ─── Рассылка нового товара пользователям (опционально - сегменту) ───────────
-const broadcastNewProduct = async (product, stock, segment = 'all') => {
-  if (!botInstance) return { sent: 0, failed: 0 };
+const broadcastNewProduct = async (product, stock, segment = 'all', options = {}) => {
+  if (!botInstance) return { sent: 0, failed: 0, blocked: 0, total: 0 };
 
   const { query } = await buildSegmentQuery(segment);
   const cursor = User.find(query)
@@ -505,8 +541,11 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
     .lean()
     .cursor();
 
+  const signal = options?.signal || activeBroadcast?.abortController?.signal || null;
+
   const result = await runBroadcastQueue({
     items: cursor,
+    signal,
     sendFn: async (user) => {
       const lang = user.language || 'ru';
       const { text, keyboard } = buildProductBroadcastMessage(product, stock, lang);
@@ -519,7 +558,13 @@ const broadcastNewProduct = async (product, stock, segment = 'all') => {
     delayMs: 35,
   });
 
-  return { sent: result.sent, failed: result.failed + result.blocked };
+  return {
+    sent: result.sent,
+    failed: result.failed,
+    blocked: result.blocked,
+    total: result.total,
+    aborted: result.aborted,
+  };
 };
 
 // ─── Уведомление продавцу о новом заказе ─────────────────────────────────────
@@ -1006,6 +1051,11 @@ const notifyPublicRestockAndNew = async (supplier, { restocked = [], newlyImport
 module.exports = {
   setBot,
   getBotInstance,
+  isBroadcastActive,
+  acquireBroadcastLock,
+  releaseBroadcastLock,
+  cancelActiveBroadcast,
+  getActiveBroadcastInfo,
   sendToAdmins,
   sendAdminAlertThrottled,
   sendToUser,

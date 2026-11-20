@@ -250,7 +250,17 @@ const calculateDiscount = async (promo, orderAmount, productId = null, options =
   }
 
   discountAmount = Math.round(discountAmount * 100) / 100;
-  const finalPrice = Math.max(0, Math.round((orderAmount - discountAmount) * 100) / 100);
+  let finalPrice = Math.max(0, Math.round((orderAmount - discountAmount) * 100) / 100);
+
+  // [SEC-CAT-03] Enforce costPrice floor if costPrice is passed in options
+  if (opts.costPrice !== undefined && opts.costPrice !== null) {
+    const costLimit = Math.max(0, Number(opts.costPrice) || 0);
+    const minAllowedTotal = Math.min(orderAmount, Math.max(0.01 * qty, costLimit * qty));
+    if (finalPrice < minAllowedTotal) {
+      finalPrice = minAllowedTotal;
+      discountAmount = Math.round((orderAmount - finalPrice) * 100) / 100;
+    }
+  }
 
   return { valid: true, discountAmount, finalPrice };
 };

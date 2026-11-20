@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const supplierConfigSchema = new mongoose.Schema({
   supplierId: {
     type: String,
-    enum: ['jaha', 'akunding', 'canboso', 'trumpstore'],
+    enum: ['jaha'],
     required: true,
     unique: true,
   },

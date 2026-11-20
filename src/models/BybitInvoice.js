@@ -21,13 +21,16 @@ const bybitInvoiceSchema = new mongoose.Schema({
   adminUid: { type: String, required: true },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'cancelled', 'expired'],
+    enum: ['pending', 'processing', 'completed', 'cancelled', 'expired'],
     default: 'pending',
+  },
+  lockedAt: {
+    type: Date,
+    default: null,
   },
   txId: {
     type: String,
     default: null,
-    sparse: true,
   },
   expiresAt: { type: Date, required: true },
   createdAt: { type: Date, default: Date.now },
@@ -35,9 +38,17 @@ const bybitInvoiceSchema = new mongoose.Schema({
 });
 
 // Indexes for fast lookup
-bybitInvoiceSchema.index({ exactAmount: 1 });
+bybitInvoiceSchema.index(
+  { exactAmount: 1 },
+  { unique: true, partialFilterExpression: { status: { $in: ['pending', 'processing'] } } }
+);
+bybitInvoiceSchema.index({ status: 1, lockedAt: 1 });
 bybitInvoiceSchema.index({ status: 1, expiresAt: 1 });
 bybitInvoiceSchema.index({ userId: 1, createdAt: -1 });
+bybitInvoiceSchema.index(
+  { txId: 1 },
+  { unique: true, partialFilterExpression: { txId: { $type: 'string' } } }
+);
 
 bybitInvoiceSchema.virtual('suffixFractional').get(function () {
   return this.suffix ? Number((this.suffix / 10000).toFixed(4)) : 0;

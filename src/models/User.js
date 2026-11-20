@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema({
   telegramId: { type: Number, required: true, unique: true },
@@ -73,7 +74,7 @@ userSchema.index({ isBanned: 1, totalSpent: -1 });
 
 userSchema.pre('save', function (next) {
   if (!this.referralCode) {
-    this.referralCode = Math.random().toString(36).substr(2, 8).toUpperCase();
+    this.referralCode = crypto.randomBytes(4).toString('hex').toUpperCase();
   }
   next();
 });

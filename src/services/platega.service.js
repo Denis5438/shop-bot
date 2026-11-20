@@ -1,4 +1,5 @@
 const axios = require('axios');
+const crypto = require('crypto');
 const logger = require('../config/logger');
 const { getSettings } = require('./settingsCache.service');
 
@@ -166,6 +167,13 @@ const checkStatus = async (transactionId) => {
   }
 };
 
+const safeCompare = (a, b) => {
+  const bufA = Buffer.from(String(a || '').trim());
+  const bufB = Buffer.from(String(b || '').trim());
+  if (bufA.length === 0 || bufB.length === 0 || bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+};
+
 /**
  * Валидирует заголовки входящего Webhook запроса
  * @param {Object} incomingHeaders
@@ -179,10 +187,10 @@ const verifyWebhookHeaders = async (incomingHeaders = {}) => {
 
   if (!merchantId || !secret) return false;
 
-  return (
-    String(merchantId).trim() === config.merchantId &&
-    String(secret).trim() === config.secret
-  );
+  const merchantMatch = safeCompare(merchantId, config.merchantId);
+  const secretMatch = safeCompare(secret, config.secret);
+
+  return merchantMatch && secretMatch;
 };
 
 module.exports = {

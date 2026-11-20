@@ -89,9 +89,10 @@ test('Badges: Instant delivery detected for key, ready_account, or external prov
   assert.strictEqual(getProductBadges(jahaProduct).isInstant, true);
   assert.ok(getProductBadges(jahaProduct).badgeStr.includes('⚡'));
 
-  // Case 4: provider === 'canboso'
+  // Case 4: Deprecated non-jaha provider (canboso) -> not instant (only jaha is active supplier)
   const canbosoProduct = { type: 'manual', deliveryMethod: 'activation', provider: 'canboso' };
-  assert.strictEqual(getProductBadges(canbosoProduct).isInstant, true);
+  assert.strictEqual(getProductBadges(canbosoProduct).isInstant, false);
+  assert.ok(!getProductBadges(canbosoProduct).badgeStr.includes('⚡'));
 
   // Case 5: manual activation local -> not instant
   const manualLocal = { type: 'manual', deliveryMethod: 'activation', provider: 'local' };

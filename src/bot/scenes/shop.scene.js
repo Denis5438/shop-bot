@@ -101,7 +101,7 @@ const stockIndicator = (stock, t) => {
 /**
  * Бейджи товара для каталога и карточки товара:
  * 1. 🔥 -X% — активен Flash Sale (flashSale.enabled && expiresAt > now && discountPercent > 0)
- * 2. ⚡      — моментальная выдача (type: key, deliveryMethod: ready_account, поставщики jaha/canboso/akunding/trumpstore)
+ * 2. ⚡      — моментальная выдача (type: key, deliveryMethod: ready_account, поставщик jaha)
  * 3. 🆕     — новинка (добавлен за последние 7 дней)
  */
 const getProductBadges = (product) => {
@@ -128,7 +128,7 @@ const getProductBadges = (product) => {
   const isInstant = Boolean(
     product.type === 'key' ||
     product.deliveryMethod === 'ready_account' ||
-    ['jaha', 'canboso', 'akunding', 'trumpstore'].includes(product.provider)
+    product.provider === 'jaha'
   );
   if (isInstant) {
     badges.push({
@@ -168,7 +168,7 @@ const getStock = async (product, autoKeysPrecomputed = null) => {
     ? autoKeysPrecomputed
     : await Key.countDocuments(buildKeyQueryForProduct(product, { isUsed: false }));
   if (autoKeys > 0) return autoKeys;
-  if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider)) {
+  if (product.provider === 'jaha') {
     const mStock = product.manualStock;
     if (mStock === -1) return '∞';
     return (typeof mStock === 'number') ? mStock : 0;
@@ -210,7 +210,7 @@ const getStockMap = async (products) => {
     const autoKeys = (c[provider] || 0) + (c['__null__'] || 0);
     let stock = autoKeys;
     if (autoKeys === 0) {
-      if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(p.provider)) {
+      if (p.provider === 'jaha') {
         const manualStock = p.manualStock;
         stock = manualStock === -1 ? '∞' : ((typeof manualStock === 'number') ? manualStock : 0);
       } else if (p.type === 'manual') {
@@ -822,7 +822,7 @@ const showQuantitySelect = async (ctx, productId, fromPage = 1, qty = 1) => {
   const activePromo = await getActivePromoFromCtx(ctx);
   const baseEffectivePrice = await getEffectivePrice(product, stock, null);
   const promoDiscount = activePromo
-    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: ctx.user?._id, lang })
+    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: ctx.user?._id, lang, costPrice: product.costPrice })
     : { valid: false, discountAmount: 0 };
   const total = promoDiscount.valid
     ? promoDiscount.finalPrice
@@ -949,7 +949,7 @@ const confirmPurchase = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
   const activePromo = await getActivePromoFromCtx(ctx);
   const baseEffectivePrice = await getEffectivePrice(product, stock, null);
   const promoDiscount = activePromo
-    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: ctx.user?._id, lang })
+    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: ctx.user?._id, lang, costPrice: product.costPrice })
     : { valid: false, discountAmount: 0 };
   const totalCost = promoDiscount.valid
     ? promoDiscount.finalPrice
@@ -1045,7 +1045,7 @@ const handlePayStep = async (ctx, productId, fromPage = 1, qty = 1) => {
   const activePromo = await getActivePromoFromCtx(ctx);
   const baseEffectivePrice = await getEffectivePrice(product, stock, null);
   const promoDiscount = activePromo
-    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: user._id, lang })
+    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: user._id, lang, costPrice: product.costPrice })
     : { valid: false, discountAmount: 0 };
   const totalCost = promoDiscount.valid
     ? promoDiscount.finalPrice
@@ -1108,13 +1108,12 @@ const showBybitUidInvoiceScreen = async (ctx, invoice, product, qty) => {
     `<b>Как перевести</b>\n` +
     `В Bybit: Вывод ➔ Внутренний перевод ➔ UID.\n\n` +
     `⚠️ <b>Только USDT. Переведите точную сумму, не округляйте.</b>\n` +
-    `<i>Зачисление автоматическое.</i>\n\n` +
+    `⚡ <b>Оплата зачисляется автоматически в течение 10–30 секунд после перевода. Нажимать ничего не нужно — бот сам пришлёт подтверждение.</b>\n\n` +
     `Оплатить до: <b>${formatTime(invoice.expiresAt)}</b>\n` +
     `Счёт: <code>${invoice.invoiceNumber}</code>\n\n` +
     `⏳ <b>Ожидаем перевод</b>`;
 
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('🔄 Проверить перевод', `bybit_uid:check:${invoice._id}`)],
     [Markup.button.callback('❌ Отменить счёт', `bybit_uid:cancel:${invoice._id}`)],
   ]);
 
@@ -1142,7 +1141,7 @@ const handleBybitUidPay = async (ctx, productId, fromPage = 1, qty = 1) => {
   const activePromo = await getActivePromoFromCtx(ctx);
   const baseEffectivePrice = await getEffectivePrice(product, stock, null);
   const promoDiscount = activePromo
-    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: user?._id, lang })
+    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: user?._id, lang, costPrice: product.costPrice })
     : { valid: false, discountAmount: 0 };
   const totalCost = promoDiscount.valid
     ? promoDiscount.finalPrice
@@ -1182,20 +1181,19 @@ const handleBybitUidPay = async (ctx, productId, fromPage = 1, qty = 1) => {
 
 const handleBybitUidCheck = async (ctx, invoiceId) => {
   try {
-    const bybitUidPaymentService = require('../../services/bybitUidPayment.service');
-    const result = await bybitUidPaymentService.checkInvoice(invoiceId, {
-      bot: ctx.telegram ? { telegram: ctx.telegram } : undefined,
-    });
-
-    const isCompleted =
-      result?.success === true ||
-      result?.status === 'completed' ||
-      result?.completed === true ||
-      result?.invoice?.status === 'completed';
+    let isCompleted = false;
+    let invoice = null;
+    try {
+      const BybitInvoice = require('../../models/BybitInvoice');
+      const doc = await BybitInvoice.findById(invoiceId);
+      if (doc && doc.status === 'completed') {
+        isCompleted = true;
+        invoice = doc;
+      }
+    } catch (_) {}
 
     if (isCompleted) {
       await ctx.answerCbQuery('✅ Оплата успешно подтверждена!', { show_alert: true }).catch(() => {});
-      const invoice = result?.invoice || result;
       const isTopup =
         invoice?.orderType === 'topup' ||
         invoice?.invoiceNumber?.startsWith('TOP-') ||
@@ -1221,21 +1219,16 @@ const handleBybitUidCheck = async (ctx, invoiceId) => {
       return await safeEdit(ctx, text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
     }
 
-    if (result?.reason === 'Invoice is cancelled' || result?.status === 'cancelled') {
-      await ctx.answerCbQuery('❌ Счёт был отменён', { show_alert: true }).catch(() => {});
-      return;
-    }
-
-    if (result?.expired || result?.reason === 'Invoice expired' || result?.status === 'expired') {
-      await ctx.answerCbQuery('⏳ Срок действия счёта истёк', { show_alert: true }).catch(() => {});
-      return;
-    }
-
-    // Pending
-    await ctx.answerCbQuery('⏳ Перевод пока не обнаружен. Зачисление обычно занимает 1-2 минуты.', { show_alert: true });
+    return await ctx.answerCbQuery(
+      '⚡ Оплата проверяется автоматически, нажимать кнопку не требуется',
+      { show_alert: true }
+    );
   } catch (err) {
     logger.error('Error in handleBybitUidCheck:', err);
-    await ctx.answerCbQuery('⏳ Перевод пока не обнаружен. Зачисление обычно занимает 1-2 минуты.', { show_alert: true }).catch(() => {});
+    await ctx.answerCbQuery(
+      '⚡ Оплата проверяется автоматически, нажимать кнопку не требуется',
+      { show_alert: true }
+    ).catch(() => {});
   }
 };
 
@@ -1426,7 +1419,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
   const activePromo = await getActivePromoFromCtx(ctx);
   const baseEffectivePrice = await getEffectivePrice(product, stock, null);
   const promoDiscount = activePromo
-    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: user._id, lang })
+    ? await promoService.calculateDiscount(activePromo, baseEffectivePrice * qty, product._id, { qty, userId: user._id, lang, costPrice: product.costPrice })
     : { valid: false, discountAmount: 0, finalPrice: parseFloat((baseEffectivePrice * qty).toFixed(2)) };
   const totalCost = promoDiscount.valid
     ? promoDiscount.finalPrice
@@ -1515,7 +1508,7 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
       const payoutPerItem = hasSeller ? parseFloat(product.sellerPrice.toFixed(8)) : 0;
       const sellerTotalPayout = hasSeller ? parseFloat((payoutPerItem * qty).toFixed(8)) : 0;
 
-      if (!isAutoKeyProduct && (product.type === 'manual' || ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product.provider))) {
+      if (!isAutoKeyProduct && (product.type === 'manual' || product.provider === 'jaha')) {
         if (product.manualStock !== -1) {
           // Атомарное уменьшение остатка с условием manualStock >= qty (защита от оверселла)
           const stockRes = await Product.updateOne(
@@ -1544,12 +1537,12 @@ const processPurchase = async (ctx, productId, fromPage = 1, qty = 1) => {
           warrantyDays: product.warrantyDays ?? 5,
           subscriptionDays: product.subscriptionDays ?? 30,
         });
-        if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
+        if (provider === 'jaha') {
           order.supplierIdempotencyKey = `ord-${order._id}`;
         }
         await order.save(sessionOptions);
         orders.push(order);
-        if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
+        if (provider === 'jaha') {
           supplierItems.push({ order, product, qty });
         }
       } else {
@@ -2080,7 +2073,7 @@ const confirmPreorder = async (ctx, productId, fromPage = 1, qty = 1, tosChecked
   const baseTotal = parseFloat((baseEffectivePrice * qty).toFixed(2));
 
   const promoDiscount = activePromo
-    ? await promoService.calculateDiscount(activePromo, baseTotal, product._id, { qty, userId: ctx.user?._id, lang })
+    ? await promoService.calculateDiscount(activePromo, baseTotal, product._id, { qty, userId: ctx.user?._id, lang, costPrice: product.costPrice })
     : { valid: false, discountAmount: 0 };
 
   const totalCost = promoDiscount.valid
@@ -2166,7 +2159,7 @@ const processPreorder = async (ctx, productId, qty = 1) => {
 
   const lang = user?.language || 'ru';
   const promoDiscount = activePromo
-    ? await promoService.calculateDiscount(activePromo, baseTotal, product._id, { qty, userId: user._id, lang })
+    ? await promoService.calculateDiscount(activePromo, baseTotal, product._id, { qty, userId: user._id, lang, costPrice: product.costPrice })
     : { valid: false, discountAmount: 0 };
 
   const totalCost = promoDiscount.valid

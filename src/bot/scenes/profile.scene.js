@@ -463,7 +463,7 @@ const showOrderDetail = async (ctx, orderId) => {
   let product = order.productId;
   const { resolveOrderProvider } = require('../../services/provider.service');
   const provider = resolveOrderProvider(order, product);
-  const isSupplier = ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider);
+  const isSupplier = provider === 'jaha';
 
   if (isSupplier && order.supplierOrderId && ['pending', 'activating', 'retry'].includes(order.status)) {
     try {
@@ -757,8 +757,19 @@ const cancelPreorder = async (ctx, orderId) => {
 
   const User = require('../../models/User');
   try {
-    await User.updateOne({ _id: ctx.user._id }, { $inc: { balance: order.price } });
-    ctx.user.balance = parseFloat((ctx.user.balance + order.price).toFixed(8));
+    const refundAmount = (typeof order.price === 'number' && Number.isFinite(order.price) && order.price > 0)
+      ? order.price
+      : 0;
+    await User.updateOne(
+      { _id: ctx.user._id },
+      { $inc: { balance: refundAmount, totalSpent: -refundAmount } }
+    );
+    await User.updateOne(
+      { _id: ctx.user._id, totalSpent: { $lt: 0 } },
+      { $set: { totalSpent: 0 } }
+    );
+    ctx.user.balance = parseFloat((ctx.user.balance + refundAmount).toFixed(8));
+    ctx.user.totalSpent = Math.max(0, parseFloat(((ctx.user.totalSpent || 0) - refundAmount).toFixed(8)));
   } catch (refundErr) {
     // Откатываем статус заказа обратно, чтобы деньги не пропали
     await Order.updateOne({ _id: order._id }, { $set: { status: 'preorder_pending' } }).catch(() => {});

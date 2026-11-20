@@ -296,7 +296,7 @@ const normalizeBase32Secret = (rawSecret) => {
   const withoutPadding = str.replace(/=+$/, '').trim();
   if (!withoutPadding) return null;
 
-  // Настоящий Base32-секрет не бывает в смешанном регистре (как пароль типа dreYWi2CR3A2)
+  // Настоящий Base32-секрет не бывает в смешанном регистре (как пароль типа sampleSecretPass123)
   const hasUpper = /[A-Z]/.test(withoutPadding);
   const hasLower = /[a-z]/.test(withoutPadding);
   if (hasUpper && hasLower) {

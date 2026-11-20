@@ -10,11 +10,11 @@ const sample1 = {
   order: {
     order_number: 'ORD-00001127',
     status: 'completed',
-    delivery: 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ',
+    delivery: 'testuser123@example.com | TestPassword123! | JBSWY3DPEHPK3PXP',
   },
 };
 const res1 = extractDeliveryData(sample1);
-assert.strictEqual(res1, 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ');
+assert.strictEqual(res1, 'testuser123@example.com | TestPassword123! | JBSWY3DPEHPK3PXP');
 console.log('✅ Test 1 Passed');
 
 // Test 2: Top-level delivery_data field
@@ -69,11 +69,11 @@ console.log('✅ Test 5 Passed');
 
 // Test 6: 2FA recognition on Jaha delivery credentials
 console.log('Test 6: 2FA recognition on Jaha delivery credentials');
-const deliveryStr = 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ';
+const deliveryStr = 'testuser123@example.com | TestPassword123! | JBSWY3DPEHPK3PXP';
 assert.strictEqual(has2FASecret(deliveryStr), true);
 const accounts = extract2FAAccounts(deliveryStr);
 assert.strictEqual(accounts.length, 1);
-assert.strictEqual(accounts[0].secret, 'M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ');
+assert.strictEqual(accounts[0].secret, 'JBSWY3DPEHPK3PXP');
 console.log('✅ Test 6 Passed: 2FA secret recognized correctly');
 
 // Test 7: Additions array inside order object
@@ -84,12 +84,12 @@ const sample7 = {
     status: 'completed',
     delivery: null,
     additions: [
-      { text: 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ' },
+      { text: 'testuser123@example.com | TestPassword123! | JBSWY3DPEHPK3PXP' },
     ],
   },
 };
 const res7 = extractDeliveryData(sample7);
-assert.strictEqual(res7, 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ');
+assert.strictEqual(res7, 'testuser123@example.com | TestPassword123! | JBSWY3DPEHPK3PXP');
 console.log('✅ Test 7 Passed');
 
 // Test 8: Root-level additions with nested order having delivery: null (real OpenAPI response with ?include_additions=true)
@@ -101,11 +101,11 @@ const sample8 = {
     delivery: null,
   },
   additions: [
-    { text: 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ' },
+    { text: 'testuser123@example.com | TestPassword123! | JBSWY3DPEHPK3PXP' },
   ],
 };
 const res8 = extractDeliveryData(sample8);
-assert.strictEqual(res8, 'herbertbutterfield77852+97292@gmail.com | Fantassyyy68 | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ');
+assert.strictEqual(res8, 'testuser123@example.com | TestPassword123! | JBSWY3DPEHPK3PXP');
 console.log('✅ Test 8 Passed');
 
 // Test 9: Account credentials with totp / otp fields
@@ -114,11 +114,11 @@ const sample9 = {
   account_details: {
     email: 'testuser@gmail.com',
     password: 'SafePassword123!',
-    totp: 'M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ',
+    totp: 'JBSWY3DPEHPK3PXP',
   },
 };
 const res9 = extractDeliveryData(sample9);
-assert.strictEqual(res9, 'testuser@gmail.com | SafePassword123! | M5WIOIDILBI4AOPCKUD2D2LOQZ5FPZQJ');
+assert.strictEqual(res9, 'testuser@gmail.com | SafePassword123! | JBSWY3DPEHPK3PXP');
 console.log('✅ Test 9 Passed');
 
 // Test 10: Account credentials with 'account' key as username and 'pass'

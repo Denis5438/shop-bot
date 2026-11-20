@@ -57,8 +57,8 @@ const getAdminUid = async () => {
 };
 
 /**
- * Generates random 4-decimal suffix between 0.0010 and 0.0099 (e.g. +0.0038).
- * Checks that no pending unexpired invoice has exactAmount === baseAmount + suffix.
+ * Generates random 4-decimal suffix between 0.0001 and 0.0099 (e.g. +0.0038).
+ * Checks that no pending or processing unexpired invoice has exactAmount === baseAmount + suffix.
  *
  * @param {number|string} baseAmount
  * @returns {Promise<{ suffix: number, exactAmount: number, suffixFractional: number }>}
@@ -70,18 +70,18 @@ const allocateUniqueAmount = async (baseAmount) => {
   }
 
   const now = new Date();
-  const pendingInvoices = await BybitInvoice.find({
-    status: 'pending',
+  const activeInvoices = await BybitInvoice.find({
+    status: { $in: ['pending', 'processing'] },
     expiresAt: { $gt: now },
     baseAmount: base,
   }).select('exactAmount suffix').lean();
 
   const occupiedAmounts = new Set(
-    pendingInvoices.map((inv) => Number(Number(inv.exactAmount).toFixed(4)))
+    activeInvoices.map((inv) => Number(Number(inv.exactAmount).toFixed(4)))
   );
 
   const available = [];
-  for (let s = 10; s <= 99; s += 1) {
+  for (let s = 1; s <= 99; s += 1) {
     const frac = Number((s / 10000).toFixed(4));
     const candidateExact = Number((base + frac).toFixed(4));
     if (!occupiedAmounts.has(candidateExact)) {
@@ -227,8 +227,73 @@ const getBybitCredentials = async () => {
   return { apiKey, apiSecret };
 };
 
+/**
+ * Fetches recent internal deposit records from Bybit API v5.
+ *
+ * @param {number} [limit=50]
+ * @returns {Promise<{ ok: boolean, rows: Array, error?: string }>}
+ */
+const fetchRecentTransfers = async (limit = 50) => {
+  const { apiKey, apiSecret } = await getBybitCredentials();
+  if (!apiKey || !apiSecret) {
+    logger.warn('[Bybit UID] Bybit API Key or Secret is missing');
+    return { ok: false, rows: [], error: 'Bybit API credentials not configured' };
+  }
+
+  const timestamp = Date.now().toString();
+  const recvWindow = '5000';
+  const qs = `coin=USDT&limit=${Math.min(limit, 50)}`;
+
+  const signature = crypto
+    .createHmac('sha256', apiSecret)
+    .update(timestamp + apiKey + recvWindow + qs)
+    .digest('hex');
+
+  const BYBIT_HOSTS = ['https://api.bybit.com', 'https://api.bytick.com'];
+  let lastError = null;
+
+  for (const host of BYBIT_HOSTS) {
+    try {
+      const res = await axios.get(
+        `${host}/v5/asset/deposit/query-internal-record?${qs}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            Accept: 'application/json',
+            'X-BAPI-API-KEY': apiKey,
+            'X-BAPI-TIMESTAMP': timestamp,
+            'X-BAPI-SIGN': signature,
+            'X-BAPI-SIGN-TYPE': '2',
+            'X-BAPI-RECV-WINDOW': recvWindow,
+          },
+          timeout: 10000,
+          validateStatus: () => true,
+        }
+      );
+
+      if (res.status === 200 && res.data) {
+        if (res.data.retCode !== 0) {
+          logger.warn(`[Bybit UID] retCode=${res.data.retCode} msg=${res.data.retMsg}`);
+          return { ok: false, rows: [], error: res.data.retMsg || 'Bybit API error' };
+        }
+        return { ok: true, rows: res.data.result?.rows || [] };
+      } else {
+        lastError = `HTTP ${res.status}`;
+        logger.warn(`[Bybit UID] ${host} HTTP ${res.status}: ${JSON.stringify(res.data).slice(0, 200)}`);
+      }
+    } catch (err) {
+      lastError = err.message;
+      logger.error(`[Bybit UID] ${host} error: ${err.message}`);
+    }
+  }
+
+  return { ok: false, rows: [], error: lastError || 'Bybit API error' };
+};
+
 const checkInvoice = async (invoiceId, options = {}) => {
-  let invoice = null;
+  let targetId = null;
+  let passedDoc = null;
+
   const isObjectId =
     invoiceId instanceof mongoose.Types.ObjectId ||
     (typeof invoiceId === 'string' && mongoose.Types.ObjectId.isValid(invoiceId) && /^[0-9a-fA-F]{24}$/.test(invoiceId));
@@ -239,165 +304,174 @@ const checkInvoice = async (invoiceId, options = {}) => {
     !(invoiceId instanceof mongoose.Types.ObjectId) &&
     (invoiceId.invoiceNumber || invoiceId.exactAmount !== undefined)
   ) {
-    invoice = invoiceId;
+    passedDoc = invoiceId;
+    targetId = invoiceId._id;
   } else if (isObjectId) {
-    invoice = await BybitInvoice.findById(invoiceId);
+    targetId = invoiceId;
   } else if (typeof invoiceId === 'string') {
-    invoice = await BybitInvoice.findOne({ invoiceNumber: invoiceId });
+    const found = await BybitInvoice.findOne({ invoiceNumber: invoiceId });
+    if (found) {
+      targetId = found._id;
+      passedDoc = found;
+    }
   }
 
-  if (!invoice) {
+  if (!targetId && !passedDoc) {
     return { success: false, reason: 'Invoice not found' };
   }
 
-  if (invoice.status === 'completed') {
-    return { success: true, alreadyCompleted: true, invoice };
-  }
-
-  if (invoice.status === 'cancelled') {
-    return { success: false, reason: 'Invoice is cancelled' };
-  }
-
-  const now = new Date();
-  if (invoice.status === 'expired' || (invoice.expiresAt && invoice.expiresAt <= now)) {
-    if (invoice.status !== 'expired') {
-      invoice.status = 'expired';
-      await invoice.save();
+  // Pre-check if already completed/cancelled/expired
+  if (passedDoc) {
+    if (passedDoc.status === 'completed') {
+      return { success: true, alreadyCompleted: true, invoice: passedDoc };
     }
-    return { success: false, reason: 'Invoice expired', expired: true };
+    if (passedDoc.status === 'cancelled') {
+      return { success: false, reason: 'Invoice is cancelled' };
+    }
+    const now = new Date();
+    if (passedDoc.status === 'expired' || (passedDoc.expiresAt && passedDoc.expiresAt <= now)) {
+      return { success: false, reason: 'Invoice expired', expired: true };
+    }
   }
 
-  // Determine bot instance for Telegram notifications
-  const bot = getEffectiveBot(options?.telegram ? options : options?.bot);
+  // Atomic CAS-lock: transition from 'pending' to 'processing'
+  let invoice = null;
+  const isMongooseConnected = mongoose.connection.readyState === 1;
+  const isFindOneAndUpdateCustom =
+    typeof BybitInvoice.findOneAndUpdate === 'function' &&
+    BybitInvoice.findOneAndUpdate !== mongoose.Model.findOneAndUpdate;
 
-  let rows = [];
-
-  // If mockRecords provided (e.g. for unit testing)
-  if (Array.isArray(options?.mockRecords)) {
-    rows = options.mockRecords;
+  if (targetId && (isMongooseConnected || isFindOneAndUpdateCustom)) {
+    invoice = await BybitInvoice.findOneAndUpdate(
+      { _id: targetId, status: 'pending' },
+      { $set: { status: 'processing', lockedAt: new Date() } },
+      { new: true }
+    );
   } else {
-    const { apiKey, apiSecret } = await getBybitCredentials();
-    if (!apiKey || !apiSecret) {
-      logger.warn('[Bybit UID] Bybit API Key or Secret is missing');
-      return { success: false, reason: 'Bybit API credentials not configured' };
+    // In test / offline mock mode where findById is stubbed but findOneAndUpdate is not
+    const current = passedDoc || (await BybitInvoice.findById(targetId));
+    if (current && current.status === 'pending') {
+      current.status = 'processing';
+      current.lockedAt = new Date();
+      if (typeof current.save === 'function') await current.save();
+      invoice = current;
     }
+  }
 
-    const timestamp = Date.now().toString();
-    const recvWindow = '5000';
-    const qs = 'coin=USDT&limit=50';
+  if (!invoice) {
+    // CAS failed: check why (already completed, cancelled, expired, or locked)
+    const current = passedDoc || (targetId ? await BybitInvoice.findById(targetId) : null);
+    if (!current) return { success: false, reason: 'Invoice not found' };
+    if (current.status === 'completed') return { success: true, alreadyCompleted: true, invoice: current };
+    if (current.status === 'cancelled') return { success: false, reason: 'Invoice is cancelled' };
+    const now = new Date();
+    if (current.status === 'expired' || (current.expiresAt && current.expiresAt <= now)) {
+      return { success: false, reason: 'Invoice expired', expired: true };
+    }
+    return { success: false, reason: 'Invoice is already processing or locked' };
+  }
 
-    const signature = crypto
-      .createHmac('sha256', apiSecret)
-      .update(timestamp + apiKey + recvWindow + qs)
-      .digest('hex');
-
-    const BYBIT_HOSTS = ['https://api.bybit.com', 'https://api.bytick.com'];
-    let lastError = null;
-    let requestSucceeded = false;
-
-    for (const host of BYBIT_HOSTS) {
-      try {
-        const res = await axios.get(
-          `${host}/v5/asset/deposit/query-internal-record?${qs}`,
-          {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-              Accept: 'application/json',
-              'X-BAPI-API-KEY': apiKey,
-              'X-BAPI-TIMESTAMP': timestamp,
-              'X-BAPI-SIGN': signature,
-              'X-BAPI-SIGN-TYPE': '2',
-              'X-BAPI-RECV-WINDOW': recvWindow,
-            },
-            timeout: 10000,
-            validateStatus: () => true,
-          }
-        );
-
-        if (res.status === 200 && res.data) {
-          if (res.data.retCode !== 0) {
-            logger.warn(`[Bybit UID] retCode=${res.data.retCode} msg=${res.data.retMsg}`);
-            return { success: false, reason: res.data.retMsg || 'Bybit API error' };
-          }
-          rows = res.data.result?.rows || [];
-          requestSucceeded = true;
-          break;
-        } else {
-          lastError = `HTTP ${res.status}`;
-          logger.warn(`[Bybit UID] ${host} HTTP ${res.status}: ${JSON.stringify(res.data).slice(0, 200)}`);
+  const releaseLock = async () => {
+    try {
+      if (invoice && invoice.status === 'processing') {
+        invoice.status = 'pending';
+        invoice.lockedAt = null;
+        if (isMongooseConnected || (typeof BybitInvoice.updateOne === 'function' && BybitInvoice.updateOne !== mongoose.Model.updateOne)) {
+          await BybitInvoice.updateOne(
+            { _id: invoice._id, status: 'processing' },
+            { $set: { status: 'pending', lockedAt: null } }
+          );
+        } else if (typeof invoice.save === 'function') {
+          await invoice.save();
         }
-      } catch (err) {
-        lastError = err.message;
-        logger.error(`[Bybit UID] ${host} error: ${err.message}`);
       }
+    } catch (unlockErr) {
+      logger.error(`[Bybit UID] Error releasing CAS lock for invoice ${invoice?._id}: ${unlockErr.message}`);
+    }
+  };
+
+  try {
+    // Determine bot instance for Telegram notifications
+    const bot = getEffectiveBot(options?.telegram ? options : options?.bot);
+
+    let rows = [];
+
+    // If mockRecords provided (e.g. for unit testing or batched cron poller)
+    if (Array.isArray(options?.mockRecords)) {
+      rows = options.mockRecords;
+    } else {
+      const fetchRes = await fetchRecentTransfers(50);
+      if (!fetchRes.ok) {
+        await releaseLock();
+        return { success: false, reason: fetchRes.error };
+      }
+      rows = fetchRes.rows;
     }
 
-    if (!requestSucceeded) {
-      return { success: false, reason: lastError || 'Bybit API error' };
-    }
-  }
-
-  // Match records by coin=USDT, status=2 (Success), and matching amount:
-  // Math.abs(parseFloat(r.amount) - invoice.exactAmount) < 0.00001
-  const matchingRecords = rows.filter((r) => {
-    if (r.coin && String(r.coin).toUpperCase() !== 'USDT') return false;
-    if (r.status !== undefined && Number(r.status) !== 2) return false;
-    const amountVal = parseFloat(r.amount);
-    if (isNaN(amountVal)) return false;
-    return Math.abs(amountVal - invoice.exactAmount) < 0.00001;
-  });
-
-  if (matchingRecords.length === 0) {
-    return { success: false, reason: 'Matching transfer record not found' };
-  }
-
-  let selectedRecord = null;
-  let txId = null;
-
-  for (const record of matchingRecords) {
-    const rawTx = String(record.txID || record.txId || record.id || '').trim();
-    if (!rawTx) continue;
-
-    // Double spend check against other completed BybitInvoices
-    const existingInvoice = await BybitInvoice.findOne({
-      txId: rawTx,
-      _id: { $ne: invoice._id },
+    // Match records by coin=USDT, status=2 (Success), and matching amount:
+    // Math.abs(parseFloat(r.amount) - invoice.exactAmount) < 0.00001
+    const matchingRecords = rows.filter((r) => {
+      if (r.coin && String(r.coin).toUpperCase() !== 'USDT') return false;
+      if (r.status !== undefined && Number(r.status) !== 2) return false;
+      const amountVal = parseFloat(r.amount);
+      if (isNaN(amountVal)) return false;
+      return Math.abs(amountVal - invoice.exactAmount) < 0.00001;
     });
-    if (existingInvoice) {
-      logger.warn(
-        `[Bybit UID] txId ${rawTx} already spent on BybitInvoice ${existingInvoice.invoiceNumber}`
-      );
-      continue;
+
+    if (matchingRecords.length === 0) {
+      await releaseLock();
+      return { success: false, reason: 'Matching transfer record not found' };
     }
 
-    // Double spend check against TopupRequest
-    const existingTopup = await TopupRequest.findOne({
-      $or: [{ txid: rawTx }, { txid: rawTx.toLowerCase() }],
-    });
-    if (existingTopup) {
-      logger.warn(
-        `[Bybit UID] txId ${rawTx} already spent on TopupRequest ${existingTopup._id}`
-      );
-      continue;
+    let selectedRecord = null;
+    let txId = null;
+
+    for (const record of matchingRecords) {
+      const rawTx = String(record.txID || record.txId || record.id || '').trim();
+      if (!rawTx) continue;
+
+      // Double spend check against other completed BybitInvoices
+      const existingInvoice = await BybitInvoice.findOne({
+        txId: rawTx,
+        _id: { $ne: invoice._id },
+      });
+      if (existingInvoice) {
+        logger.warn(
+          `[Bybit UID] txId ${rawTx} already spent on BybitInvoice ${existingInvoice.invoiceNumber}`
+        );
+        continue;
+      }
+
+      // Double spend check against TopupRequest
+      const existingTopup = await TopupRequest.findOne({
+        $or: [{ txid: rawTx }, { txid: rawTx.toLowerCase() }],
+      });
+      if (existingTopup) {
+        logger.warn(
+          `[Bybit UID] txId ${rawTx} already spent on TopupRequest ${existingTopup._id}`
+        );
+        continue;
+      }
+
+      selectedRecord = record;
+      txId = rawTx;
+      break;
     }
 
-    selectedRecord = record;
-    txId = rawTx;
-    break;
-  }
+    if (!selectedRecord || !txId) {
+      await releaseLock();
+      return {
+        success: false,
+        reason: 'Matching record found but txId is already spent (double spend protection)',
+      };
+    }
 
-  if (!selectedRecord || !txId) {
-    return {
-      success: false,
-      reason: 'Matching record found but txId is already spent (double spend protection)',
-    };
-  }
-
-  // Mark invoice completed
-  invoice.status = 'completed';
-  invoice.txId = txId;
-  invoice.completedAt = new Date();
-  await invoice.save();
+    // Mark invoice completed
+    invoice.status = 'completed';
+    invoice.txId = txId;
+    invoice.completedAt = new Date();
+    invoice.lockedAt = null;
+    await invoice.save();
 
   const isOrder = Boolean(invoice.orderId || invoice.productId);
 
@@ -613,9 +687,13 @@ const checkInvoice = async (invoiceId, options = {}) => {
       .catch(() => {});
   }
 
-  notif.notifyAdminNewOrder?.(order, user, product).catch?.(() => {});
+    notif.notifyAdminNewOrder?.(order, user, product).catch?.(() => {});
 
-  return { success: true, invoice, order };
+    return { success: true, invoice, order };
+  } catch (err) {
+    await releaseLock();
+    throw err;
+  }
 };
 
 /**
@@ -692,6 +770,7 @@ module.exports = {
   createInvoice,
   cancelInvoice,
   checkInvoice,
+  fetchRecentTransfers,
   getAdminUid,
   setBot,
   testConnection,

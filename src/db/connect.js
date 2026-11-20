@@ -46,7 +46,7 @@ const connectDB = async () => {
       await settings.save();
     }
 
-    global.MAINTENANCE_MODE = settings.maintenanceMode;
+    global.MAINTENANCE_MODE = process.env.MAINTENANCE_MODE === 'true' || Boolean(settings.maintenanceMode);
     logger.info(`Maintenance mode: ${global.MAINTENANCE_MODE ? 'enabled' : 'disabled'}`);
 
     const { invalidateCache } = require('../services/settingsCache.service');

@@ -180,6 +180,15 @@ const normalizeTxid = (raw, network) => {
 const TRON_MIN_CONFIRMATIONS = 19;
 const BSC_MIN_CONFIRMATIONS = 12;
 
+const OFFICIAL_TRC20_USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+
+const isOfficialTrc20Usdt = (t) => {
+  if (!t) return false;
+  const contract = String(t.contract_address || t.tokenId || '').trim();
+  const symbol = String(t.symbol || t.tokenSymbol || '').toUpperCase();
+  return symbol === 'USDT' && contract === OFFICIAL_TRC20_USDT_CONTRACT;
+};
+
 /**
  * Проверка перевода USDT (TRC-20) через TronScan API.
  * @param {string} txid - Хэш транзакции
@@ -206,10 +215,10 @@ const verifyTrc20Usdt = async (txid, expectedWallet) => {
     let fromAddress = null;
 
     // Проверка 1: Одиночный перевод (tokenTransferInfo)
-    if (data.tokenTransferInfo) {
+    if (data.tokenTransferInfo && isOfficialTrc20Usdt(data.tokenTransferInfo)) {
       const t = data.tokenTransferInfo;
-      if (t.symbol === 'USDT' && t.to_address === expectedWallet) {
-        amountParsed = parseInt(t.amount_str) / (10 ** t.decimals);
+      if (t.to_address === expectedWallet) {
+        amountParsed = parseInt(t.amount_str, 10) / (10 ** (t.decimals || 6));
         fromAddress = t.from_address || null;
       }
     }
@@ -217,8 +226,8 @@ const verifyTrc20Usdt = async (txid, expectedWallet) => {
     // Проверка 2: Множественные переводы (trc20TransferInfo)
     if (amountParsed === 0 && Array.isArray(data.trc20TransferInfo)) {
       for (const t of data.trc20TransferInfo) {
-        if (t.symbol === 'USDT' && t.to_address === expectedWallet) {
-          amountParsed = parseInt(t.amount_str) / (10 ** t.decimals);
+        if (isOfficialTrc20Usdt(t) && t.to_address === expectedWallet) {
+          amountParsed = parseInt(t.amount_str, 10) / (10 ** (t.decimals || 6));
           fromAddress = t.from_address || null;
           break;
         }
@@ -332,7 +341,9 @@ const verifyBep20Usdt = async (txid, expectedWallet) => {
 
 module.exports = {
   verifyTrc20Usdt,
+  verifyTronscanTrc20Usdt: verifyTrc20Usdt,
   verifyBep20Usdt,
   verifyUidUsdt,
   normalizeTxid,
+  OFFICIAL_TRC20_USDT_CONTRACT,
 };

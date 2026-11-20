@@ -250,8 +250,8 @@ const finalizeTopup = async (ctx, amountText) => {
   const targetMsgId = ctx.session?.wizardMsgId;
 
   const amount = parseFloat(amountText.trim().replace(',', '.'));
-  if (Number.isNaN(amount) || amount <= 0) {
-    const text = '❌ Неверная сумма. Введите число больше 0 (например: 5.0):';
+  if (!Number.isFinite(amount) || Number.isNaN(amount) || amount <= 0 || amount > 1000000) {
+    const text = '❌ Неверная сумма. Введите корректное число от 0.01 до 1 000 000 (например: 5.0):';
     if (targetMsgId) {
       try {
         await ctx.telegram.editMessageText(ctx.chat.id, targetMsgId, null, text, {

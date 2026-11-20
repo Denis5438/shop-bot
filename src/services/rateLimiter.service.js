@@ -21,7 +21,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param {number} [options.maxRetries=3] - максимальное число повторов для одного получателя при 429
  * @param {Function} [options.onProgress] - колбэк ({ sent, failed, blocked, total, current })
  * @param {number} [options.progressInterval=50] - как часто вызывать onProgress (каждые N сообщений)
- * @returns {Promise<{ sent: number, failed: number, blocked: number, total: number }>}
+ * @param {AbortSignal} [options.signal=null] - AbortSignal для досрочной отмены рассылки
+ * @returns {Promise<{ sent: number, failed: number, blocked: number, total: number, aborted: boolean }>}
  */
 const runBroadcastQueue = async ({
   items,
@@ -30,6 +31,7 @@ const runBroadcastQueue = async ({
   maxRetries = 3,
   onProgress = null,
   progressInterval = 50,
+  signal = null,
 }) => {
   let sent = 0;
   let failed = 0;
@@ -37,17 +39,27 @@ const runBroadcastQueue = async ({
   let totalProcessed = 0;
 
   for await (const item of items) {
+    if (signal?.aborted) {
+      logger.warn('[RateLimiter] ⏹ Рассылка принудительно остановлена по сигналу abort');
+      break;
+    }
+
     totalProcessed++;
     let attempts = 0;
     let delivered = false;
 
     while (attempts <= maxRetries && !delivered) {
+      if (signal?.aborted) {
+        logger.warn('[RateLimiter] ⏹ Рассылка принудительно остановлена по сигналу abort');
+        break;
+      }
       attempts++;
       try {
         await sendFn(item);
         sent++;
         delivered = true;
       } catch (err) {
+        if (signal?.aborted) break;
         const errCode = err?.response?.error_code || err?.code;
         const description = String(err?.response?.description || err?.message || '');
         const retryAfter = err?.response?.parameters?.retry_after || err?.parameters?.retry_after;
@@ -86,6 +98,8 @@ const runBroadcastQueue = async ({
       }
     }
 
+    if (signal?.aborted) break;
+
     // Мягкая пауза для соблюдения лимита сообщений в секунду
     if (delayMs > 0) {
       await sleep(delayMs);
@@ -106,6 +120,7 @@ const runBroadcastQueue = async ({
     failed,
     blocked,
     total: totalProcessed,
+    aborted: Boolean(signal?.aborted),
   };
 };
 

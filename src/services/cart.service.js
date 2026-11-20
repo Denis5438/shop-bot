@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Product = require('../models/Product');
 const Key = require('../models/Key');
 const Order = require('../models/Order');
+const Seller = require('../models/Seller');
 const Transaction = require('../models/Transaction');
 const PromoCode = require('../models/PromoCode');
 const promoService = require('./promo.service');
@@ -13,7 +14,7 @@ const notif = require('./notification.service');
 const { grantReferralBonusForFirstCompletedOrder } = require('./referral.service');
 const logger = require('../config/logger');
 
-const SUPPLIER_PROVIDERS = new Set(['jaha', 'akunding', 'canboso', 'trumpstore']);
+const SUPPLIER_PROVIDERS = new Set(['jaha']);
 const roundMoney = (value) => Number(Number(value || 0).toFixed(8));
 const sessionOptions = (session) => (session ? { session } : {});
 
@@ -138,7 +139,8 @@ const getCart = async (user) => {
           ? roundMoney(discountAmount - allocated)
           : roundMoney(discountAmount * item.baseTotal / eligibleSubtotal);
         allocated = roundMoney(allocated + part);
-        item.itemTotal = roundMoney(Math.max(0, item.baseTotal - part));
+        const itemCostFloor = Math.min(item.baseTotal, Math.max(0.01 * item.qty, (Number(item.product?.costPrice) || 0) * item.qty));
+        item.itemTotal = roundMoney(Math.max(itemCostFloor, item.baseTotal - part));
         item.unitPrice = Number((item.itemTotal / item.qty).toFixed(2));
       });
     } else {
@@ -324,6 +326,11 @@ const checkoutCart = async (ctx) => {
               : roundMoney(item.itemTotal / item.qty);
             remainingPrice = roundMoney(remainingPrice - orderPrice);
 
+            const sellerId = product.sellerId || null;
+            const sellerPayout = (sellerId && product.sellerPrice > 0)
+              ? roundMoney(product.sellerPrice)
+              : 0;
+
             const order = new Order({
               userId: initialUser._id,
               productId: product._id,
@@ -331,6 +338,8 @@ const checkoutCart = async (ctx) => {
               status: product.type === 'gpt_activation' ? 'awaiting_token' : 'completed',
               price: orderPrice,
               costPrice: product.costPrice || 0,
+              sellerId,
+              sellerPayout,
               keyId: key._id,
               deliveryData: product.type === 'gpt_activation' ? null : key.value,
               confirmedAt: product.type === 'gpt_activation' ? null : new Date(),
@@ -367,6 +376,11 @@ const checkoutCart = async (ctx) => {
             if (!stockResult.modifiedCount) throw new Error('OUT_OF_STOCK');
           }
 
+          const sellerId = product.sellerId || null;
+          const sellerPayout = (sellerId && product.sellerPrice > 0)
+            ? roundMoney(product.sellerPrice * item.qty)
+            : 0;
+
           const order = new Order({
             userId: initialUser._id,
             productId: product._id,
@@ -374,6 +388,8 @@ const checkoutCart = async (ctx) => {
             status: 'pending',
             price: item.itemTotal,
             costPrice: roundMoney((product.costPrice || 0) * item.qty),
+            sellerId,
+            sellerPayout,
             qty: item.qty,
             warrantyDays: product.warrantyDays ?? 5,
             subscriptionDays: product.subscriptionDays ?? 30,
@@ -515,6 +531,32 @@ const checkoutCart = async (ctx) => {
     const freshOrder = await Order.findById(order._id).lean();
     if (freshOrder?.status === 'completed') anyOrderCompleted = true;
     await notif.notifyAdminNewOrder(freshOrder || order, ctx.user, prod).catch(() => {});
+  }
+
+  // Мгновенные уведомления продавцам о заказах из корзины
+  for (const item of cartData.items) {
+    const product = item.product;
+    if (!product?.sellerId) continue;
+
+    try {
+      const seller = await Seller.findById(product.sellerId);
+      if (seller && seller.isActive) {
+        const productOrders = orders.filter((o) => String(o.productId) === String(product._id));
+        if (productOrders.length > 0) {
+          const totalSellerPayout = productOrders.reduce((sum, o) => sum + (o.sellerPayout || 0), 0);
+          const totalItemQty = productOrders.reduce((sum, o) => sum + (o.qty || 1), 0);
+          const firstOrder = productOrders[0];
+          const summaryOrder = {
+            ...(firstOrder.toObject ? firstOrder.toObject() : firstOrder),
+            sellerPayout: roundMoney(totalSellerPayout),
+            qty: totalItemQty,
+          };
+          await notif.notifySellerNewOrder(seller, summaryOrder, product, ctx.user).catch(() => {});
+        }
+      }
+    } catch (sellerErr) {
+      logger.error(`[Cart seller notification] Error notifying seller ${product.sellerId}: ${sellerErr.message}`);
+    }
   }
 
   if (anyOrderCompleted && ctx.user?._id) {

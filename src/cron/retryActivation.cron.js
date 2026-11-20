@@ -30,20 +30,7 @@ const formatWarrantyDays = (warrantyDays, isEn = false) => {
 };
 
 const KNOWN_REPAIRED = new Set();
-const KNOWN_REPAIR_ORDERS = [
-  {
-    targetOrderId: '6aa7a90de39afa10f6b58d45',
-    targetTelegramId: 5816207940,
-    realDelivery: 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC',
-    supplierOrderId: 'ORD-00000450',
-  },
-  {
-    targetOrderId: '6ae238dc6e3f2e579915342d',
-    targetTelegramId: 8240687535,
-    realDelivery: 'burwellferrari316@gmail.com|Phamhoangdien14@|MXF5UCUDQBBE3R7SNBM6SIXXMZRAQP6E',
-    supplierOrderId: 'ORD-00001127',
-  },
-];
+const KNOWN_REPAIR_ORDERS = [];
 
 const repairKnownOrderIfPending = async (bot) => {
   for (const item of KNOWN_REPAIR_ORDERS) {

@@ -41,8 +41,8 @@ test('TOTP: RFC 6238 standard SHA1 test vectors match exactly', () => {
 });
 
 test('TOTP: Real Jaha Digital Base32 secret generates valid 6-digit code and normalizes spaces/case', () => {
-  const rawSecret = 'Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
-  const spacedLowerSecret = 'z7z5 obor 7d6j mckt r7hv 2vsn yiam 3xlc';
+  const rawSecret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+  const spacedLowerSecret = 'jbsw y3dp ehpk 3pxp jbsw y3dp ehpk 3pxp';
   const fixedTimeMs = 1710000005000;
 
   const code1 = generateTOTP(rawSecret, fixedTimeMs);
@@ -64,20 +64,20 @@ test('TOTP: Remaining seconds calculation in 30-second window', () => {
 // ==========================================
 
 test('Detection: Recognizes Jaha Digital pipe-delimited login|password|2fa_secret', () => {
-  const item = 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const item = 'testuser1@example.com|DummyPass123!|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   assert.strictEqual(has2FASecret(item), true);
 
   const accounts = extract2FAAccounts(item);
   assert.strictEqual(accounts.length, 1);
-  assert.strictEqual(accounts[0].login, 'hbbr897896562+nnofm826@gmail.com');
-  assert.strictEqual(accounts[0].secret, 'Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC');
+  assert.strictEqual(accounts[0].login, 'testuser1@example.com');
+  assert.strictEqual(accounts[0].secret, 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP');
 });
 
 test('Detection: Recognizes colon, semicolon, tab delimiters and spaced Base32 keys', () => {
   const colonItem = 'user1@mail.com:MyPass123!:JBSWY3DPEHPK3PXP';
   const semiItem = 'user2@mail.com;MyPass123!;JBSWY3DPEHPK3PXP';
   const tabItem = 'user3@mail.com\tMyPass123!\tJBSWY3DPEHPK3PXP';
-  const spacedItem = 'user4@mail.com|MyPass123!|Z7Z5 OBOR 7D6J MCKT R7HV 2VSN YIAM 3XLC';
+  const spacedItem = 'user4@mail.com|MyPass123!|JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP';
 
   assert.strictEqual(has2FASecret(colonItem), true);
   assert.strictEqual(has2FASecret(semiItem), true);
@@ -87,16 +87,16 @@ test('Detection: Recognizes colon, semicolon, tab delimiters and spaced Base32 k
   const acc = extract2FAAccounts(spacedItem);
   assert.strictEqual(acc.length, 1);
   assert.strictEqual(acc[0].login, 'user4@mail.com');
-  assert.strictEqual(acc[0].secret, 'Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC');
+  assert.strictEqual(acc[0].secret, 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP');
 });
 
 test('Detection: Recognizes multi-line labeled format, JSON, and otpauth:// URI', () => {
-  const labeled = 'Логин: testuser@gmail.com\nПароль: superSecret99\n2FA: Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const labeled = 'Логин: testuser@gmail.com\nПароль: superSecret99\n2FA: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   assert.strictEqual(has2FASecret(labeled), true);
   const labeledAcc = extract2FAAccounts(labeled);
   assert.strictEqual(labeledAcc.length, 1);
   assert.strictEqual(labeledAcc[0].login, 'testuser@gmail.com');
-  assert.strictEqual(labeledAcc[0].secret, 'Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC');
+  assert.strictEqual(labeledAcc[0].secret, 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP');
 
   const jsonStr = JSON.stringify({
     login: 'jsonuser@gmail.com',
@@ -117,21 +117,21 @@ test('Detection: Recognizes multi-line labeled format, JSON, and otpauth:// URI'
   assert.strictEqual(otpAcc[0].secret, 'JBSWY3DPEHPK3PXP');
 
   // Equals sign and "Код:" label
-  const labeledEq = 'Email = user5@gmail.com\nПароль = pass123\nКод: Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const labeledEq = 'Email = user5@gmail.com\nПароль = pass123\nКод: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   const eqAcc = extract2FAAccounts(labeledEq);
   assert.strictEqual(eqAcc.length, 1);
   assert.strictEqual(eqAcc[0].login, 'user5@gmail.com');
-  assert.strictEqual(eqAcc[0].secret, 'Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC');
+  assert.strictEqual(eqAcc[0].secret, 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP');
 
   // 16-char grouped Base32 secret
   assert.strictEqual(
-    normalizeBase32Secret('Z7Z5OBOR7D6JMCKT R7HV2VSNYIAM3XLC'),
-    'Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC'
+    normalizeBase32Secret('JBSWY3DPEHPK3PXP JBSWY3DPEHPK3PXP'),
+    'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
   );
 });
 
 test('Detection: Recognizes Order objects via deliveryData, keyId.value, and replacedKeyId.value', () => {
-  const secret = 'Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   const orderWithDelivery = { deliveryData: `a@b.com|pass|${secret}` };
   const orderWithKey = { keyId: { value: `a@b.com|pass|${secret}` } };
   const orderWithReplacedKey = {
@@ -147,7 +147,7 @@ test('Detection: Recognizes Order objects via deliveryData, keyId.value, and rep
 
 test('Detection: Rejects non-2FA accounts, links, license keys, prose, lowercase words, and 2-part uppercase passwords', () => {
   const non2FAItems = [
-    'user@example.com|dreYWi2CR3A2',
+    'user@example.com|DummyPass123!',
     'user@example.com:secretPassword123',
     'user@example.com|ABCDEFGHIJKLMNOP', // 2-part login|password where password is 16 uppercase Base32 chars
     'user@example.com|password123|internationalization', // 16+ char lowercase English word in 3rd slot
@@ -168,9 +168,9 @@ test('Detection: Rejects non-2FA accounts, links, license keys, prose, lowercase
     assert.strictEqual(has2FASecret(item), false, `Should NOT detect 2FA in: ${JSON.stringify(item)}`);
     assert.strictEqual(extract2FAAccounts(item).length, 0);
   }
-  assert.strictEqual(normalizeBase32Secret('dreYWi2CR3A2'), null);
+  assert.strictEqual(normalizeBase32Secret('DummyPass123!'), null);
   assert.strictEqual(normalizeBase32Secret('internationalization'), null);
-  assert.strictEqual(isValidBase32Secret('dreYWi2CR3A2'), false);
+  assert.strictEqual(isValidBase32Secret('DummyPass123!'), false);
 });
 
 // ==========================================
@@ -178,12 +178,12 @@ test('Detection: Rejects non-2FA accounts, links, license keys, prose, lowercase
 // ==========================================
 
 test('Formatting: formatDigitalItem keeps Login, Password, and 2FA key in place AND adds hint when 2FA is valid', () => {
-  const raw = 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const raw = 'testuser1@example.com|DummyPass123!|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   const formattedRu = formatDigitalItem(raw, 'ru');
 
-  assert.ok(formattedRu.includes('<code>hbbr897896562+nnofm826@gmail.com</code>'));
-  assert.ok(formattedRu.includes('<code>dreYWi2CR3A2</code>'));
-  assert.ok(formattedRu.includes('<code>Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC</code>'));
+  assert.ok(formattedRu.includes('<code>testuser1@example.com</code>'));
+  assert.ok(formattedRu.includes('<code>DummyPass123!</code>'));
+  assert.ok(formattedRu.includes('<code>JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP</code>'));
   assert.ok(formattedRu.includes(get2FAHintText('ru')));
   assert.strictEqual(get2FAButtonLabel('ru'), '🔐 Получить 6-значный код для входа (2FA)');
 
@@ -193,13 +193,13 @@ test('Formatting: formatDigitalItem keeps Login, Password, and 2FA key in place 
 
 test('Formatting: formatDigitalItem correctly formats multi-line labeled account, otpauth URI, and 4-part recovery+2FA credentials', () => {
   // 1. Multi-line labeled single account must NOT treat "Логин" as login value or split into #1/#2/#3
-  const labeled = 'Логин: testuser@gmail.com\nПароль: superSecret99\n2FA: Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const labeled = 'Логин: testuser@gmail.com\nПароль: superSecret99\n2FA: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   const formattedLabeled = formatDigitalItem(labeled, 'ru');
   assert.ok(!formattedLabeled.includes('<code>Логин</code>'), 'Should not render label as login value');
   assert.ok(!formattedLabeled.includes('<b>#1</b>'), 'Single multi-line labeled account should not split into #1/#2/#3');
   assert.ok(formattedLabeled.includes('👤 <b>Логин:</b> <code>testuser@gmail.com</code>'));
   assert.ok(formattedLabeled.includes('🔑 <b>Пароль:</b> <code>superSecret99</code>'));
-  assert.ok(formattedLabeled.includes('🛡 <b>2FA / Код:</b> <code>Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC</code>'));
+  assert.ok(formattedLabeled.includes('🛡 <b>2FA / Код:</b> <code>JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP</code>'));
   assert.ok(formattedLabeled.includes(get2FAHintText('ru')));
 
   // 2. Standalone otpauth:// URI must NOT split "otpauth" as login and "//totp/..." as password
@@ -211,11 +211,11 @@ test('Formatting: formatDigitalItem correctly formats multi-line labeled account
   assert.ok(formattedOtp.includes(get2FAHintText('ru')));
 
   // 3. 4-part credential with recovery email in 3rd slot and 2FA secret in 4th slot
-  const fourPart = 'user@gmail.com|pass123|recovery@outlook.com|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const fourPart = 'user@gmail.com|pass123|recovery@outlook.com|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   const formattedFour = formatDigitalItem(fourPart, 'ru');
   assert.ok(formattedFour.includes('👤 <b>Логин:</b> <code>user@gmail.com</code>'));
   assert.ok(formattedFour.includes('🔑 <b>Пароль:</b> <code>pass123</code>'));
-  assert.ok(formattedFour.includes('🛡 <b>2FA / Код:</b> <code>Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC</code>'));
+  assert.ok(formattedFour.includes('🛡 <b>2FA / Код:</b> <code>JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP</code>'));
   assert.ok(formattedFour.includes('📧 <b>Резервная почта:</b> <code>recovery@outlook.com</code>'));
 });
 
@@ -235,9 +235,9 @@ test('Formatting: format2FACodeMessage single account and multi-account (qty > 1
   const fixedTimeMs = 1710000006000; // 6s into 30s window -> 24s remaining
 
   // Single account
-  const singleRaw = 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+  const singleRaw = 'testuser1@example.com|DummyPass123!|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   const singleMsg = format2FACodeMessage(singleRaw, 'ru', fixedTimeMs);
-  const expectedCode = generateTOTP('Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC', fixedTimeMs);
+  const expectedCode = generateTOTP('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', fixedTimeMs);
 
   assert.ok(singleMsg.includes('🔐 <b>Код подтверждения (2FA) для входа:</b>'));
   assert.ok(singleMsg.includes(`👉 <code>${expectedCode}</code> <i>(нажмите на цифры, чтобы скопировать)</i>`));
@@ -245,11 +245,11 @@ test('Formatting: format2FACodeMessage single account and multi-account (qty > 1
 
   // Multiple accounts (qty > 1)
   const multiRaw = [
-    'acc1@gmail.com|pass1|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC',
+    'acc1@gmail.com|pass1|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
     'acc2@gmail.com|pass2|JBSWY3DPEHPK3PXP',
   ].join('\n');
   const multiMsg = format2FACodeMessage(multiRaw, 'ru', fixedTimeMs);
-  const code1 = generateTOTP('Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC', fixedTimeMs);
+  const code1 = generateTOTP('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', fixedTimeMs);
   const code2 = generateTOTP('JBSWY3DPEHPK3PXP', fixedTimeMs);
 
   assert.ok(multiMsg.includes(`Аккаунт #1 (acc1@gmail.com): <code>${code1}</code>`));
@@ -271,7 +271,7 @@ test('Scene: showOrder2FA enforces order ownership and renders 6-digit code with
       _id: '6aa7a90de39afa10f6b58d45',
       userId: '507f1f77bcf86cd799439011',
       status: 'completed',
-      deliveryData: 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC',
+      deliveryData: 'testuser1@example.com|DummyPass123!|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
     };
 
     Order.findById = () => ({
@@ -347,7 +347,7 @@ test('Scene: showOrderDetail shows 2FA button ONLY for orders with 2FA secret an
       subscriptionDays: 30,
       replacementStatus: 'none',
       productId: { name: 'ChatGPT Plus', icon: '🤖' },
-      deliveryData: 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC',
+      deliveryData: 'testuser1@example.com|DummyPass123!|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
     };
 
     let detailText1 = null;
@@ -389,7 +389,7 @@ test('Scene: showOrderDetail shows 2FA button ONLY for orders with 2FA secret an
       _id: '6aa7a90de39afa10f6b58d47',
       status: 'awaiting_confirmation',
       sellerId: '507f1f77bcf86cd799439099',
-      deliveryData: 'escrow@gmail.com|pass123|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC',
+      deliveryData: 'escrow@gmail.com|pass123|JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
     };
 
     let detailExtra3 = null;

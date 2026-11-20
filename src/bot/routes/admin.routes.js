@@ -23,6 +23,7 @@ const { Markup } = require('telegraf');
 const { adminMiddleware } = require('../middlewares/auth');
 const { buildKeyQueryForProduct } = require('../../services/provider.service');
 const { escapeHtml } = require('../utils/ui');
+const logger = require('../../config/logger');
 
 module.exports = (bot) => {
   // ─────────────────── ADMIN - ГЛАВНОЕ МЕНЮ ───────────────────
@@ -696,38 +697,80 @@ module.exports = (bot) => {
       return;
     }
 
-    await ctx.answerCbQuery('📢 Запускаю рассылку...');
-    await ctx.editMessageReplyMarkup(null).catch(() => {});
+    if (notif.isBroadcastActive()) {
+      return ctx.answerCbQuery('⚠️ Уже выполняется другая рассылка! Дождитесь завершения.', { show_alert: true });
+    }
+
+    const adminId = ctx.from?.id || ctx.chat?.id;
+    const telegram = ctx.telegram;
 
     const { label } = await notif.buildSegmentQuery(segment);
     const totalInSegment = await notif.countSegment(segment);
 
+    // Захватываем блокировку рассылки
+    notif.acquireBroadcastLock({ type: 'product', adminId, total: totalInSegment });
+
+    await ctx.answerCbQuery('🚀 Рассылка о товаре запущена в фоновом режиме...').catch(() => {});
+    await ctx.editMessageReplyMarkup(null).catch(() => {});
+
     await ctx.editMessageText(
-      `📢 <b>Рассылка запущена...</b>\n\n` +
+      `🚀 <b>Рассылка о товаре запущена в фоновом режиме...</b>\n\n` +
       `${escapeHtml(product.icon || '📦')} <b>${escapeHtml(product.name)}</b>\n\n` +
       `🎯 Сегмент: <b>${escapeHtml(label)}</b>\n` +
       `👥 Получателей: <b>${totalInSegment}</b>\n\n` +
-      `<blockquote>⏳ Примерно ${Math.ceil((totalInSegment * 50) / 1000)} сек на отправку.\nПодождите...</blockquote>`,
+      `<blockquote>⏳ Примерно ${Math.ceil((totalInSegment * 50) / 1000)} сек на отправку.\n` +
+      `Бот уведомит вас с итоговой статистикой по завершении.</blockquote>`,
       { parse_mode: 'HTML' }
     ).catch(() => {});
 
-    const { sent, failed } = await notif.broadcastNewProduct(product, stock, segment);
+    setImmediate(async () => {
+      const startTime = Date.now();
+      try {
+        const { sent, failed, blocked } = await notif.broadcastNewProduct(product, stock, segment);
+        const durationSec = Math.round((Date.now() - startTime) / 1000);
 
-    await ctx.reply(
-      `✅ <b>Рассылка завершена!</b>\n\n` +
-      `🎯 Сегмент: <b>${label}</b>\n` +
-      `📤 Отправлено: <b>${sent}</b>\n` +
-      `❌ Ошибок: <b>${failed}</b>`,
-      {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback('⬅️ К товару', `admin:product:edit:${productId}`),
-            Markup.button.callback('📦 К товарам', 'admin:products'),
-          ],
-        ]),
+        if (adminId && telegram) {
+          const totalFailed = (failed || 0) + (blocked || 0);
+          await telegram.sendMessage(
+            adminId,
+            `✅ <b>Рассылка о товаре завершена!</b>\n\n` +
+            `📦 Товар: <b>${escapeHtml(product.name)}</b>\n` +
+            `🎯 Сегмент: <b>${escapeHtml(label)}</b>\n` +
+            `📤 Отправлено: <b>${sent}</b>\n` +
+            `❌ Ошибок: <b>${totalFailed}</b>\n` +
+            `⏱ Время: <b>${durationSec} сек</b>`,
+            {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([
+                [
+                  Markup.button.callback('⬅️ К товару', `admin:product:edit:${productId}`),
+                  Markup.button.callback('📦 К товарам', 'admin:products'),
+                ],
+              ]),
+            }
+          ).catch((err) => {
+            logger.error('[admin.routes:p_broadcast] Не удалось отправить результат рассылки админу:', err);
+          });
+        }
+      } catch (err) {
+        logger.error(`[admin.routes:p_broadcast] Критическая ошибка фоновой рассылки товара: ${err.message}`, { stack: err.stack });
+        if (adminId && telegram) {
+          try {
+            await telegram.sendMessage(
+              adminId,
+              `❌ <b>Ошибка при выполнении рассылки о товаре</b>\n\n` +
+              `📦 Товар: <b>${escapeHtml(product.name)}</b>\n` +
+              `⚠️ Ошибка: <code>${escapeHtml(err.message)}</code>`,
+              { parse_mode: 'HTML' }
+            );
+          } catch (notifyErr) {
+            logger.error(`[admin.routes:p_broadcast] Не удалось уведомить админа об ошибке: ${notifyErr.message}`);
+          }
+        }
+      } finally {
+        notif.releaseBroadcastLock();
       }
-    );
+    });
   });
 
   // (удалён недостижимый дубль admin:product:field - Telegraf всегда матчил

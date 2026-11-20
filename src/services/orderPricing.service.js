@@ -46,9 +46,18 @@ const getEffectivePrice = async (product, stockCount, activePromo = null, option
   if (activePromo) {
     const qty = Math.max(1, parseInt(options?.qty, 10) || 1);
     const totalAmount = price * qty;
-    const discountRes = await promoService.calculateDiscount(activePromo, totalAmount, product._id, options);
+    const discountRes = await promoService.calculateDiscount(activePromo, totalAmount, product._id, {
+      ...options,
+      qty,
+      costPrice: product.costPrice,
+    });
     if (discountRes.valid) price = discountRes.finalPrice / qty;
   }
+
+  // [SEC-CAT-03] Enforce minimum price floor against wholesale cost and zero pricing
+  const costLimit = Number(product.costPrice) || 0;
+  const minAllowedPrice = Math.min(price, Math.max(0.01, costLimit));
+  price = Math.max(minAllowedPrice, price);
 
   return Number(price.toFixed(2));
 };

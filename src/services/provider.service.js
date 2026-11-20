@@ -9,21 +9,6 @@ const PROVIDERS = {
     label: '🌐 Jaha Digital API',
     shortLabel: 'Jaha Digital',
   },
-  akunding: {
-    id: 'akunding',
-    label: '🛒 Akunding API',
-    shortLabel: 'Akunding',
-  },
-  canboso: {
-    id: 'canboso',
-    label: '🌐 Canboso API',
-    shortLabel: 'Canboso',
-  },
-  trumpstore: {
-    id: 'trumpstore',
-    label: '🏛️ Trump Store API',
-    shortLabel: 'Trump Store',
-  },
   u1traby: {
     id: 'u1traby',
     label: '🌐 U1traby',
@@ -90,7 +75,7 @@ const buildKeyQueryForProduct = (product, extra = {}) => ({
 const providerRequiresUserConfirmation = (provider) => provider === 'u1traby';
 const providerSupportsActivation = (provider) => provider === 'u1traby';
 
-const isSupplierProvider = (provider) => ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider);
+const isSupplierProvider = (provider) => provider === 'jaha';
 
 const isTransientSupplierError = (errMessage) => {
   if (!errMessage) return false;

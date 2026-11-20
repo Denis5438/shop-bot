@@ -8,6 +8,7 @@ const { escapeHtml, formatDateTimeMSK, formatDateMSK, fmtUSDT, safeEdit } = requ
 const i18n = require('../../middlewares/i18n');
 const logger = require('../../../config/logger');
 const { runBroadcastQueue } = require('../../../services/rateLimiter.service');
+const notif = require('../../../services/notification.service');
 const currencyService = require('../../../services/currency.service');
 const { invalidateUserCache } = require('../../middlewares/user');
 
@@ -391,8 +392,8 @@ const handleBalanceChange = async (ctx) => {
   if (session.adminAction !== 'change_balance') return false;
 
   const amount = parseFloat(ctx.message.text.replace(',', '.'));
-  if (isNaN(amount)) {
-    await ctx.reply('❌ Неверное число. Попробуйте: +5 или -3');
+  if (!Number.isFinite(amount) || isNaN(amount) || amount === 0 || Math.abs(amount) > 1000000) {
+    await ctx.reply('❌ Недопустимая сумма. Введите корректное число от -1 000 000 до +1 000 000 (например: +5 или -3):');
     return true;
   }
 
@@ -777,48 +778,99 @@ const executeCustomBroadcast = async (ctx) => {
   const payload = session.broadcastPayload;
   if (!payload) return ctx.answerCbQuery('❌ Сессия рассылки истекла', { show_alert: true });
 
+  if (notif.isBroadcastActive()) {
+    return ctx.answerCbQuery('⚠️ Уже выполняется другая рассылка! Дождитесь завершения.', { show_alert: true });
+  }
+
+  const adminId = ctx.from?.id || ctx.chat?.id;
+  const telegram = ctx.telegram;
+
+  // Захватываем блокировку рассылки
+  notif.acquireBroadcastLock({ type: 'custom', adminId });
+
+  // Скопируем полезную нагрузку и очистим сессию немедленно
+  const broadcastData = { ...payload };
   session.broadcastPayload = null;
-  await ctx.answerCbQuery('🚀 Запускаю рассылку...');
-  await ctx.reply('⏳ <b>Идёт процесс рассылки...</b> Бот уведомит вас по завершении.', { parse_mode: 'HTML' });
 
-  // Курсор + lean: не грузим всю коллекцию пользователей в память разом
-  const users = User.find({ isBanned: false }).select('telegramId language').lean().cursor();
-
-  const result = await runBroadcastQueue({
-    items: users,
-    sendFn: async (u) => {
-      const userLang = u.language || 'ru';
-      const buttonText = userLang === 'en' ? '☑️ I accept the Terms & Offer' : '☑️ Я ознакомлен и принимаю условия Оферты';
-
-      const keyboard = payload.includeToS
-        ? Markup.inlineKeyboard([[Markup.button.callback(buttonText, 'tos:accept_broadcast')]])
-        : null;
-
-      const opts = { parse_mode: 'HTML', caption: payload.text, ...keyboard };
-
-      if (payload.mediaType === 'photo') {
-        await ctx.telegram.sendPhoto(u.telegramId, payload.mediaId, opts);
-      } else if (payload.mediaType === 'video') {
-        await ctx.telegram.sendVideo(u.telegramId, payload.mediaId, opts);
-      } else if (payload.mediaType === 'document') {
-        await ctx.telegram.sendDocument(u.telegramId, payload.mediaId, opts);
-      } else {
-        await ctx.telegram.sendMessage(u.telegramId, payload.text, { parse_mode: 'HTML', ...keyboard });
-      }
-    },
-    delayMs: 35,
+  // Немедленно отвечаем на callback и информируем админа о фоновом старте (предотвращает таймаут 90 000 мс в Telegraf)
+  await ctx.answerCbQuery('🚀 Рассылка запущена в фоновом режиме...').catch(() => {});
+  await ctx.editMessageReplyMarkup(null).catch(() => {});
+  await ctx.reply(
+    '🚀 <b>Рассылка запущена в фоновом режиме!</b>\n\n' +
+    '⏳ Сообщения отправляются пользователям в фоновом потоке. Это может занять некоторое время.\n' +
+    'Бот уведомит вас с подробным отчётом по завершении.',
+    { parse_mode: 'HTML' }
+  ).catch((err) => {
+    logger.error('[executeCustomBroadcast] Ошибка отправки стартового сообщения:', err);
   });
 
-  await ctx.reply(
-    `✅ <b>Массовая рассылка завершена!</b>\n\n` +
-    `📨 Успешно доставлено: <b>${result.sent}</b>\n` +
-    `🚫 Заблокировали бота: <b>${result.blocked}</b>\n` +
-    `❌ Ошибок доставки: <b>${result.failed}</b>`,
-    {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ К пользователям', 'admin:users')]]),
+  // Запуск тяжёлого цикла рассылки асинхронно в фоне
+  setImmediate(async () => {
+    const startTime = Date.now();
+    try {
+      logger.info(`[executeCustomBroadcast] Запуск фоновой рассылки админом ${adminId}`);
+
+      // Курсор + lean: не грузим всю коллекцию пользователей в память разом
+      const users = User.find({ isBanned: false }).select('telegramId language').lean().cursor();
+
+      const result = await runBroadcastQueue({
+        items: users,
+        signal: notif.getActiveBroadcastInfo()?.abortController?.signal,
+        sendFn: async (u) => {
+          const userLang = u.language || 'ru';
+          const buttonText = userLang === 'en' ? '☑️ I accept the Terms & Offer' : '☑️ Я ознакомлен и принимаю условия Оферты';
+
+          const keyboard = broadcastData.includeToS
+            ? Markup.inlineKeyboard([[Markup.button.callback(buttonText, 'tos:accept_broadcast')]])
+            : null;
+
+          const opts = { parse_mode: 'HTML', caption: broadcastData.text, ...keyboard };
+
+          if (broadcastData.mediaType === 'photo') {
+            await telegram.sendPhoto(u.telegramId, broadcastData.mediaId, opts);
+          } else if (broadcastData.mediaType === 'video') {
+            await telegram.sendVideo(u.telegramId, broadcastData.mediaId, opts);
+          } else if (broadcastData.mediaType === 'document') {
+            await telegram.sendDocument(u.telegramId, broadcastData.mediaId, opts);
+          } else {
+            await telegram.sendMessage(u.telegramId, broadcastData.text, { parse_mode: 'HTML', ...keyboard });
+          }
+        },
+        delayMs: 35,
+      });
+
+      const durationSec = Math.round((Date.now() - startTime) / 1000);
+      logger.info(`[executeCustomBroadcast] Фоновая рассылка завершена за ${durationSec}с: доставлено=${result.sent}, заблокировано=${result.blocked}, ошибок=${result.failed}`);
+
+      if (adminId && telegram) {
+        await telegram.sendMessage(
+          adminId,
+          `✅ <b>Массовая рассылка завершена!</b>\n\n` +
+          `📨 Успешно доставлено: <b>${result.sent}</b>\n` +
+          `🚫 Заблокировали бота: <b>${result.blocked}</b>\n` +
+          `❌ Ошибок доставки: <b>${result.failed}</b>\n` +
+          `⏱ Время выполнения: <b>${durationSec} сек</b>`,
+          {
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ К пользователям', 'admin:users')]]),
+          }
+        ).catch((err) => {
+          logger.error('[executeCustomBroadcast] Не удалось отправить финальный отчёт админу:', err);
+        });
+      }
+    } catch (err) {
+      logger.error('[executeCustomBroadcast] Критическая ошибка фоновой рассылки:', err);
+      if (adminId && telegram) {
+        await telegram.sendMessage(
+          adminId,
+          `❌ <b>Ошибка при выполнении массовой рассылки:</b>\n<code>${escapeHtml(err.message)}</code>`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      }
+    } finally {
+      notif.releaseBroadcastLock();
     }
-  );
+  });
 };
 
 const ORDERS_PER_PAGE = 4;

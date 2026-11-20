@@ -11,7 +11,7 @@ const config = require('../src/config');
 
 const ORDER_ID = '6aa7a90de39afa10f6b58d45';
 const TARGET_TELEGRAM_ID = 5816207940;
-const REAL_DELIVERY_DATA = 'hbbr897896562+nnofm826@gmail.com|dreYWi2CR3A2|Z7Z5OBOR7D6JMCKTR7HV2VSNYIAM3XLC';
+const REAL_DELIVERY_DATA = process.env.REAL_DELIVERY_DATA || 'dummy_user@example.com|dummy_password|JBSWY3DPEHPK3PXP';
 
 const run = async () => {
   console.log(`Connecting to database...`);

@@ -162,7 +162,7 @@ const showOrderDetail = async (ctx, orderId) => {
 
   const product = order.productId;
   const provider = resolveOrderProvider(order, product);
-  const isSupplier = ['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider);
+  const isSupplier = provider === 'jaha';
 
   let wasDeliveredOnline = false;
   // Для заказов внешних поставщиков в процессе активации — проверяем онлайн-статус у поставщика напрямую
@@ -266,7 +266,7 @@ const showOrderDetail = async (ctx, orderId) => {
   }
 
   if (['pending', 'activating', 'retry'].includes(order.status)) {
-    if (['jaha', 'akunding', 'canboso', 'trumpstore'].includes(product?.provider || order.provider)) {
+    if ((product?.provider || order.provider) === 'jaha') {
       buttons.push([Markup.button.callback('🔄 Выкупить через API поставщика', `admin:order:retry_api:${orderId}`)]);
     }
     buttons.push([Markup.button.callback('✅ Выполнить вручную', `admin:order:complete:${orderId}`)]);
@@ -580,7 +580,7 @@ const retryApiOrder = async (ctx, orderId) => {
 
   const product = order.productId;
   const provider = resolveOrderProvider(order, product);
-  if (!['jaha', 'akunding', 'canboso', 'trumpstore'].includes(provider)) {
+  if (provider !== 'jaha') {
     return ctx.answerCbQuery('❌ Этот заказ не привязан к API поставщику', { show_alert: true });
   }
 
