@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
+const fs = require('fs');
 const { authRouter } = require('./routes/auth.routes');
 const { catalogRouter } = require('./routes/catalog.routes');
 const { cartRouter } = require('./routes/cart.routes');
@@ -97,6 +99,52 @@ app.use('/api/v1/payments', applyRateLimit(60000, 120), paymentsRouter);
 app.use('/api', (req, res) => {
   res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'API эндпоинт не найден' });
 });
+
+// ─── Раздача статики витрины сайта (Frontend Next.js Export) ─────────
+const staticDir = path.resolve(__dirname, '../../website/frontend/out');
+if (fs.existsSync(staticDir)) {
+  // Раздача статических ассетов (_next, изображения, css, js)
+  app.use(express.static(staticDir));
+
+  // Маршрутизация HTML страниц (Next.js export)
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (req.path.startsWith('/api')) return next();
+
+    const cleanPath = req.path.replace(/\/+$/, '') || '/';
+    if (cleanPath === '/') {
+      const rootIndex = path.join(staticDir, 'index.html');
+      if (fs.existsSync(rootIndex)) return res.sendFile(rootIndex);
+    }
+
+    // Поиск директории с index.html (например /auth/signin -> /auth/signin/index.html)
+    const dirIndex = path.join(staticDir, cleanPath, 'index.html');
+    if (fs.existsSync(dirIndex)) {
+      return res.sendFile(dirIndex);
+    }
+
+    // Прямой html-файл (например /auth/signin.html)
+    const directHtml = path.join(staticDir, `${cleanPath}.html`);
+    if (fs.existsSync(directHtml)) {
+      return res.sendFile(directHtml);
+    }
+
+    // 404 страница сайта
+    const notFoundHtml = path.join(staticDir, '404.html');
+    if (fs.existsSync(notFoundHtml)) {
+      return res.status(404).sendFile(notFoundHtml);
+    }
+
+    const fallbackIndex = path.join(staticDir, 'index.html');
+    if (fs.existsSync(fallbackIndex)) {
+      return res.sendFile(fallbackIndex);
+    }
+
+    next();
+  });
+}
+
+
 
 // Глобальный обработчик ошибок
 app.use((err, req, res, next) => {

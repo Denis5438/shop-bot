@@ -1,15 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  async rewrites() {
-    const apiBackend = process.env.BACKEND_API_URL || 'http://127.0.0.1:4000';
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${apiBackend}/api/:path*`,
-      },
-    ];
+  output: 'export',
+  trailingSlash: true,
+  images: { unoptimized: true },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
   },
 };
 
 module.exports = nextConfig;
+

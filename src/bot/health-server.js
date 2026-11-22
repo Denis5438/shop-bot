@@ -48,9 +48,18 @@ function startHealthServer(port = 3000) {
     // Нормализация пути (обрезаем query-string, slash в конце).
     const urlPath = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
 
-    // ─── Web REST API v1 ─────────────────────────────────────────────
-    if (urlPath.startsWith('/api/v1/')) {
-      return apiApp(req, res);
+    // /ping - самый быстрый ответ, без проверок. Используется для keep-alive (UptimeRobot).
+    if (urlPath === '/ping') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('pong');
+    }
+
+    // /health - полноценный health-check с MongoDB (Render health check).
+    if (urlPath === '/health') {
+      const payload = buildHealthPayload();
+      const statusCode = payload.status === 'ok' ? 200 : 503;
+      res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify(payload));
     }
 
     // ─── Webhook Platega.io ───────────────────────────────────────────
@@ -100,41 +109,10 @@ function startHealthServer(port = 3000) {
       }
     }
 
-    // Ответ на любые другие методы, кроме GET/HEAD → 405.
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, { 'Content-Type': 'text/plain' });
-      return res.end('Method Not Allowed');
-    }
-
-    // /ping - самый быстрый ответ, без проверок. Используется для keep-alive.
-    if (urlPath === '/ping') {
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('pong');
-    }
-
-    // /health - полноценный health-check с MongoDB.
-    if (urlPath === '/health') {
-      const payload = buildHealthPayload();
-      const statusCode = payload.status === 'ok' ? 200 : 503;
-      res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify(payload));
-    }
-
-    // Корень - короткая информация + ссылки.
-    if (urlPath === '/') {
-      const payload = {
-        service: 'shop-bot',
-        status: 'running',
-        endpoints: ['/health', '/ping'],
-        uptimeSec: Math.floor((Date.now() - START_TIME) / 1000),
-      };
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify(payload));
-    }
-
-    // Всё остальное - 404.
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Not Found');
+    // ─── Веб-сайт магазина и Web REST API v1 ──────────────────────────
+    // Все остальные запросы (/, /auth/signin, /orders, /topup, /admin, /_next/*, /api/v1/*)
+    // передаются в Express (apiApp).
+    return apiApp(req, res);
   });
 
   // Явно обрабатываем ошибки запуска (например, порт занят) - иначе упадёт процесс.
