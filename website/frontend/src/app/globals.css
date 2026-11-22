@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-color: #0A0D14;
+  --card-color: #121624;
+  --border-color: #222A42;
+  --primary-color: #FF5722;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: #F8FAFC;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  overflow-x: hidden;
+}
+
+/* Стилизация скроллбара */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0A0D14;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #222A42;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3B486E;
+}
+
+/* Стеклянные карточки и эффекты */
+.glass-panel {
+  background: rgba(18, 22, 36, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 87, 34, 0.35);
+  box-shadow: 0 10px 25px -5px rgba(255, 87, 34, 0.12);
+}
+
+/* Оранжевое свечение для кнопок действия */
+.btn-primary-glow {
+  box-shadow: 0 0 20px rgba(255, 87, 34, 0.35);
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-primary-glow:hover {
+  box-shadow: 0 0 28px rgba(255, 87, 34, 0.55);
+}

@@ -187,6 +187,15 @@ const createBot = () => {
   require('./routes/admin.routes')(bot);
   require('./handlers/activation.handler')(bot);
   require('./routes/input.routes')(bot);
+  require('./routes/webAuth.routes').registerWebAuthRoutes(bot);
+
+  bot.telegram.getMe().then((botInfo) => {
+    if (botInfo?.username) {
+      try {
+        require('../api/routes/auth.routes').setBotUsername(botInfo.username);
+      } catch (_) {}
+    }
+  }).catch(() => {});
 
   // Ошибки
   bot.catch((err, ctx) => {

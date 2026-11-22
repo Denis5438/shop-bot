@@ -104,8 +104,16 @@ module.exports = (bot) => {
       return;
     }
 
-    // Проверка глубокой ссылки на товар: /start p_<id> или /start prod_<id>
+    // Проверка глубокой ссылки на авторизацию на сайте: /start auth_<sessionToken>
     const startPayload = ctx.startPayload || (typeof ctx.message?.text === 'string' ? ctx.message.text.match(/^\/start(?:@\w+)?\s+(\S+)/)?.[1] : null);
+    if (startPayload && startPayload.startsWith('auth_')) {
+      const authSessionToken = startPayload.replace('auth_', '').trim();
+      const { handleWebAuthStart } = require('./webAuth.routes');
+      const handled = await handleWebAuthStart(ctx, authSessionToken);
+      if (handled) return;
+    }
+
+    // Проверка глубокой ссылки на товар: /start p_<id> или /start prod_<id>
     const prodMatch = startPayload ? startPayload.match(/^(?:p_|prod_)([a-f0-9]{24})$/) : null;
     const targetProductId = prodMatch ? prodMatch[1] : null;
 

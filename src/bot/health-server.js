@@ -14,6 +14,7 @@
 const http = require('http');
 const mongoose = require('mongoose');
 const logger = require('../config/logger');
+const apiApp = require('../api');
 
 const START_TIME = Date.now();
 
@@ -46,6 +47,11 @@ function startHealthServer(port = 3000) {
   const server = http.createServer((req, res) => {
     // Нормализация пути (обрезаем query-string, slash в конце).
     const urlPath = (req.url || '/').split('?')[0].replace(/\/+$/, '') || '/';
+
+    // ─── Web REST API v1 ─────────────────────────────────────────────
+    if (urlPath.startsWith('/api/v1/')) {
+      return apiApp(req, res);
+    }
 
     // ─── Webhook Platega.io ───────────────────────────────────────────
     if (urlPath === '/webhook/platega' || urlPath === '/api/payments/platega/callback') {

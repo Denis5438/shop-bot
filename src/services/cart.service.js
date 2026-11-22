@@ -573,6 +573,7 @@ const checkoutCart = async (ctx) => {
 };
 
 module.exports = {
+  getAvailableStock,
   getCart,
   addToCart,
   updateItemQty,
