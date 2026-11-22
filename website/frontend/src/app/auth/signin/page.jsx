@@ -256,7 +256,7 @@ export default function SignInPage() {
               </div>
 
               <p className="text-[11px] text-slate-500 pt-1">
-                Код живёт 5 минут и сработает только в этом браузере.
+                Код живёт 5 минут. Можно также отправить команду <code className="text-brand font-mono font-bold">/code</code> прямо в боте.
               </p>
 
               {pollStatus === 'polling' && (

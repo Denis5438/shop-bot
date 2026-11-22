@@ -53,6 +53,9 @@ const userSchema = new mongoose.Schema({
     default: undefined,
     set: (v) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
   },
+  // Одноразовый код авторизации на веб-сайте (/code в боте)
+  webAuthCodeHash: { type: String, default: null },
+  webAuthCodeExpiresAt: { type: Date, default: null },
 });
 
 // Sparse unique: null/undefined допускают много юзеров без UID, но если

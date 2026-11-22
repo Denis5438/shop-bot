@@ -104,17 +104,36 @@ router.post('/verify', async (req, res) => {
       return res.status(429).json({ success: false, error: 'TOO_MANY_ATTEMPTS', message: 'Превышен лимит попыток ввода. Запросите новый код.' });
     }
 
-    // Проверяем срок действия кода (5 минут)
-    if (!session.codeExpiresAt || new Date() > session.codeExpiresAt || !session.codeHash) {
-      return res.status(400).json({ success: false, error: 'CODE_EXPIRED', message: 'Срок действия кода истёк. Запросите код заново в боте.' });
+    // Сверяем хэш
+    const candidateHash = crypto.createHash('sha256').update(cleanCode).digest('hex');
+    let isValid = false;
+    let verifiedTelegramId = session.telegramId;
+
+    // Вариант 1: Код из сессии (через deep-link)
+    if (session.codeHash && session.codeExpiresAt && new Date() <= session.codeExpiresAt) {
+      const bufA = Buffer.from(candidateHash, 'hex');
+      const bufB = Buffer.from(session.codeHash, 'hex');
+      if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+        isValid = true;
+      }
     }
 
-    // Сверяем хэш через timingSafeEqual
-    const candidateHash = crypto.createHash('sha256').update(cleanCode).digest('hex');
-    const bufA = Buffer.from(candidateHash, 'hex');
-    const bufB = Buffer.from(session.codeHash, 'hex');
-
-    const isValid = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+    // Вариант 2: Код из профиля пользователя (/code или кнопка в боте)
+    if (!isValid) {
+      const codeUser = await User.findOne({
+        webAuthCodeHash: candidateHash,
+        webAuthCodeExpiresAt: { $gt: new Date() },
+      });
+      if (codeUser) {
+        isValid = true;
+        verifiedTelegramId = codeUser.telegramId;
+        // Одноразовый код: сбрасываем после успешного входа
+        await User.updateOne(
+          { _id: codeUser._id },
+          { $set: { webAuthCodeHash: null, webAuthCodeExpiresAt: null } }
+        );
+      }
+    }
 
     if (!isValid) {
       const updated = await AuthSession.findOneAndUpdate(
@@ -137,7 +156,7 @@ router.post('/verify', async (req, res) => {
     // Код верный! Выполняем CAS перевод в статус verified
     const updatedSession = await AuthSession.findOneAndUpdate(
       { _id: session._id, status: { $in: ['pending', 'code_issued'] } },
-      { $set: { status: 'verified', verifiedAt: new Date() } },
+      { $set: { status: 'verified', telegramId: verifiedTelegramId, verifiedAt: new Date() } },
       { new: true }
     );
 
@@ -146,7 +165,7 @@ router.post('/verify', async (req, res) => {
     }
 
     // Находим или создаём пользователя
-    let user = await User.findOne({ telegramId: session.telegramId });
+    let user = await User.findOne({ telegramId: verifiedTelegramId });
     if (!user) {
       user = new User({
         telegramId: session.telegramId,

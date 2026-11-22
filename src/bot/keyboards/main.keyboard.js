@@ -20,6 +20,9 @@ const mainKeyboard = (t, isSeller = false) => {
       Markup.button.callback(t('btn_documents'), 'menu:documents'),
       Markup.button.callback(t('btn_change_lang'), 'profile:lang'),
     ],
+    [
+      Markup.button.callback(t('btn_change_lang') === 'Language' ? '🔐 Website Login Code' : '🔐 Код для входа на сайт', 'menu:webauth_code'),
+    ],
   ];
 
   if (isSeller) {

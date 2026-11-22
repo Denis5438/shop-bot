@@ -1,7 +1,64 @@
 const crypto = require('crypto');
 const { Markup } = require('telegraf');
 const AuthSession = require('../../models/AuthSession');
+const User = require('../../models/User');
 const logger = require('../../config/logger');
+
+/**
+ * Генерация и отправка одноразового кода для входа на сайт.
+ */
+const sendWebAuthCode = async (ctx) => {
+  try {
+    const fromId = ctx.from?.id;
+    if (!fromId) return;
+
+    const rawCode = String(crypto.randomInt(100000, 1000000));
+    const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    // 1. Сохраняем код в профиле пользователя (для прямого ввода на сайте)
+    await User.updateOne(
+      { telegramId: fromId },
+      { $set: { webAuthCodeHash: codeHash, webAuthCodeExpiresAt: expiresAt } }
+    );
+
+    // 2. Ищем недавнюю pending-сессию из браузера (за последние 10 минут)
+    const recentSession = await AuthSession.findOne({
+      status: 'pending',
+      createdAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) },
+    }).sort({ createdAt: -1 });
+
+    let keyboard = null;
+    if (recentSession) {
+      recentSession.codeHash = codeHash;
+      recentSession.telegramId = fromId;
+      recentSession.status = 'code_issued';
+      recentSession.codeExpiresAt = expiresAt;
+      await recentSession.save();
+
+      keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('⚡ Подтвердить вход в 1 клик', `webauth:approve:${recentSession.sessionToken}`)],
+      ]);
+    }
+
+    const text =
+      `🔐 <b>Код для входа на сайт</b>\n\n` +
+      `Ваш одноразовый код:\n` +
+      `<code>${rawCode}</code>\n\n` +
+      `⏱ Код действует <b>5 минут</b>.\n` +
+      `<i>Введите эти 6 цифр в поле на сайте</i>` +
+      (keyboard ? ` <i>или нажмите кнопку ниже для мгновенного входа:</i>` : `.`);
+
+    if (keyboard) {
+      await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML' });
+    }
+  } catch (err) {
+    logger.error(`[WebAuth] Ошибка генерации кода: ${err.message}`);
+    await ctx.reply('⚠️ Произошла ошибка. Попробуйте ещё раз.').catch(() => {});
+  }
+};
 
 /**
  * Регистрация обработчиков авторизации на веб-сайте через Telegram-бота.
@@ -44,6 +101,15 @@ const registerWebAuthRoutes = (bot) => {
       await ctx.answerCbQuery('⚠️ Произошла ошибка. Попробуйте ввести код вручную.', { show_alert: true }).catch(() => {});
     }
   });
+
+  // Кнопка из главного меню
+  bot.action('menu:webauth_code', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await sendWebAuthCode(ctx);
+  });
+
+  // Команды /code, /login, /auth, /site
+  bot.command(['code', 'login', 'auth', 'site'], sendWebAuthCode);
 };
 
 /**
