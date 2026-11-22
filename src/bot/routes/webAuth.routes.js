@@ -36,8 +36,10 @@ const sendWebAuthCode = async (ctx) => {
       recentSession.codeExpiresAt = expiresAt;
       await recentSession.save();
 
+      // Длина callback_data в Telegram ограничена 64 байтами.
+      // Используем короткий префикс wa: и 24-значный ObjectId (всего 27 байт).
       keyboard = Markup.inlineKeyboard([
-        [Markup.button.callback('⚡ Подтвердить вход в 1 клик', `webauth:approve:${recentSession.sessionToken}`)],
+        [Markup.button.callback('⚡ Подтвердить вход в 1 клик', `wa:${recentSession._id}`)],
       ]);
     }
 
@@ -65,16 +67,24 @@ const sendWebAuthCode = async (ctx) => {
  * @param {import('telegraf').Telegraf} bot
  */
 const registerWebAuthRoutes = (bot) => {
-  // Обработка кнопки 1-клик подтверждения входа
-  bot.action(/^webauth:approve:([a-f0-9]{64})$/, async (ctx) => {
+  // Обработка кнопки 1-клик подтверждения входа (wa:<objectId> или webauth:approve:<token>)
+  bot.action(/^(?:wa:([a-f0-9]{24})|webauth:approve:([a-f0-9]+))$/, async (ctx) => {
     try {
-      const sessionToken = ctx.match[1];
+      const sessionIdOrToken = ctx.match[1] || ctx.match[2];
       const fromId = ctx.from?.id;
 
-      const session = await AuthSession.findOne({
-        sessionToken,
-        status: { $in: ['pending', 'code_issued'] },
-      });
+      let session = null;
+      if (ctx.match[1]) {
+        session = await AuthSession.findOne({
+          _id: sessionIdOrToken,
+          status: { $in: ['pending', 'code_issued'] },
+        });
+      } else {
+        session = await AuthSession.findOne({
+          sessionToken: sessionIdOrToken,
+          status: { $in: ['pending', 'code_issued'] },
+        });
+      }
 
       if (!session) {
         return await ctx.answerCbQuery('❌ Сессия входа истекла или не найдена', { show_alert: true });
@@ -157,7 +167,7 @@ const handleWebAuthStart = async (ctx, sessionToken) => {
       `<i>Нажмите на код выше, чтобы скопировать его, или нажмите кнопку ниже для мгновенного входа:</i>`;
 
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('⚡ Подтвердить вход в 1 клик', `webauth:approve:${sessionToken}`)],
+      [Markup.button.callback('⚡ Подтвердить вход в 1 клик', `wa:${session._id}`)],
     ]);
 
     await ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
