@@ -18,7 +18,19 @@ const getBotUsername = async () => {
     cachedBotUsername = process.env.BOT_USERNAME.replace(/^@/, '');
     return cachedBotUsername;
   }
-  return 'LachugaShop_bot'; // fallback
+  try {
+    const { Telegraf } = require('telegraf');
+    const { BOT_TOKEN } = require('../../config');
+    if (BOT_TOKEN) {
+      const tempBot = new Telegraf(BOT_TOKEN);
+      const me = await tempBot.telegram.getMe();
+      if (me?.username) {
+        cachedBotUsername = me.username.replace(/^@/, '');
+        return cachedBotUsername;
+      }
+    }
+  } catch (_) {}
+  return 'testantiscam1bot'; // Реальный юзернейм бота
 };
 
 const setBotUsername = (username) => {
@@ -49,6 +61,7 @@ router.post('/session', async (req, res) => {
     return res.json({
       success: true,
       sessionToken,
+      botUsername: botUser,
       deepLink,
       expiresInSeconds: 600,
     });
@@ -359,4 +372,5 @@ router.post('/logout', (req, res) => {
 module.exports = {
   authRouter: router,
   setBotUsername,
+  getBotUsername,
 };

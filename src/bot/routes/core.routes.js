@@ -85,6 +85,15 @@ module.exports = (bot) => {
   bot.start(async (ctx) => {
     await cleanPreviousBotMessage(ctx);
 
+    // Приоритетная проверка глубокой ссылки на авторизацию на сайте: /start auth_<sessionToken>
+    const startPayload = ctx.startPayload || (typeof ctx.message?.text === 'string' ? ctx.message.text.match(/^\/start(?:@\w+)?\s+(\S+)/)?.[1] : null);
+    if (startPayload && startPayload.startsWith('auth_')) {
+      const authSessionToken = startPayload.replace('auth_', '').trim();
+      const { handleWebAuthStart } = require('./webAuth.routes');
+      const handled = await handleWebAuthStart(ctx, authSessionToken);
+      if (handled) return;
+    }
+
     const user = ctx.user;
     const t = ctx.t;
 
@@ -102,15 +111,6 @@ module.exports = (bot) => {
       const sent = await ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
       saveBotMessage(ctx, sent?.message_id);
       return;
-    }
-
-    // Проверка глубокой ссылки на авторизацию на сайте: /start auth_<sessionToken>
-    const startPayload = ctx.startPayload || (typeof ctx.message?.text === 'string' ? ctx.message.text.match(/^\/start(?:@\w+)?\s+(\S+)/)?.[1] : null);
-    if (startPayload && startPayload.startsWith('auth_')) {
-      const authSessionToken = startPayload.replace('auth_', '').trim();
-      const { handleWebAuthStart } = require('./webAuth.routes');
-      const handled = await handleWebAuthStart(ctx, authSessionToken);
-      if (handled) return;
     }
 
     // Проверка глубокой ссылки на товар: /start p_<id> или /start prod_<id>

@@ -12,6 +12,7 @@ export default function SignInPage() {
 
   const [activeTab, setActiveTab] = useState('login'); // 'login' | 'register'
   const [sessionToken, setSessionToken] = useState(null);
+  const [botUsername, setBotUsername] = useState('testantiscam1bot');
   const [deepLink, setDeepLink] = useState(null);
   const [code, setCode] = useState('');
   const [isRequestingSession, setIsRequestingSession] = useState(false);
@@ -55,10 +56,13 @@ export default function SignInPage() {
       }
 
       setSessionToken(data.sessionToken);
+      if (data.botUsername) setBotUsername(data.botUsername);
       setDeepLink(data.deepLink);
 
       // Открываем бота в новой вкладке
-      window.open(data.deepLink, '_blank', 'noopener,noreferrer');
+      try {
+        window.open(data.deepLink, '_blank', 'noopener,noreferrer');
+      } catch (_) {}
 
       // Запускаем фоновый опрос статуса (интервал 2.5 сек)
       startPolling(data.sessionToken);
@@ -191,24 +195,37 @@ export default function SignInPage() {
                 <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-brand text-white text-[10px] font-bold mr-1.5">
                   1
                 </span>
-                Откройте бота — бот пришлёт 6 цифр.
+                Откройте @{botUsername} — бот пришлёт 6 цифр.
               </div>
 
-              <button
-                type="button"
-                onClick={handleGetTelegramCode}
-                disabled={isRequestingSession}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand font-bold text-xs text-white shadow-lg shadow-brand/25 hover:bg-brand-hover hover:scale-[1.01] transition-all disabled:opacity-50"
-              >
-                {isRequestingSession ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>
-                    <span>Получить код в Telegram</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </>
-                )}
-              </button>
+              {deepLink ? (
+                <a
+                  href={deepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand font-bold text-xs text-white shadow-lg shadow-brand/25 hover:bg-brand-hover hover:scale-[1.01] transition-all"
+                >
+                  <Send className="h-3.5 w-3.5 fill-current" />
+                  <span>Открыть @{botUsername} в Telegram</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleGetTelegramCode}
+                  disabled={isRequestingSession}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand font-bold text-xs text-white shadow-lg shadow-brand/25 hover:bg-brand-hover hover:scale-[1.01] transition-all disabled:opacity-50"
+                >
+                  {isRequestingSession ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Получить код в Telegram</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Шаг 2: Ввод полученного кода */}
