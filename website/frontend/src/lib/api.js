@@ -30,41 +30,52 @@ async function request(endpoint, options = {}) {
   return data;
 }
 
+function buildQuery(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, val]) => {
+    if (val !== undefined && val !== null && val !== '') {
+      query.set(key, String(val));
+    }
+  });
+  const str = query.toString();
+  return str ? `?${str}` : '';
+}
+
 // ─── Авторизация через Telegram ─────────────────────────────────────
 export const authApi = {
-  // Получение deep-link и sessionToken для Telegram
   getSession: () => request('/auth/session', { method: 'POST' }),
 
-  // Проверка 6-значного кода
   verifyCode: (sessionToken, code) =>
     request('/auth/verify', {
       method: 'POST',
       body: JSON.stringify({ sessionToken, code }),
     }),
 
-  // Polling статуса (для мгновенного 1-клик входа из бота)
   checkStatus: (token) => request(`/auth/check-status?token=${encodeURIComponent(token)}`),
 
-  // Текущий профиль пользователя
   getMe: () => request('/auth/me'),
 
-  // Выход из системы
   logout: () => request('/auth/logout', { method: 'POST' }),
 };
 
 // ─── Каталог и товары ───────────────────────────────────────────────
 export const catalogApi = {
+  getMeta: () => request('/catalog/meta'),
+
   getCategories: () => request('/catalog/categories'),
 
   getProducts: (params = {}) => {
-    const query = new URLSearchParams();
-    if (params.categoryId && params.categoryId !== 'all') query.set('categoryId', params.categoryId);
-    if (params.search) query.set('search', params.search);
-    if (params.type) query.set('type', params.type);
-    if (params.sort) query.set('sort', params.sort);
-    if (params.page) query.set('page', params.page);
-    if (params.limit) query.set('limit', params.limit);
-    return request(`/catalog/products?${query.toString()}`);
+    const qs = buildQuery({
+      categoryId: params.categoryId,
+      search: params.search,
+      type: params.type,
+      origin: params.origin,
+      inStock: params.inStock ? 'true' : undefined,
+      sort: params.sort,
+      page: params.page,
+      limit: params.limit,
+    });
+    return request(`/catalog/products${qs}`);
   },
 
   getProductById: (id) => request(`/catalog/products/${id}`),
@@ -117,11 +128,12 @@ export const ordersApi = {
     }),
 
   getOrders: (params = {}) => {
-    const query = new URLSearchParams();
-    if (params.page) query.set('page', params.page);
-    if (params.limit) query.set('limit', params.limit);
-    if (params.status) query.set('status', params.status);
-    return request(`/orders?${query.toString()}`);
+    const qs = buildQuery({
+      page: params.page,
+      limit: params.limit,
+      status: params.status,
+    });
+    return request(`/orders${qs}`);
   },
 
   getOrderById: (id) => request(`/orders/${id}`),
@@ -131,7 +143,6 @@ export const ordersApi = {
 export const paymentsApi = {
   getMethods: () => request('/payments/methods'),
 
-  // Bybit UID
   createBybitInvoice: (amount, orderId = null) =>
     request('/payments/bybit-uid/create', {
       method: 'POST',
@@ -150,7 +161,6 @@ export const paymentsApi = {
       method: 'POST',
     }),
 
-  // Platega СБП
   createPlategaPayment: (amountUsdt, returnUrl = null) =>
     request('/payments/platega/create', {
       method: 'POST',
@@ -159,12 +169,240 @@ export const paymentsApi = {
 
   getPlategaStatus: (requestId) => request(`/payments/platega/status/${requestId}`),
 
-  // Crypto
   getCryptoAddresses: () => request('/payments/crypto/addresses'),
 
   submitCryptoTxid: (network, amount, txid) =>
     request('/payments/crypto/submit', {
       method: 'POST',
       body: JSON.stringify({ network, amount, txid }),
+    }),
+};
+
+// ─── Админ-панель (/api/v1/admin) ───────────────────────────────────
+export const adminApi = {
+  // Статистика и логистика
+  getStats: (period = 'month') =>
+    request(`/admin/stats?period=${encodeURIComponent(period)}`),
+
+  // Товары
+  getProducts: (params = {}) =>
+    request(`/admin/products${buildQuery(params)}`),
+
+  createProduct: (payload) =>
+    request('/admin/products', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateProduct: (id, payload) =>
+    request(`/admin/products/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  setFlashSale: (id, payload) =>
+    request(`/admin/products/${id}/flash-sale`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  cloneProduct: (id) =>
+    request(`/admin/products/${id}/clone`, {
+      method: 'POST',
+    }),
+
+  deleteProduct: (id) =>
+    request(`/admin/products/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Категории
+  getCategories: () => request('/admin/categories'),
+
+  createCategory: (payload) =>
+    request('/admin/categories', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateCategory: (id, payload) =>
+    request(`/admin/categories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  deleteCategory: (id) =>
+    request(`/admin/categories/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Ключи
+  getKeysSummary: () => request('/admin/keys/summary'),
+
+  getProductKeys: (productId, params = {}) =>
+    request(`/admin/keys/product/${productId}${buildQuery(params)}`),
+
+  importKeys: (productId, rawText) =>
+    request('/admin/keys/import', {
+      method: 'POST',
+      body: JSON.stringify({ productId, rawText }),
+    }),
+
+  deleteKey: (keyId) =>
+    request(`/admin/keys/${keyId}`, {
+      method: 'DELETE',
+    }),
+
+  clearUsedKeys: (productId) =>
+    request(`/admin/keys/product/${productId}/clear-used`, {
+      method: 'DELETE',
+    }),
+
+  // Заказы, споры и гарантия
+  getOrders: (params = {}) =>
+    request(`/admin/orders${buildQuery(params)}`),
+
+  completeOrder: (id, deliveryData) =>
+    request(`/admin/orders/${id}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ deliveryData }),
+    }),
+
+  cancelOrder: (id, reason = '') =>
+    request(`/admin/orders/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  resolveWarranty: (id, payload) =>
+    request(`/admin/orders/${id}/warranty`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  resolveDispute: (id, payload) =>
+    request(`/admin/orders/${id}/dispute`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Пользователи
+  getUsers: (params = {}) =>
+    request(`/admin/users${buildQuery(params)}`),
+
+  getUserById: (id) => request(`/admin/users/${id}`),
+
+  adjustUserBalance: (id, payload) =>
+    request(`/admin/users/${id}/balance`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateUser: (id, payload) =>
+    request(`/admin/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  sendMessageToUser: (id, text) =>
+    request(`/admin/users/${id}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+
+  // Промокоды
+  getPromos: () => request('/admin/promos'),
+
+  createPromo: (payload) =>
+    request('/admin/promos', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updatePromo: (id, payload) =>
+    request(`/admin/promos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  deletePromo: (id) =>
+    request(`/admin/promos/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Поставщики
+  getSuppliers: () => request('/admin/suppliers'),
+
+  updateSupplier: (supplierId, payload) =>
+    request(`/admin/suppliers/${supplierId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  refreshSupplier: (supplierId) =>
+    request(`/admin/suppliers/${supplierId}/refresh`, {
+      method: 'POST',
+    }),
+
+  syncSupplier: (supplierId) =>
+    request(`/admin/suppliers/${supplierId}/sync`, {
+      method: 'POST',
+    }),
+
+  importSupplier: (supplierId) =>
+    request(`/admin/suppliers/${supplierId}/import`, {
+      method: 'POST',
+    }),
+
+  // Заявки на пополнение и выводы продавцов
+  getTopups: (params = {}) =>
+    request(`/admin/topups${buildQuery(params)}`),
+
+  approveTopup: (id, note = '') =>
+    request(`/admin/topups/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+
+  rejectTopup: (id, reason = '') =>
+    request(`/admin/topups/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  getWithdrawals: (params = {}) =>
+    request(`/admin/withdrawals${buildQuery(params)}`),
+
+  confirmWithdrawal: (id, reason = '') =>
+    request(`/admin/withdrawals/${id}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  rejectWithdrawal: (id, reason = '') =>
+    request(`/admin/withdrawals/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  // Массовые операции
+  runBulk: (payload) =>
+    request('/admin/bulk', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Настройки
+  getSettings: () => request('/admin/settings'),
+
+  updateSettings: (payload) =>
+    request('/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  refreshCurrencyRate: () =>
+    request('/admin/settings/refresh-rate', {
+      method: 'POST',
     }),
 };

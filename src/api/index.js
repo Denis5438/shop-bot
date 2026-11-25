@@ -8,6 +8,7 @@ const { catalogRouter } = require('./routes/catalog.routes');
 const { cartRouter } = require('./routes/cart.routes');
 const { ordersRouter } = require('./routes/orders.routes');
 const { paymentsRouter } = require('./routes/payments.routes');
+const { adminRouter } = require('./routes/admin.routes');
 const { optionalAuth } = require('./middlewares/auth.middleware');
 const logger = require('../config/logger');
 
@@ -94,6 +95,9 @@ app.use('/api/v1/payments/bybit-uid/create', applyRateLimit(60000, 30));
 app.use('/api/v1/payments/platega/create', applyRateLimit(60000, 30));
 app.use('/api/v1/payments/crypto/submit', applyRateLimit(60000, 15));
 app.use('/api/v1/payments', applyRateLimit(60000, 120), paymentsRouter);
+
+// 6. Админ-панель веб-сайта (180 req/min)
+app.use('/api/v1/admin', applyRateLimit(60000, 180), adminRouter);
 
 // Обработчик 404 для неизвестных эндпоинтов API
 app.use('/api', (req, res) => {

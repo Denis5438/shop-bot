@@ -2,12 +2,25 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ShoppingBag, Copy, CheckCircle2, Clock, AlertTriangle, ShieldCheck, ArrowRight } from 'lucide-react';
+import {
+  ShoppingBag,
+  Copy,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  ShieldCheck,
+  ArrowRight,
+  Package,
+} from 'lucide-react';
 import { ordersApi } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import BrandIcon from '../../components/BrandIcon';
 
 export default function OrdersPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const toast = useToast();
+
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [copiedKey, setCopiedKey] = useState(null);
@@ -27,6 +40,7 @@ export default function OrdersPage() {
         }
       } catch (err) {
         console.error('Ошибка загрузки заказов:', err);
+        toast.error('Не удалось загрузить заказы');
       } finally {
         setIsLoading(false);
       }
@@ -40,6 +54,7 @@ export default function OrdersPage() {
   const copyToClipboard = (key, orderId) => {
     navigator.clipboard.writeText(key);
     setCopiedKey(orderId);
+    toast.success('Данные доступа скопированы');
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
@@ -55,10 +70,20 @@ export default function OrdersPage() {
       case 'pending':
       case 'activating':
       case 'awaiting_token':
+      case 'awaiting_confirmation':
+      case 'preorder_pending':
+      case 'retry':
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 text-xs font-semibold text-amber-400 animate-pulse">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 text-xs font-semibold text-amber-400">
             <Clock className="h-3.5 w-3.5" />
             Обработка
+          </span>
+        );
+      case 'disputed':
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500/10 border border-orange-500/30 px-2.5 py-1 text-xs font-semibold text-orange-400">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Спор
           </span>
         );
       case 'cancelled':
@@ -80,7 +105,6 @@ export default function OrdersPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-10 space-y-6">
-      {/* Заголовок страницы */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-dark-border">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Мои заказы</h1>
@@ -97,7 +121,6 @@ export default function OrdersPage() {
         </Link>
       </div>
 
-      {/* Список заказов */}
       {isLoading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
@@ -106,7 +129,9 @@ export default function OrdersPage() {
         </div>
       ) : orders.length === 0 ? (
         <div className="rounded-3xl bg-dark-card border border-dark-border py-20 text-center space-y-4">
-          <span className="text-5xl">📦</span>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-dark-surface border border-dark-border text-slate-400">
+            <Package className="h-7 w-7" />
+          </div>
           <h3 className="text-lg font-bold text-white">У вас пока нет заказов</h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
             Перейдите в каталог, чтобы выбрать нужную подписку или лицензионный ключ.
@@ -132,18 +157,16 @@ export default function OrdersPage() {
                 key={order.id}
                 className="rounded-2xl bg-dark-card border border-dark-border p-5 space-y-4 transition-all hover:border-slate-600"
               >
-                {/* Верхняя строка заказа */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-dark-border/60">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-dark-surface border border-dark-border text-2xl">
-                      {order.product?.icon || '📦'}
-                    </span>
-                    <div>
-                      <h3 className="font-semibold text-white text-sm">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <BrandIcon size={44} name={order.product?.name || 'Товар'} />
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-white text-sm truncate">
                         {order.product?.name || 'Цифровой товар'}
                       </h3>
                       <div className="text-[11px] text-slate-400 mt-0.5">
-                        Заказ #{order.id?.slice(-8)} • {new Date(order.createdAt).toLocaleDateString('ru-RU', {
+                        Заказ #{order.id?.slice(-8)} •{' '}
+                        {new Date(order.createdAt).toLocaleDateString('ru-RU', {
                           day: 'numeric',
                           month: 'long',
                           hour: '2-digit',
@@ -153,12 +176,12 @@ export default function OrdersPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 shrink-0">
                     <div className="text-right">
-                      <div className="font-mono font-bold text-white text-sm">
-                        {order.price?.toFixed(2)} USDT
+                      <div className="font-mono font-bold text-white text-sm tabular-nums">
+                        {Number(order.price || 0).toFixed(2)} USDT
                       </div>
-                      <div className="text-[11px] text-slate-500 font-mono">
+                      <div className="text-[11px] text-slate-500 font-mono tabular-nums">
                         {order.qty || 1} шт.
                       </div>
                     </div>
@@ -166,7 +189,6 @@ export default function OrdersPage() {
                   </div>
                 </div>
 
-                {/* Блок выданного ключа */}
                 {hasKey ? (
                   <div className="rounded-xl bg-dark-surface/90 border border-dark-border p-3.5 space-y-2">
                     <div className="flex items-center justify-between text-xs">
@@ -182,6 +204,7 @@ export default function OrdersPage() {
                     <div className="flex items-center justify-between gap-3 rounded-lg bg-dark-input border border-dark-border px-3.5 py-2.5 font-mono text-xs text-emerald-400">
                       <span className="truncate select-all">{keyText}</span>
                       <button
+                        type="button"
                         onClick={() => copyToClipboard(keyText, order.id)}
                         className="flex shrink-0 items-center gap-1.5 rounded-md bg-dark-surface px-2.5 py-1 text-[11px] font-sans text-slate-200 hover:text-white hover:bg-slate-700 transition-all"
                       >

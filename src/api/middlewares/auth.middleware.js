@@ -94,6 +94,20 @@ const requireAdmin = (req, res, next) => {
 };
 
 /**
+ * Middleware для защиты супер-админских эндпоинтов (role: superadmin).
+ */
+const requireSuperAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'superadmin') {
+    return res.status(403).json({
+      success: false,
+      error: 'SUPERADMIN_REQUIRED',
+      message: 'Действие доступно только главному администратору (superadmin)',
+    });
+  }
+  next();
+};
+
+/**
  * Генерация подписанного JWT токена на 30 дней.
  */
 const signUserToken = (user) => {
@@ -114,5 +128,6 @@ module.exports = {
   authenticateToken,
   optionalAuth,
   requireAdmin,
+  requireSuperAdmin,
   signUserToken,
 };

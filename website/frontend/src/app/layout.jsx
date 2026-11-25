@@ -4,6 +4,7 @@ import Footer from '../components/Footer';
 import CartDrawer from '../components/CartDrawer';
 import { AuthProvider } from '../context/AuthContext';
 import { CartProvider } from '../context/CartContext';
+import { ToastProvider } from '../context/ToastContext';
 
 export const metadata = {
   title: 'ShopBot — Цифровые товары, аккаунты и ключи',
@@ -14,14 +15,16 @@ export default function RootLayout({ children }) {
   return (
     <html lang="ru" className="dark">
       <body className="min-h-screen bg-dark-bg text-slate-100 flex flex-col justify-between selection:bg-brand selection:text-white">
-        <AuthProvider>
-          <CartProvider>
-            <Header />
-            <main className="flex-1">{children}</main>
-            <CartDrawer />
-            <Footer />
-          </CartProvider>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <CartProvider>
+              <Header />
+              <main className="flex-1">{children}</main>
+              <CartDrawer />
+              <Footer />
+            </CartProvider>
+          </AuthProvider>
+        </ToastProvider>
       </body>
     </html>
   );

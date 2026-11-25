@@ -51,6 +51,7 @@ export function AuthProvider({ children }) {
         isLoading,
         isAuthenticated: Boolean(user),
         isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
+        isSuperAdmin: user?.role === 'superadmin',
         refreshUser,
         setAuthenticatedUser,
         logout,

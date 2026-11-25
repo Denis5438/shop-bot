@@ -2,14 +2,38 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { X, Trash2, ShoppingBag, Plus, Minus, ArrowRight, Tag, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import {
+  X,
+  Trash2,
+  ShoppingBag,
+  Plus,
+  Minus,
+  ArrowRight,
+  Tag,
+  ShieldAlert,
+  CheckCircle2,
+  Copy,
+} from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { ordersApi } from '../lib/api';
+import BrandIcon from './BrandIcon';
 
 export default function CartDrawer() {
-  const { cart, isOpen, closeCart, updateQuantity, removeFromCart, clearCart, applyPromo, removePromo, refreshCart } = useCart();
+  const {
+    cart,
+    isOpen,
+    closeCart,
+    updateQuantity,
+    removeFromCart,
+    clearCart,
+    applyPromo,
+    removePromo,
+    refreshCart,
+  } = useCart();
   const { user, refreshUser } = useAuth();
+  const toast = useToast();
 
   const [promoInput, setPromoInput] = useState('');
   const [promoMessage, setPromoMessage] = useState(null);
@@ -32,58 +56,75 @@ export default function CartDrawer() {
       const res = await ordersApi.checkout(cart.cartVersion);
       if (res.success) {
         setCheckoutResult(res);
+        toast.success('Заказ успешно оплачен и оформлен!');
         await refreshUser();
         await refreshCart();
       }
     } catch (err) {
-      alert(err.message || 'Ошибка оформления заказа');
+      toast.error(err.message || 'Ошибка оформления заказа');
     } finally {
       setIsCheckingOut(false);
     }
   };
 
-  const balance = user?.balance || 0;
-  const isInsufficient = balance < cart.finalTotal;
-  const diff = (cart.finalTotal - balance).toFixed(2);
+  const copyDelivery = (data) => {
+    if (!data) return;
+    navigator.clipboard.writeText(data);
+    toast.success('Ключ скопирован в буфер обмена');
+  };
+
+  const balance = Number(user?.balance || 0);
+  const finalTotal = Number(cart.finalTotal || 0);
+  const isInsufficient = balance < finalTotal;
+  const diff = Math.max(0, finalTotal - balance).toFixed(2);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
-      {/* Затемнение фона */}
       <div
         onClick={closeCart}
         className="absolute inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
       />
 
-      {/* Панель корзины */}
-      <div className="fixed inset-y-0 right-0 flex max-w-full pl-10">
+      <div className="fixed inset-y-0 right-0 flex max-w-full pl-8">
         <div className="w-screen max-w-md border-l border-dark-border bg-dark-bg p-6 shadow-2xl flex flex-col justify-between">
           {/* Верхняя строка */}
-          <div>
+          <div className="flex flex-col min-h-0 flex-1">
             <div className="flex items-center justify-between pb-4 border-b border-dark-border">
               <div className="flex items-center gap-2.5 font-bold text-lg text-white">
                 <ShoppingBag className="h-5 w-5 text-brand" />
                 <span>Корзина ({cart.totalCount})</span>
               </div>
-              <button
-                onClick={closeCart}
-                className="rounded-xl p-2 text-slate-400 hover:text-white hover:bg-dark-surface transition-all"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {!checkoutResult && cart.items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearCart}
+                    className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-400 hover:bg-dark-surface hover:text-rose-400 transition-colors"
+                  >
+                    Очистить
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={closeCart}
+                  className="rounded-xl p-2 text-slate-400 hover:text-white hover:bg-dark-surface transition-all"
+                  aria-label="Закрыть корзину"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Успешный результат заказа */}
             {checkoutResult ? (
-              <div className="py-8 text-center space-y-4">
+              <div className="py-8 text-center space-y-4 overflow-y-auto">
                 <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                   <CheckCircle2 className="h-8 w-8" />
                 </div>
                 <h3 className="text-xl font-bold text-white">Заказ успешно оплачен!</h3>
                 <p className="text-sm text-slate-400">
-                  Списано {checkoutResult.totalCost} USDT. Ваши ключи готовы к использованию.
+                  Списано {Number(checkoutResult.totalCost || 0).toFixed(2)} USDT. Ваши товары готовы.
                 </p>
 
-                {/* Выданные ключи */}
                 <div className="mt-4 space-y-2 text-left">
                   {checkoutResult.deliveryReports?.map((report, idx) => (
                     <div key={idx} className="rounded-xl bg-dark-card border border-dark-border p-3.5 space-y-1.5">
@@ -91,13 +132,12 @@ export default function CartDrawer() {
                       <div className="flex items-center justify-between gap-2 rounded-lg bg-dark-surface p-2 font-mono text-xs text-emerald-400 border border-dark-border">
                         <span className="truncate">{report.data}</span>
                         <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(report.data);
-                            alert('Ключ скопирован в буфер обмена!');
-                          }}
-                          className="shrink-0 text-[11px] text-brand hover:underline font-sans"
+                          type="button"
+                          onClick={() => copyDelivery(report.data)}
+                          className="shrink-0 flex items-center gap-1 text-[11px] text-brand hover:underline font-sans"
                         >
-                          Копировать
+                          <Copy className="h-3 w-3" />
+                          <span>Копировать</span>
                         </button>
                       </div>
                     </div>
@@ -113,6 +153,7 @@ export default function CartDrawer() {
                     Перейти к заказам
                   </Link>
                   <button
+                    type="button"
                     onClick={() => {
                       setCheckoutResult(null);
                       closeCart();
@@ -125,11 +166,10 @@ export default function CartDrawer() {
               </div>
             ) : (
               <>
-                {/* Список позиций */}
-                <div className="mt-4 max-h-[46vh] overflow-y-auto space-y-3 pr-1">
+                <div className="mt-4 flex-1 overflow-y-auto space-y-3 pr-1">
                   {cart.items.length === 0 ? (
                     <div className="py-16 text-center text-slate-500 space-y-3">
-                      <span className="text-4xl">🛒</span>
+                      <ShoppingBag className="h-10 w-10 mx-auto text-slate-600" />
                       <p className="text-sm">В корзине пока ничего нет</p>
                     </div>
                   ) : (
@@ -138,33 +178,37 @@ export default function CartDrawer() {
                         key={item.productId}
                         className="flex items-center justify-between gap-3 rounded-xl bg-dark-card border border-dark-border p-3.5"
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-dark-surface text-xl border border-dark-border">
-                            {item.product?.icon || '📦'}
-                          </span>
-                          <div>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <BrandIcon
+                            size={40}
+                            name={item.product?.name}
+                            categoryName={item.product?.category?.name}
+                            rounded="lg"
+                          />
+                          <div className="min-w-0">
                             <h4 className="font-semibold text-white text-xs line-clamp-1">
                               {item.product?.name}
                             </h4>
-                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                              {item.unitPrice} USDT / шт.
+                            <div className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
+                              {Number(item.unitPrice || 0).toFixed(2)} USDT / шт.
                             </div>
                           </div>
                         </div>
 
-                        {/* Шаговый переключатель количества */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <div className="flex items-center rounded-lg bg-dark-surface border border-dark-border text-xs">
                             <button
+                              type="button"
                               onClick={() => updateQuantity(item.productId, item.qty - 1)}
                               className="px-2 py-1 text-slate-400 hover:text-white"
                             >
                               <Minus className="h-3 w-3" />
                             </button>
-                            <span className="w-5 text-center font-mono font-bold text-white">
+                            <span className="w-6 text-center font-mono font-bold text-white tabular-nums">
                               {item.qty}
                             </span>
                             <button
+                              type="button"
                               onClick={() => updateQuantity(item.productId, item.qty + 1)}
                               disabled={item.qty >= item.availableStock}
                               className="px-2 py-1 text-slate-400 hover:text-white disabled:opacity-40"
@@ -174,6 +218,7 @@ export default function CartDrawer() {
                           </div>
 
                           <button
+                            type="button"
                             onClick={() => removeFromCart(item.productId)}
                             className="p-1.5 text-slate-500 hover:text-rose-400 transition-colors"
                             title="Удалить"
@@ -186,7 +231,6 @@ export default function CartDrawer() {
                   )}
                 </div>
 
-                {/* Промокод */}
                 {cart.items.length > 0 && (
                   <div className="mt-4 pt-3 border-t border-dark-border/60">
                     {cart.activePromo ? (
@@ -195,7 +239,7 @@ export default function CartDrawer() {
                           <Tag className="h-3.5 w-3.5" />
                           {cart.activePromo.code} (-{cart.discountAmount} USDT)
                         </span>
-                        <button onClick={removePromo} className="text-slate-400 hover:text-white">
+                        <button type="button" onClick={removePromo} className="text-slate-400 hover:text-white">
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -227,28 +271,25 @@ export default function CartDrawer() {
             )}
           </div>
 
-          {/* Итоговый блок и Кнопка чекаута */}
           {!checkoutResult && cart.items.length > 0 && (
-            <div className="pt-4 border-t border-dark-border space-y-3">
-              {/* Расчёт сумм */}
+            <div className="pt-4 mt-4 border-t border-dark-border space-y-3">
               <div className="space-y-1.5 text-xs text-slate-400">
                 <div className="flex justify-between">
                   <span>Товары:</span>
-                  <span className="font-mono text-slate-300">{cart.subtotal.toFixed(2)} USDT</span>
+                  <span className="font-mono tabular-nums text-slate-300">{Number(cart.subtotal || 0).toFixed(2)} USDT</span>
                 </div>
                 {cart.discountAmount > 0 && (
                   <div className="flex justify-between text-emerald-400">
                     <span>Скидка по промокоду:</span>
-                    <span className="font-mono">-{cart.discountAmount.toFixed(2)} USDT</span>
+                    <span className="font-mono tabular-nums">-{Number(cart.discountAmount).toFixed(2)} USDT</span>
                   </div>
                 )}
                 <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-dark-border/40">
                   <span>Итого к оплате:</span>
-                  <span className="font-mono text-brand text-lg">{cart.finalTotal.toFixed(2)} USDT</span>
+                  <span className="font-mono tabular-nums text-brand text-lg">{finalTotal.toFixed(2)} USDT</span>
                 </div>
               </div>
 
-              {/* Проверка баланса */}
               {isInsufficient ? (
                 <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 space-y-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
@@ -256,8 +297,8 @@ export default function CartDrawer() {
                     <span>Недостаточно средств на балансе</span>
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    На балансе: <span className="font-mono text-white">{balance.toFixed(2)} USDT</span>. 
-                    Не хватает: <span className="font-mono text-amber-400 font-bold">{diff} USDT</span>.
+                    На балансе: <span className="font-mono tabular-nums text-white">{balance.toFixed(2)} USDT</span>.
+                    Не хватает: <span className="font-mono tabular-nums text-amber-400 font-bold">{diff} USDT</span>.
                   </p>
                   <Link
                     href="/topup"
@@ -270,9 +311,10 @@ export default function CartDrawer() {
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={handleCheckout}
                   disabled={isCheckingOut || cart.hasStockIssue}
-                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand font-bold text-white shadow-lg shadow-brand/25 hover:bg-brand-hover hover:scale-[1.01] transition-all disabled:opacity-50"
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand font-bold text-white shadow-lg shadow-brand/25 hover:bg-brand-hover transition-all disabled:opacity-50"
                 >
                   <span>{isCheckingOut ? 'Оформление...' : 'Оплатить заказ с баланса'}</span>
                   <ArrowRight className="h-4 w-4" />

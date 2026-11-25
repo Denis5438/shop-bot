@@ -1,23 +1,29 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const logger = require('../config/logger');
-const { getSettings } = require('./settingsCache.service');
+const settingsCache = require('./settingsCache.service');
 
 const PLATEGA_BASE_URL = 'https://app.platega.io';
 
 /**
  * Получает актуальные настройки Platega (из БД или env)
+ * @param {Object} [options]
+ * @param {'bot'|'web'} [options.channel='bot']
  */
-const getPlategaConfig = async () => {
-  const settings = await getSettings();
+const getPlategaConfig = async (options = {}) => {
+  const settings = await settingsCache.getSettings();
   const merchantId = String(settings?.plategaMerchantId || process.env.PLATEGA_MERCHANT_ID || '').trim();
   const secret = String(settings?.plategaSecret || process.env.PLATEGA_SECRET || '').trim();
-  const enabled = settings?.plategaEnabled !== false;
+  const channel = options?.channel === 'web' ? 'web' : 'bot';
+  const enabled = channel === 'web'
+    ? settings?.webPlategaEnabled !== false
+    : settings?.plategaEnabled !== false;
 
   return {
     merchantId,
     secret,
     enabled,
+    channel,
     isReady: Boolean(merchantId && secret && enabled),
   };
 };
@@ -32,6 +38,7 @@ const getPlategaConfig = async () => {
  * @param {string} params.userName - @username пользователя
  * @param {string} [params.returnUrl] - URL возврата при успехе
  * @param {string} [params.failedUrl] - URL возврата при ошибке
+ * @param {'bot'|'web'} [params.channel='bot'] - канал оплаты
  */
 const createPayment = async ({
   amountRub,
@@ -41,8 +48,9 @@ const createPayment = async ({
   userName,
   returnUrl,
   failedUrl,
+  channel = 'bot',
 }) => {
-  const config = await getPlategaConfig();
+  const config = await getPlategaConfig({ channel });
   if (!config.merchantId || !config.secret) {
     throw new Error('Platega не настроена: отсутствует Merchant ID или Secret API Key.');
   }

@@ -6,12 +6,27 @@ const bybitUidService = require('../../services/bybitUidPayment.service');
 const plategaService = require('../../services/platega.service');
 const currencyService = require('../../services/currency.service');
 const blockchainService = require('../../services/blockchain.service');
-const { getSettings } = require('../../services/settingsCache.service');
+const settingsCache = require('../../services/settingsCache.service');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const topupScene = require('../../bot/scenes/topup.scene');
 const logger = require('../../config/logger');
 
 const router = express.Router();
+
+const checkWebMaintenance = (settings, user) => {
+  if (settings?.webMaintenanceMode === true && !['admin', 'superadmin'].includes(user?.role)) {
+    return {
+      blocked: true,
+      status: 503,
+      body: {
+        success: false,
+        error: 'MAINTENANCE_MODE',
+        message: 'Сайт находится на техническом обслуживании. Пожалуйста, попробуйте позже.',
+      },
+    };
+  }
+  return { blocked: false };
+};
 
 // ─── 0. Публичный Webhook для Platega.io (БЕЗ JWT) ────────────────
 router.post('/webhook/platega', async (req, res) => {
@@ -33,11 +48,12 @@ router.post('/webhook/platega', async (req, res) => {
   }
 });
 
-// ─── 1. Доступные способы оплаты (Публичный) ──────────────────────
+// ─── 1. Доступные способы оплаты (Публичный, только web* настройки) ─
 router.get('/methods', async (req, res) => {
   try {
-    const settings = await getSettings();
-    const rubRate = currencyService.getRate();
+    const settings = await settingsCache.getSettings();
+    const plategaConfig = await plategaService.getPlategaConfig({ channel: 'web' });
+    const rubRate = currencyService.getRate(settings);
 
     const methods = [
       {
@@ -49,7 +65,7 @@ router.get('/methods', async (req, res) => {
         fee: 0,
         speed: 'Автоматически за 20 секунд',
         description: 'Без комиссии сети блокчейна. Перевод по UID внутри Bybit с точностью до 4 знаков.',
-        enabled: settings.bybitEnabled !== false,
+        enabled: settings?.webBybitUidEnabled !== false,
       },
       {
         id: 'platega_sbp',
@@ -61,7 +77,7 @@ router.get('/methods', async (req, res) => {
         speed: 'Мгновенно по QR-коду',
         description: 'Оплата рублями через любое банковское приложение РФ по QR-коду СБП.',
         rateRub: rubRate,
-        enabled: settings.plategaEnabled !== false,
+        enabled: settings?.webPlategaEnabled !== false && plategaConfig?.enabled !== false,
       },
       {
         id: 'crypto_usdt_trc20',
@@ -72,7 +88,7 @@ router.get('/methods', async (req, res) => {
         minAmount: 5.0,
         speed: '1-3 минуты',
         description: 'Прямой перевод на адрес кошелька TRC-20 сети Tron.',
-        enabled: Boolean(settings.bybitTrc20Address || settings.topupWallet),
+        enabled: settings?.webCryptoTrc20Enabled !== false && Boolean(settings?.bybitTrc20Address || settings?.topupWallet),
       },
       {
         id: 'crypto_usdt_bep20',
@@ -83,7 +99,7 @@ router.get('/methods', async (req, res) => {
         minAmount: 5.0,
         speed: '1-2 минуты',
         description: 'Прямой перевод на адрес сети BNB Smart Chain.',
-        enabled: Boolean(settings.bybitBep20Address),
+        enabled: settings?.webCryptoBep20Enabled !== false && Boolean(settings?.bybitBep20Address),
       },
       {
         id: 'crypto_ton',
@@ -94,7 +110,7 @@ router.get('/methods', async (req, res) => {
         minAmount: 1.0,
         speed: 'Мгновенно',
         description: 'Перевод через сеть The Open Network.',
-        enabled: Boolean(settings.tonAddress),
+        enabled: settings?.webCryptoTonEnabled !== false && Boolean(settings?.tonAddress),
       },
     ];
 
@@ -102,6 +118,7 @@ router.get('/methods', async (req, res) => {
       success: true,
       methods: methods.filter((m) => m.enabled),
       currentRateRub: rubRate,
+      webMaintenanceMode: Boolean(settings?.webMaintenanceMode),
     });
   } catch (err) {
     logger.error(`[PaymentsAPI] Ошибка получения методов оплаты: ${err.message}`);
@@ -115,6 +132,20 @@ router.use(authenticateToken);
 // ─── 2. Bybit UID: Создание счёта ─────────────────────────────────
 router.post('/bybit-uid/create', async (req, res) => {
   try {
+    const settings = await settingsCache.getSettings();
+    const maint = checkWebMaintenance(settings, req.user);
+    if (maint.blocked) {
+      return res.status(maint.status).json(maint.body);
+    }
+
+    if (settings?.webBybitUidEnabled === false) {
+      return res.status(403).json({
+        success: false,
+        error: 'PAYMENT_METHOD_DISABLED',
+        message: 'Оплата через Bybit UID временно отключена на сайте',
+      });
+    }
+
     const { amount, orderId } = req.body;
     const baseAmount = Number(amount);
 
@@ -261,6 +292,21 @@ router.post('/bybit-uid/cancel/:invoiceId', async (req, res) => {
 // ─── 6. Platega СБП: Создание платежа ─────────────────────────────
 router.post('/platega/create', async (req, res) => {
   try {
+    const settings = await settingsCache.getSettings();
+    const maint = checkWebMaintenance(settings, req.user);
+    if (maint.blocked) {
+      return res.status(maint.status).json(maint.body);
+    }
+
+    const plategaConfig = await plategaService.getPlategaConfig({ channel: 'web' });
+    if (settings?.webPlategaEnabled === false || plategaConfig?.enabled === false) {
+      return res.status(403).json({
+        success: false,
+        error: 'PAYMENT_METHOD_DISABLED',
+        message: 'Оплата через СБП временно отключена на сайте',
+      });
+    }
+
     const { amountUsdt, returnUrl } = req.body;
     const amountNum = Number(amountUsdt);
 
@@ -272,7 +318,7 @@ router.post('/platega/create', async (req, res) => {
       });
     }
 
-    const amountRub = currencyService.toRub(amountNum);
+    const amountRub = currencyService.toRub(amountNum, settings);
     const tempRequestId = new mongoose.Types.ObjectId();
 
     // Сначала вызываем API Platega
@@ -285,6 +331,7 @@ router.post('/platega/create', async (req, res) => {
         userId: req.user.telegramId,
         userName: req.user.username,
         returnUrl: returnUrl || undefined,
+        channel: 'web',
       });
     } catch (plategaErr) {
       logger.error(`[PaymentsAPI] Ошибка API Platega: ${plategaErr.message}`);
@@ -356,14 +403,20 @@ router.get('/platega/status/:requestId', async (req, res) => {
 // ─── 8. Crypto: Адреса кошельков для пополнения ───────────────────
 router.get('/crypto/addresses', async (req, res) => {
   try {
-    const settings = await getSettings();
+    const settings = await settingsCache.getSettings();
 
     return res.json({
       success: true,
       wallets: {
-        trc20: settings.bybitTrc20Address || settings.topupWallet || null,
-        bep20: settings.bybitBep20Address || null,
-        ton: settings.tonAddress || null,
+        trc20: settings?.webCryptoTrc20Enabled !== false
+          ? (settings?.bybitTrc20Address || settings?.topupWallet || null)
+          : null,
+        bep20: settings?.webCryptoBep20Enabled !== false
+          ? (settings?.bybitBep20Address || null)
+          : null,
+        ton: settings?.webCryptoTonEnabled !== false
+          ? (settings?.tonAddress || null)
+          : null,
       },
       minDepositUsdt: 5.0,
       instructions: 'Отправляйте только точную валюту в выбранной сети. Зачисление после подтверждений сети.',
@@ -377,6 +430,12 @@ router.get('/crypto/addresses', async (req, res) => {
 // ─── 9. Crypto: Отправка TXID на проверку ─────────────────────────
 router.post('/crypto/submit', async (req, res) => {
   try {
+    const settings = await settingsCache.getSettings();
+    const maint = checkWebMaintenance(settings, req.user);
+    if (maint.blocked) {
+      return res.status(maint.status).json(maint.body);
+    }
+
     const { network, amount, txid } = req.body;
 
     const netLower = String(network || '').toLowerCase().trim();
@@ -385,6 +444,19 @@ router.post('/crypto/submit', async (req, res) => {
         success: false,
         error: 'INVALID_NETWORK',
         message: 'Поддерживаются сети: TRC20, BEP20, TON',
+      });
+    }
+
+    const networkEnabled = {
+      trc20: settings?.webCryptoTrc20Enabled !== false,
+      bep20: settings?.webCryptoBep20Enabled !== false,
+      ton: settings?.webCryptoTonEnabled !== false,
+    };
+    if (!networkEnabled[netLower]) {
+      return res.status(403).json({
+        success: false,
+        error: 'PAYMENT_METHOD_DISABLED',
+        message: `Пополнение через сеть ${netLower.toUpperCase()} временно отключено на сайте`,
       });
     }
 

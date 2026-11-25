@@ -3,11 +3,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { cartApi } from '../lib/api';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 
 const CartContext = createContext(null);
 
 export function CartProvider({ children }) {
   const { isAuthenticated } = useAuth();
+  const toast = useToast();
+
   const [cart, setCart] = useState({
     items: [],
     totalCount: 0,
@@ -53,8 +56,9 @@ export function CartProvider({ children }) {
     refreshCart();
   }, [refreshCart]);
 
-  const addToCart = async (productId, qty = 1) => {
+  const addToCart = async (productId, qty = 1, { openDrawer = true } = {}) => {
     if (!isAuthenticated) {
+      toast.info('Войдите через Telegram, чтобы добавить товар в корзину');
       window.location.href = '/auth/signin';
       return false;
     }
@@ -63,10 +67,13 @@ export function CartProvider({ children }) {
       setIsLoading(true);
       await cartApi.addItem(productId, qty);
       await refreshCart();
-      setIsOpen(true); // Автоматически открываем корзину после добавления
+      toast.success('Товар добавлен в корзину');
+      if (openDrawer) {
+        setIsOpen(true);
+      }
       return true;
     } catch (err) {
-      alert(err.message || 'Не удалось добавить товар в корзину');
+      toast.error(err.message || 'Не удалось добавить товар в корзину');
       return false;
     } finally {
       setIsLoading(false);
@@ -79,7 +86,7 @@ export function CartProvider({ children }) {
       await cartApi.updateQty(productId, qty);
       await refreshCart();
     } catch (err) {
-      alert(err.message || 'Не удалось обновить количество');
+      toast.error(err.message || 'Не удалось обновить количество');
     } finally {
       setIsLoading(false);
     }
@@ -90,8 +97,9 @@ export function CartProvider({ children }) {
       setIsLoading(true);
       await cartApi.removeItem(productId);
       await refreshCart();
+      toast.info('Товар удалён из корзины');
     } catch (err) {
-      alert(err.message || 'Не удалось удалить товар');
+      toast.error(err.message || 'Не удалось удалить товар');
     } finally {
       setIsLoading(false);
     }
@@ -102,8 +110,9 @@ export function CartProvider({ children }) {
       setIsLoading(true);
       await cartApi.clearCart();
       await refreshCart();
+      toast.info('Корзина очищена');
     } catch (err) {
-      alert(err.message || 'Не удалось очистить корзину');
+      toast.error(err.message || 'Не удалось очистить корзину');
     } finally {
       setIsLoading(false);
     }
@@ -114,8 +123,10 @@ export function CartProvider({ children }) {
       setIsLoading(true);
       const res = await cartApi.applyPromo(code);
       await refreshCart();
+      toast.success(res.message || 'Промокод применён');
       return { success: true, message: res.message };
     } catch (err) {
+      toast.error(err.message || 'Не удалось применить промокод');
       return { success: false, message: err.message };
     } finally {
       setIsLoading(false);
@@ -127,8 +138,9 @@ export function CartProvider({ children }) {
       setIsLoading(true);
       await cartApi.removePromo();
       await refreshCart();
-    } catch (_) {
-      // Игнорируем ошибку
+      toast.info('Промокод снят');
+    } catch (err) {
+      toast.error(err.message || 'Ошибка при снятии промокода');
     } finally {
       setIsLoading(false);
     }

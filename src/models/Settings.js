@@ -47,12 +47,20 @@ const settingsSchema = new mongoose.Schema({
   autoConfirmHours: { type: Number, default: 24 },
   // Обязательная подписка на каналы
   requiredChannelsEnabled: { type: Boolean, default: false },
-  // Способы оплаты (Вкл / Выкл)
+  // Способы оплаты в Telegram-боте (Вкл / Выкл)
   plategaEnabled: { type: Boolean, default: true },
   plategaMerchantId: { type: String, default: '', get: secretGetter, set: secretSetter },
   plategaSecret: { type: String, default: '', get: secretGetter, set: secretSetter },
   cardEnabled: { type: Boolean, default: true },
   bybitEnabled: { type: Boolean, default: true },
+  // Независимые настройки веб-витрины (отдельно от Telegram-бота)
+  webMaintenanceMode: { type: Boolean, default: false },
+  webPlategaEnabled: { type: Boolean, default: true },
+  webBybitUidEnabled: { type: Boolean, default: true },
+  webCryptoTrc20Enabled: { type: Boolean, default: true },
+  webCryptoBep20Enabled: { type: Boolean, default: true },
+  webCryptoTonEnabled: { type: Boolean, default: true },
+  tonAddress: { type: String, default: '' },
   // Чистый чат (автоудаление старых сообщений бота)
   cleanChatEnabled: { type: Boolean, default: false },
   // Награды за достижения (купоны на скидку)

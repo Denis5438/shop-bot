@@ -26,7 +26,7 @@ const escapeHtml = (value) => String(value)
 
 const notifyManualCompletion = async (user, order, product) => {
   if (product?.type === 'key' && order.keyId) {
-    const key = await Key.findById(order.keyId);
+    const key = order.keyId?.value ? order.keyId : await Key.findById(order.keyId);
 
     if (key?.value) {
       const { get2FAButtonLabel, get2FAHintText, has2FASecret } = require('../../utils/ui');
@@ -52,7 +52,7 @@ const notifyManualCompletion = async (user, order, product) => {
     }
   }
 
-  await notif.notifyUserOrderCompleted(user, order, product, 'Выполнено вручную оператором');
+  await notif.notifyUserOrderCompleted(user, order, product, order.deliveryData || 'Выполнено вручную оператором');
 };
 
 const showOrdersList = async (ctx, filter = 'active', page = 1) => {
@@ -764,6 +764,7 @@ module.exports = {
   showOrderDetail,
   confirmAndActivate,
   completeOrderManually,
+  notifyManualCompletion,
   retryApiOrder,
   cancelOrder,
 };

@@ -83,6 +83,21 @@ async function runTests() {
   assert(topupRes.body.includes('<!DOCTYPE html>'));
   console.log('✓ GET /topup/ serves topup page HTML');
 
+  // 6b. GET /admin/
+  const adminRes = await simulate(server, 'GET', '/admin/');
+  assert.strictEqual(adminRes.statusCode, 200);
+  assert(adminRes.body.includes('<!DOCTYPE html>'), 'Admin response should be HTML document');
+  console.log('✓ GET /admin/ serves admin dashboard HTML');
+
+  // 6c. GET /icons/brands/*.svg (Real downloaded brand icons)
+  const spotifyRes = await simulate(server, 'GET', '/icons/brands/spotify.svg');
+  assert.strictEqual(spotifyRes.statusCode, 200);
+  assert(spotifyRes.body.includes('<svg'), 'spotify.svg should return valid SVG content');
+  const openaiRes = await simulate(server, 'GET', '/icons/brands/openai.svg');
+  assert.strictEqual(openaiRes.statusCode, 200);
+  assert(openaiRes.body.includes('<svg') && !openaiRes.body.includes('currentColor'), 'openai.svg should use brand color instead of currentColor');
+  console.log('✓ GET /icons/brands/spotify.svg & openai.svg return valid colored SVG assets');
+
   // 7. GET /api/v1/health
   const apiHealthRes = await simulate(server, 'GET', '/api/v1/health');
   assert.strictEqual(apiHealthRes.statusCode, 200);

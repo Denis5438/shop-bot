@@ -10,18 +10,18 @@ export default function Footer() {
           {/* Бренд */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 font-bold text-white text-base">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-white text-xs">
-                ⚡
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-white">
+                <Zap className="h-4 w-4 fill-current" />
               </span>
               ShopBot Web Platform
             </div>
             <p className="text-slate-400 leading-relaxed">
-              Независимая цифровая витрина с моментальной выдачей лицензий и аккаунтов. 
+              Независимая цифровая витрина с моментальной выдачей лицензий и аккаунтов.
               Безопасные платежи в USDT и СБП без ограничений.
             </p>
           </div>
 
-          {/* Быстрые ссылки */}
+          {/* Навигация */}
           <div>
             <h4 className="font-semibold text-white mb-3 text-sm">Навигация</h4>
             <ul className="space-y-2">
@@ -48,21 +48,25 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Платежи */}
+          {/* Платёжные каналы */}
           <div>
             <h4 className="font-semibold text-white mb-3 text-sm">Платёжные каналы</h4>
             <ul className="space-y-2">
-              <li className="flex items-center gap-1.5">
-                <span className="text-emerald-400">●</span> Bybit UID (0% комиссии)
+              <li className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                Bybit UID (0% комиссии)
               </li>
-              <li className="flex items-center gap-1.5">
-                <span className="text-emerald-400">●</span> СБП QR-код (Рубли)
+              <li className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                СБП QR-код (Рубли)
               </li>
-              <li className="flex items-center gap-1.5">
-                <span className="text-emerald-400">●</span> USDT TRC20 / BEP20
+              <li className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                USDT TRC20 / BEP20
               </li>
-              <li className="flex items-center gap-1.5">
-                <span className="text-emerald-400">●</span> TON & Telegram WebApp
+              <li className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                TON & Telegram WebApp
               </li>
             </ul>
           </div>

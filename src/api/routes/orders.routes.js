@@ -2,8 +2,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Order = require('../../models/Order');
 const User = require('../../models/User');
-const Key = require('../../models/Key');
 const { checkoutCart } = require('../../services/cart.service');
+const settingsCache = require('../../services/settingsCache.service');
 const { authenticateToken } = require('../middlewares/auth.middleware');
 const logger = require('../../config/logger');
 
@@ -19,6 +19,15 @@ router.use(authenticateToken);
  */
 router.post('/checkout', async (req, res) => {
   try {
+    const settings = await settingsCache.getSettings();
+    if (settings?.webMaintenanceMode === true && !['admin', 'superadmin'].includes(req.user?.role)) {
+      return res.status(503).json({
+        success: false,
+        error: 'MAINTENANCE_MODE',
+        message: 'Сайт находится на техническом обслуживании. Оформление заказов временно приостановлено.',
+      });
+    }
+
     const { cartVersion } = req.body;
 
     if (typeof cartVersion !== 'number') {

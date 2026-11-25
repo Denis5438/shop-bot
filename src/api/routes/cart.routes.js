@@ -247,13 +247,13 @@ router.post('/promo', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'PROMO_INVALID',
-        message: result.reason ? result.reason.replace(/^[❌ℹ️]\s*/, '') : 'Промокод недействителен',
+        message: result.reason ? result.reason.replace(/^(?:❌|ℹ️)\s*/, '') : 'Промокод недействителен',
       });
     }
 
     return res.json({
       success: true,
-      message: result.text ? result.text.replace(/^[✅ℹ️]\s*/, '') : 'Промокод успешно применён',
+      message: result.text ? result.text.replace(/^(?:✅|ℹ️)\s*/, '') : 'Промокод успешно применён',
     });
   } catch (err) {
     logger.error(`[CartAPI] Ошибка активации промокода: ${err.message}`);
