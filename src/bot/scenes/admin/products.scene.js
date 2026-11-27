@@ -25,6 +25,19 @@ const ACTIVE_ORDER_STATUSES = ['pending', 'awaiting_token', 'awaiting_confirmati
 
 const PRODUCTS_PER_PAGE = 7;
 
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const PRODUCT_ADMIN_ACTIONS = new Set([
+  'flash_custom_pct',
+  'flash_custom_dur',
+  'set_product_seller',
+  'set_product_seller_price',
+  'add_product',
+  'product_search',
+  'edit_product_field',
+  'set_manual_stock',
+]);
+
 const showProductsList = async (ctx, page = 1, searchQuery = undefined) => {
   ctx.session = ctx.session || {};
 
@@ -39,7 +52,7 @@ const showProductsList = async (ctx, page = 1, searchQuery = undefined) => {
 
   const query = {};
   if (activeSearch) {
-    query.name = new RegExp(activeSearch, 'i');
+    query.name = new RegExp(escapeRegExp(activeSearch), 'i');
   }
 
   const total = await Product.countDocuments(query);
@@ -367,6 +380,14 @@ const askManualSellerInput = async (ctx, productId) => {
 
 const handleProductInput = async (ctx) => {
   const session = ctx.session || {};
+  if (!PRODUCT_ADMIN_ACTIONS.has(session.adminAction)) {
+    return false;
+  }
+
+  if (typeof ctx.message?.text !== 'string') {
+    await ctx.reply('❌ Пожалуйста, отправьте текстовое сообщение.');
+    return true;
+  }
 
   if (ctx.message && ctx.message.message_id) {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
@@ -415,7 +436,7 @@ const handleProductInput = async (ctx) => {
     }
 
     // Ищем продавца в базе
-    let seller = await Seller.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
+    let seller = await Seller.findOne({ username: { $regex: new RegExp(`^${escapeRegExp(username)}$`, 'i') } });
 
     if (!seller) {
       // Продавца нет - создаём запись (без telegramId, он не зарегистрирован в боте)
@@ -424,7 +445,7 @@ const handleProductInput = async (ctx) => {
       // Отправляем уведомление (оно сработает, когда telegramId появится, но пока его нет)
       // На самом деле, мы можем уведомить его только когда он зайдёт в бота, или сейчас если он уже есть в User
       const User = require('../../../models/User');
-      const user = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
+      const user = await User.findOne({ username: { $regex: new RegExp(`^${escapeRegExp(username)}$`, 'i') } });
       if (user) {
         seller.telegramId = user.telegramId;
         await seller.save();

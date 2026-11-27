@@ -1,8 +1,39 @@
 const { Markup } = require('telegraf');
 
+const SUPPORT_ROLES = ['support', 'moderator', 'admin', 'superadmin'];
+
+const resolveLabel = (t, key, fallback) => {
+  const translated = t ? t(key) : key;
+  return translated && translated !== key ? translated : fallback;
+};
+
+const parseRoleFlags = (isSellerOrOpts, extra) => {
+  let isSeller = false;
+  let isSupport = false;
+  let isModerator = false;
+
+  if (isSellerOrOpts && typeof isSellerOrOpts === 'object') {
+    isSeller = Boolean(isSellerOrOpts.isSeller);
+    const role = isSellerOrOpts.role;
+    isSupport = Boolean(isSellerOrOpts.isSupport) || SUPPORT_ROLES.includes(role);
+    isModerator = Boolean(isSellerOrOpts.isModerator) || role === 'moderator';
+  } else {
+    isSeller = Boolean(isSellerOrOpts);
+    if (extra && typeof extra === 'object') {
+      const role = extra.role;
+      isSupport = Boolean(extra.isSupport) || SUPPORT_ROLES.includes(role);
+      isModerator = Boolean(extra.isModerator) || role === 'moderator';
+    }
+  }
+
+  return { isSeller, isSupport, isModerator };
+};
+
 // Главное меню пользователя
-const mainKeyboard = (t, isSeller = false) => {
-  const cartLabel = t ? (t('btn_change_lang') === 'Language' ? '🛒 Cart' : '🛒 Корзина') : '🛒 Корзина';
+const mainKeyboard = (t, isSellerOrOpts = false, extra = null) => {
+  const { isSeller, isSupport, isModerator } = parseRoleFlags(isSellerOrOpts, extra);
+  const isEn = t ? t('btn_change_lang') === 'Language' : false;
+  const cartLabel = isEn ? '🛒 Cart' : '🛒 Корзина';
   const buttons = [
     [
       Markup.button.callback(t('btn_shop'), 'menu:shop'),
@@ -21,12 +52,22 @@ const mainKeyboard = (t, isSeller = false) => {
       Markup.button.callback(t('btn_change_lang'), 'profile:lang'),
     ],
     [
-      Markup.button.callback(t('btn_change_lang') === 'Language' ? '🔐 Website Login Code' : '🔐 Код для входа на сайт', 'menu:webauth_code'),
+      Markup.button.callback(isEn ? '🔐 Website Login Code' : '🔐 Код для входа на сайт', 'menu:webauth_code'),
     ],
   ];
 
   if (isSeller) {
     buttons.push([Markup.button.callback(t('btn_seller_cabinet'), 'seller:cabinet')]);
+  }
+
+  if (isSupport) {
+    const supportLabel = resolveLabel(t, 'btn_support_panel', isEn ? '🎧 Support Panel' : '🎧 Панель саппорта');
+    buttons.push([Markup.button.callback(supportLabel, 'sp:home')]);
+  }
+
+  if (isModerator) {
+    const modLabel = resolveLabel(t, 'btn_mod_panel', isEn ? '🛡 Moderator Panel' : '🛡 Панель модератора');
+    buttons.push([Markup.button.callback(modLabel, 'adm_sup:hub')]);
   }
 
   return Markup.inlineKeyboard(buttons);
@@ -70,11 +111,17 @@ const buildMainMenuRichHtml = ({
   text,
   t = (k) => k,
   isSeller = false,
+  isSupport = false,
+  isModerator = false,
+  role = null,
   lang = 'ru',
 }) => {
   let richHtml = `${toRichHtmlText(text)}<br><br>`;
 
-  const cartLabel = t ? (t('btn_change_lang') === 'Language' || lang === 'en' ? '🛒 Cart' : '🛒 Корзина') : '🛒 Корзина';
+  const isEn = t ? (t('btn_change_lang') === 'Language' || lang === 'en') : lang === 'en';
+  const cartLabel = isEn ? '🛒 Cart' : '🛒 Корзина';
+  const showSupport = Boolean(isSupport) || SUPPORT_ROLES.includes(role);
+  const showModerator = Boolean(isModerator) || role === 'moderator';
 
   // Ряд 1: Каталог, Корзина
   richHtml += `<tg-button-row align="center">` +
@@ -104,6 +151,22 @@ const buildMainMenuRichHtml = ({
   if (isSeller) {
     richHtml += `\n<tg-button-row align="center">` +
       `<tg-button type="callback_data" style="primary" data="seller:cabinet">${escapeHtml(t('btn_seller_cabinet'))}</tg-button>` +
+      `</tg-button-row>`;
+  }
+
+  // Ряд 6: Панель саппорта (support, moderator, admin, superadmin)
+  if (showSupport) {
+    const supportLabel = resolveLabel(t, 'btn_support_panel', isEn ? '🎧 Support Panel' : '🎧 Панель саппорта');
+    richHtml += `\n<tg-button-row align="center">` +
+      `<tg-button type="callback_data" style="primary" data="sp:home">${escapeHtml(supportLabel)}</tg-button>` +
+      `</tg-button-row>`;
+  }
+
+  // Ряд 7: Панель модератора
+  if (showModerator) {
+    const modLabel = resolveLabel(t, 'btn_mod_panel', isEn ? '🛡 Moderator Panel' : '🛡 Панель модератора');
+    richHtml += `\n<tg-button-row align="center">` +
+      `<tg-button type="callback_data" style="primary" data="adm_sup:hub">${escapeHtml(modLabel)}</tg-button>` +
       `</tg-button-row>`;
   }
 

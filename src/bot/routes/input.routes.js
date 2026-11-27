@@ -16,6 +16,10 @@ const settingsScene = require('../scenes/admin/settings.scene');
 const reqChannelsScene = require('../scenes/admin/req_channels.scene');
 const topupScene = require('../scenes/topup.scene');
 const usersScene = require('../scenes/admin/users.scene');
+const buyerSupportScene = require('../scenes/buyer_support.scene');
+const supportPanelScene = require('../scenes/support_panel.scene');
+const supportAdminScene = require('../scenes/admin/support_admin.scene');
+const { isAdminOrAbove, isSupportOrAbove, isModeratorOrAbove } = require('../middlewares/auth');
 const { Markup } = require('telegraf');
 const { escapeHtml } = require('../utils/ui');
 
@@ -37,8 +41,16 @@ module.exports = (bot) => {
       return next();
     }
 
+    // Поддержка: активный ввод админ/модер-панели, ответа сотрудника или тикета покупателя
+    // Идёт ДО старых сцен, чтобы не пересекаться с чужими состояниями и корректно принимать медиа.
+    if (isModeratorOrAbove(ctx.user) && await supportAdminScene.handleSupportAdminInput(ctx)) return;
+    if (isSupportOrAbove(ctx.user) && await supportPanelScene.handleStaffTextInput(ctx)) return;
+    if (ctx.chat?.type === 'private' && await buyerSupportScene.handleBuyerTextInput(ctx)) return;
+
+    const hasText = typeof ctx.message?.text === 'string';
+
     // Бесплатная проверка токена (№6): пользователь прислал токен без оплаты.
-    if (session.tokenCheck && session.tokenCheck.productId) {
+    if (hasText && session.tokenCheck && session.tokenCheck.productId) {
       const { validateChatgptToken, formatCheckReport } = require('../../services/token-check.service');
       const t = ctx.t || ((k) => k);
       const productId = session.tokenCheck.productId;
@@ -263,7 +275,11 @@ module.exports = (bot) => {
     }
 
     // ─── СОЗДАНИЕ ПРОМОКОДА АДМИНОМ ───
-    if (session.userAction === 'promo_create_code' && ctx.user.role === 'admin') {
+    if (session.userAction === 'promo_create_code' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) {
+        await ctx.reply('❌ Пожалуйста, введите код промокода текстом.');
+        return;
+      }
       const code = ctx.message.text.trim().toUpperCase();
       const targetMsgId = session.wizardMsgId;
 
@@ -317,7 +333,11 @@ module.exports = (bot) => {
       return;
     }
 
-    if (session.userAction === 'promo_create_value' && ctx.user.role === 'admin') {
+    if (session.userAction === 'promo_create_value' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) {
+        await ctx.reply('❌ Введите корректное число больше 0:');
+        return;
+      }
       const targetMsgId = session.wizardMsgId;
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
@@ -360,7 +380,11 @@ module.exports = (bot) => {
       return;
     }
 
-    if (session.userAction === 'promo_create_max' && ctx.user.role === 'admin') {
+    if (session.userAction === 'promo_create_max' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) {
+        await ctx.reply('❌ Введите число (например 100 или -1):');
+        return;
+      }
       const targetMsgId = session.wizardMsgId;
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
@@ -396,7 +420,10 @@ module.exports = (bot) => {
     }
 
     // ─── МАССОВОЕ НАЧИСЛЕНИЕ БАЛАНСА ───
-    if (session.adminAction === 'bulk_give_balance' && ctx.user.role === 'admin') {
+    if (session.adminAction === 'bulk_give_balance' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) {
+        return ctx.reply('❌ Введите корректную сумму больше 0 (например: 1.5):');
+      }
       const targetMsgId = session.wizardMsgId;
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
@@ -430,7 +457,8 @@ module.exports = (bot) => {
     }
 
     // ─── ВВОД API-КЛЮЧА ПОСТАВЩИКА ───
-    if (session.adminAction === 'supplier_set_key' && ctx.user.role === 'admin') {
+    if (session.adminAction === 'supplier_set_key' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) return ctx.reply('❌ Пожалуйста, отправьте API-ключ текстом:');
       const targetMsgId = session.wizardMsgId;
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
@@ -463,7 +491,8 @@ module.exports = (bot) => {
     }
 
     // ─── ВВОД НАЦЕНКИ % ПОСТАВЩИКА ───
-    if (session.adminAction === 'supplier_set_margin' && ctx.user.role === 'admin') {
+    if (session.adminAction === 'supplier_set_margin' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) return ctx.reply('❌ Введите корректный процент (например: 30):');
       const targetMsgId = session.wizardMsgId;
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
@@ -503,7 +532,8 @@ module.exports = (bot) => {
     }
 
     // ─── ВВОД TELEGRAM-КАНАЛА ДЛЯ УВЕДОМЛЕНИЙ ПОСТАВЩИКА ───
-    if (session.adminAction === 'supplier_set_channel' && ctx.user.role === 'admin') {
+    if (session.adminAction === 'supplier_set_channel' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) return ctx.reply('❌ Пожалуйста, отправьте @username или ID канала текстом:');
       const targetMsgId = session.wizardMsgId;
       if (ctx.message?.message_id) {
         ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
@@ -551,7 +581,8 @@ module.exports = (bot) => {
     }
 
     // Обработка отправки сообщения пользователю (от админа)
-    if (session.adminAction === 'send_message' && ctx.user.role === 'admin') {
+    if (session.adminAction === 'send_message' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) return ctx.reply('❌ Пожалуйста, отправьте текстовое сообщение.');
       const targetId = session.targetTelegramId;
       ctx.session.adminAction = null;
       ctx.session.targetTelegramId = null;
@@ -561,7 +592,8 @@ module.exports = (bot) => {
     }
 
     // Подтверждение суммы пополнения (админ)
-    if (session.adminAction === 'confirm_topup' && ctx.user.role === 'admin') {
+    if (session.adminAction === 'confirm_topup' && isAdminOrAbove(ctx.user)) {
+      if (!hasText) return ctx.reply('❌ Введите сумму числом:');
       if (await paymentsScene.finalizeTopup(ctx, ctx.message.text)) return;
     }
 
@@ -569,31 +601,31 @@ module.exports = (bot) => {
     // здесь, а не только в месте установки session.adminAction. Иначе любой
     // будущий код, положивший adminAction в сессию обычного юзера, открыл бы
     // редактирование чужих балансов.
-    const isAdminUser = ctx.user?.role === 'admin';
+    const isAdminUser = isAdminOrAbove(ctx.user);
 
     // Редактирование курса валют и наценки (admin)
-    if (isAdminUser && (session.adminAction === 'edit_currency_offset' || session.adminAction === 'edit_manual_rate')) {
+    if (isAdminUser && hasText && (session.adminAction === 'edit_currency_offset' || session.adminAction === 'edit_manual_rate')) {
       session.settingField = session.adminAction === 'edit_currency_offset' ? 'currencyOffset' : 'manualRate';
       session.adminAction = 'edit_setting';
     }
 
     // Редактирование настроек (admin, включая currencyOffset и manualRate)
-    if (isAdminUser && await settingsScene.handleSettingsInput(ctx)) return;
+    if (isAdminUser && hasText && await settingsScene.handleSettingsInput(ctx)) return;
 
     // Поиск (admin)
-    if (isAdminUser && await usersScene.handleGlobalSearch(ctx)) return;
+    if (isAdminUser && hasText && await usersScene.handleGlobalSearch(ctx)) return;
 
     // Массовая рассылка (admin)
     if (isAdminUser && await usersScene.handleCustomBroadcastInput(ctx)) return;
 
     // Изменение баланса (admin)
-    if (isAdminUser && await usersScene.handleBalanceChange(ctx)) return;
+    if (isAdminUser && hasText && await usersScene.handleBalanceChange(ctx)) return;
 
     // Управление категориями (admin)
     if (isAdminUser && await categoriesScene.handleCategoryInput(ctx)) return;
 
     // Ручная замена по гарантии (admin)
-    if (isAdminUser && await disputesScene.handleManualWarrantyReplaceInput(ctx)) return;
+    if (isAdminUser && hasText && await disputesScene.handleManualWarrantyReplaceInput(ctx)) return;
 
     // Прием заявления на замену по гарантии (user)
     if (session.userAction === 'warranty_claim' && session.claimOrderId) {
@@ -640,43 +672,32 @@ module.exports = (bot) => {
     if (isAdminUser && await productsScene.handleProductInput(ctx)) return;
 
     // Настройки Обязательной подписки на каналы (admin)
-    if (isAdminUser && await reqChannelsScene.handleReqChannelInput(ctx)) return;
+    if (isAdminUser && hasText && await reqChannelsScene.handleReqChannelInput(ctx)) return;
 
     // Добавление ключей (admin)
     if (isAdminUser && await keysScene.handleKeysInput(ctx)) return;
 
     // Seller: привязка кошелька (адрес)
-    if (await sellerScene.handleWalletAddressInput(ctx)) return;
+    if (hasText && await sellerScene.handleWalletAddressInput(ctx)) return;
 
     // Добавление продавца (admin)
-    if (isAdminUser && await sellerWithdrawalsScene.handleAddSellerInput(ctx)) return;
+    if (isAdminUser && hasText && await sellerWithdrawalsScene.handleAddSellerInput(ctx)) return;
 
     // Изменение баланса продавца (admin)
-    if (isAdminUser && await sellerWithdrawalsScene.handleEditSellerBalanceInput(ctx)) return;
+    if (isAdminUser && hasText && await sellerWithdrawalsScene.handleEditSellerBalanceInput(ctx)) return;
 
-    // Seller: доставка заказа (текст)
+    // Seller: доставка заказа (текст/фото/документ)
     if (await sellerScene.handleSellerDelivery(ctx)) return;
 
     // Seller: ввод суммы вывода
-    if (await sellerScene.handleWithdrawAmountInput(ctx)) return;
+    if (hasText && await sellerScene.handleWithdrawAmountInput(ctx)) return;
 
     // Сумма пополнения (пользователь вводит число)
-    if (await topupScene.handleAmountInput(ctx)) return;
+    if (hasText && await topupScene.handleAmountInput(ctx)) return;
 
-    // Хэш транзакции текстом (пополнение)
+    // Хэш транзакции текстом или фото-чек (пополнение)
     if (await topupScene.handleTopupProof(ctx)) return;
 
-    return next();
-  });
-
-  // Фото/документ: подтверждение оплаты, файлы ключей или данные от продавца
-  bot.on(['photo', 'document'], async (ctx, next) => {
-    // Сначала проверяем документ = txt-файл с ключами (админ)
-    if (ctx.user?.role === 'admin' && ctx.message?.document && await keysScene.handleKeysInput(ctx)) return;
-    // Доставка заказа продавцом (если он прислал файл или фото)
-    if (await sellerScene.handleSellerDelivery(ctx)) return;
-    // Потом остальное (фото-чек пополнения)
-    if (await topupScene.handleTopupProof(ctx)) return;
     return next();
   });
 

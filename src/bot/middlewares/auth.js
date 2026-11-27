@@ -1,32 +1,68 @@
-// Middleware: проверяет бан и права доступа
+// Middleware: проверяет бан и права доступа (RBAC)
+const isSupportOrAbove = (user) => ['support', 'moderator', 'admin', 'superadmin'].includes(user?.role);
+const isModeratorOrAbove = (user) => ['moderator', 'admin', 'superadmin'].includes(user?.role);
+const isAdminOrAbove = (user) => ['admin', 'superadmin'].includes(user?.role);
+const isSuperAdmin = (user) => user?.role === 'superadmin';
+
+const denyAccess = (ctx, message = '🚫 Нет доступа') => {
+  if (ctx.callbackQuery) {
+    ctx.answerCbQuery(message, { show_alert: true }).catch(() => {});
+  }
+  if (!ctx.chat || ctx.chat.type === 'private') {
+    return ctx.reply(`${message}.`);
+  }
+  return undefined;
+};
+
 const authMiddleware = (ctx, next) => {
   if (ctx.user?.isBanned) {
     if (ctx.callbackQuery) {
       ctx.answerCbQuery('🚫 Вы заблокированы', { show_alert: true }).catch(() => {});
     }
-    return ctx.reply('🚫 Вы заблокированы в этом боте.');
+    if (!ctx.chat || ctx.chat.type === 'private') {
+      return ctx.reply('🚫 Вы заблокированы в этом боте.');
+    }
+    return undefined;
+  }
+  return next();
+};
+
+const supportMiddleware = (ctx, next) => {
+  if (!isSupportOrAbove(ctx.user)) {
+    return denyAccess(ctx);
+  }
+  return next();
+};
+
+const moderatorMiddleware = (ctx, next) => {
+  if (!isModeratorOrAbove(ctx.user)) {
+    return denyAccess(ctx);
   }
   return next();
 };
 
 const adminMiddleware = (ctx, next) => {
-  if (!ctx.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'superadmin')) {
-    if (ctx.callbackQuery) {
-      ctx.answerCbQuery('🚫 Нет доступа', { show_alert: true }).catch(() => {});
-    }
-    return ctx.reply('🚫 Нет доступа.');
+  if (!isAdminOrAbove(ctx.user)) {
+    return denyAccess(ctx);
   }
   return next();
 };
 
 const superadminMiddleware = (ctx, next) => {
-  if (!ctx.user || ctx.user.role !== 'superadmin') {
-    if (ctx.callbackQuery) {
-      ctx.answerCbQuery('🚫 Доступно только главному администратору', { show_alert: true }).catch(() => {});
-    }
-    return ctx.reply('🚫 Доступно только главному администратору.');
+  if (!isSuperAdmin(ctx.user)) {
+    return denyAccess(ctx, '🚫 Доступно только главному администратору');
   }
   return next();
 };
 
-module.exports = { authMiddleware, adminMiddleware, superadminMiddleware };
+module.exports = {
+  isSupportOrAbove,
+  isModeratorOrAbove,
+  isAdminOrAbove,
+  isSuperAdmin,
+  authMiddleware,
+  supportMiddleware,
+  moderatorMiddleware,
+  adminMiddleware,
+  superadminMiddleware,
+};

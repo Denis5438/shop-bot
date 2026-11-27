@@ -8,8 +8,12 @@ const userSchema = new mongoose.Schema({
   lastName: { type: String, default: '' },
   language: { type: String, enum: ['ru', 'en'], default: 'ru' },
   balance: { type: Number, default: 0 },
-  role: { type: String, enum: ['user', 'admin', 'superadmin'], default: 'user' },
+  role: { type: String, enum: ['user', 'support', 'moderator', 'admin', 'superadmin'], default: 'user' },
   promotedBy: { type: Number, default: null },
+  supportOnDuty: { type: Boolean, default: true },
+  supportLastActiveAt: { type: Date, default: null },
+  roleChangedAt: { type: Date, default: null },
+  roleChangedBy: { type: Number, default: null },
   referralCode: { type: String, unique: true },
   referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   referralBonusGrantedAt: { type: Date, default: null },
@@ -75,6 +79,8 @@ userSchema.index({ referredBy: 1, referralBonusGrantedAt: 1 });
 // Сегменты рассылок и статистика: новые за сутки, "киты" по totalSpent, баны
 userSchema.index({ createdAt: -1 });
 userSchema.index({ isBanned: 1, totalSpent: -1 });
+// Поиск дежурных саппортов и персонала по роли
+userSchema.index({ role: 1, supportOnDuty: 1 });
 
 userSchema.pre('save', function (next) {
   if (!this.referralCode) {

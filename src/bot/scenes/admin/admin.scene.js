@@ -1,10 +1,49 @@
-const { adminMainKeyboard } = require('../../keyboards/admin.keyboard');
+const { adminMainKeyboard, moderatorMainKeyboard } = require('../../keyboards/admin.keyboard');
 const Order = require('../../../models/Order');
 const TopupRequest = require('../../../models/TopupRequest');
 const SellerWithdrawal = require('../../../models/SellerWithdrawal');
 const User = require('../../../models/User');
+const SupportTicket = require('../../../models/SupportTicket');
 
 const showAdminMain = async (ctx) => {
+  // Модератор видит только безопасную сводку тикетов поддержки и ограниченную клавиатуру
+  if (ctx.user?.role === 'moderator') {
+    const [openCount, inProgressCount, escalatedCount, onDutyCount] = await Promise.all([
+      SupportTicket.countDocuments({ status: 'open' }),
+      SupportTicket.countDocuments({ status: 'in_progress' }),
+      SupportTicket.countDocuments({ status: 'escalated' }),
+      User.countDocuments({
+        role: { $in: ['support', 'moderator'] },
+        isBanned: { $ne: true },
+        supportOnDuty: { $ne: false },
+      }),
+    ]);
+
+    const text =
+      `🛡 <b>Панель модератора</b>\n\n` +
+      `<blockquote>⏳ Ожидают ответа: <b>${openCount}</b>\n` +
+      `💬 В работе: <b>${inProgressCount}</b>\n` +
+      `🔺 Эскалировано: <b>${escalatedCount}</b>\n` +
+      `🟢 Саппортов на смене: <b>${onDutyCount}</b></blockquote>`;
+
+    const keyboard = moderatorMainKeyboard({
+      activeSupportTickets: openCount + escalatedCount,
+    });
+
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        ...keyboard,
+      });
+    } catch (_) {
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        ...keyboard,
+      });
+    }
+    return;
+  }
+
   // Статистика за сегодня
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -20,6 +59,7 @@ const showAdminMain = async (ctx) => {
     pendingPreorders,
     todayStats,
     newUsersToday,
+    activeSupportTickets,
   ] = await Promise.all([
     Order.countDocuments({ status: { $in: ['pending', 'awaiting_confirmation'] } }),
     TopupRequest.countDocuments({ status: 'pending' }),
@@ -33,6 +73,7 @@ const showAdminMain = async (ctx) => {
       { $group: { _id: null, total: { $sum: '$price' }, count: { $sum: 1 } } },
     ]),
     User.countDocuments({ createdAt: { $gte: todayStart } }),
+    SupportTicket.countDocuments({ status: { $in: ['open', 'escalated'] } }),
   ]);
 
   const todayOrders = todayStats[0]?.count || 0;
@@ -66,6 +107,7 @@ const showAdminMain = async (ctx) => {
     pendingDisputes,
     pendingWarranties,
     pendingPreorders,
+    activeSupportTickets,
   });
 
   try {

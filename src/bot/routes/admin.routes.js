@@ -20,14 +20,14 @@ const suppliersScene = require('../scenes/admin/suppliers.scene');
 const statsScene = require('../scenes/admin/stats.scene');
 const usersScene = require('../scenes/admin/users.scene');
 const { Markup } = require('telegraf');
-const { adminMiddleware } = require('../middlewares/auth');
+const { adminMiddleware, moderatorMiddleware } = require('../middlewares/auth');
 const { buildKeyQueryForProduct } = require('../../services/provider.service');
 const { escapeHtml } = require('../utils/ui');
 const logger = require('../../config/logger');
 
 module.exports = (bot) => {
   // ─────────────────── ADMIN - ГЛАВНОЕ МЕНЮ ───────────────────
-  bot.action('admin:main', adminMiddleware, async (ctx) => {
+  bot.action('admin:main', moderatorMiddleware, async (ctx) => {
     await ctx.answerCbQuery();
     await adminScene.showAdminMain(ctx);
   });
@@ -895,6 +895,9 @@ module.exports = (bot) => {
 
   bot.action(/^admin:user:(promote|demote):(.+)$/, adminMiddleware, async (ctx) => {
     await usersScene.toggleRole(ctx, ctx.match[2]);
+  });
+  bot.action(/^admin:user:setrole:([a-f0-9]{24}):(user|support|moderator|admin)$/, adminMiddleware, async (ctx) => {
+    await usersScene.setUserRole(ctx, ctx.match[1], ctx.match[2]);
   });
   bot.action(/^admin:user:seller_toggle:(.+)$/, adminMiddleware, async (ctx) => {
     await usersScene.toggleSeller(ctx, ctx.match[1]);

@@ -29,6 +29,14 @@ const startAddCategory = async (ctx) => {
 
 const handleCategoryInput = async (ctx) => {
   const session = ctx.session || {};
+  if (session.adminAction !== 'add_category' && session.adminAction !== 'add_category_icon') {
+    return false;
+  }
+
+  if (typeof ctx.message?.text !== 'string') {
+    await ctx.reply('❌ Пожалуйста, отправьте текстовое сообщение.');
+    return true;
+  }
 
   if (ctx.message && ctx.message.message_id) {
     ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});

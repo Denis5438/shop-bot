@@ -14,7 +14,7 @@ const shopScene = require('../scenes/shop.scene');
 const cartScene = require('../scenes/cart.scene');
 const topupScene = require('../scenes/topup.scene');
 const { Markup } = require('telegraf');
-const { adminMiddleware } = require('../middlewares/auth');
+const { adminMiddleware, isSupportOrAbove } = require('../middlewares/auth');
 const { escapeHtml, formatDateTimeMSK, safeEdit, safeEditRich, isRichActive } = require('../utils/ui');
 const { mainKeyboard, languageKeyboard, buildMainMenuRichHtml } = require('../keyboards/main.keyboard');
 const { toRub } = require('../../services/currency.service');
@@ -67,19 +67,67 @@ module.exports = (bot) => {
     });
     const settings = await getSettings();
     const isRich = isRichActive(ctx, settings);
+    const isSupport = typeof isSupportOrAbove === 'function'
+      ? isSupportOrAbove(user)
+      : ['support', 'moderator', 'admin', 'superadmin'].includes(user?.role);
+    const isModerator = user?.role === 'moderator';
     const richHtml = buildMainMenuRichHtml({
       text,
       t,
       isSeller: ctx.isSeller,
+      isSupport,
+      isModerator,
+      role: user?.role,
       lang: user?.language || 'ru',
     });
-    const classicKeyboard = mainKeyboard(t, ctx.isSeller);
+    const classicKeyboard = mainKeyboard(t, ctx.isSeller, {
+      isSupport,
+      isModerator,
+      role: user?.role,
+    });
     return await safeEditRich(ctx, {
       richHtml,
       classicText: text,
       classicKeyboard,
       isRich,
     });
+  };
+
+  const renderSupportMenu = async (ctx) => {
+    const t = ctx.t || ((k) => k);
+    const { TEXTS } = require('../constants/ux');
+    if (ctx.session) {
+      ctx.session.supportAction = null;
+      ctx.session.supportTopic = null;
+      ctx.session.supportOrderId = null;
+      ctx.session.activeTicketId = null;
+    }
+
+    let myCount = 0;
+    try {
+      if (ctx.user?._id) {
+        const supportService = require('../../services/support.service');
+        myCount = await supportService.countUserActiveTickets(ctx.user._id);
+      }
+    } catch (_) {
+      myCount = 0;
+    }
+
+    const buttons = [
+      [Markup.button.url(t('btn_contact_owner'), TEXTS.SUPPORT_URL)],
+      [Markup.button.callback(t('btn_ask_support'), 'sup:new')],
+      [Markup.button.callback(`${t('btn_my_tickets')}${myCount > 0 ? ` (${myCount})` : ''}`, 'sup:my:1')],
+      [Markup.button.callback(t('btn_back'), 'menu:main')],
+    ];
+
+    return safeEdit(
+      ctx,
+      t('support_text'),
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard(buttons),
+      }
+    );
   };
 
   bot.start(async (ctx) => {
@@ -104,6 +152,20 @@ module.exports = (bot) => {
       return;
     }
 
+    const isSupportDeepLink = startPayload === 'support';
+    const prodMatch = startPayload ? startPayload.match(/^(?:p_|prod_)([a-f0-9]{24})$/) : null;
+    const targetProductId = prodMatch ? prodMatch[1] : null;
+
+    if (isSupportDeepLink) {
+      ctx.session = ctx.session || {};
+      ctx.session.pendingSupportRedirect = true;
+      delete ctx.session.pendingProductId;
+    } else if (targetProductId) {
+      ctx.session = ctx.session || {};
+      ctx.session.pendingProductId = targetProductId;
+      delete ctx.session.pendingSupportRedirect;
+    }
+
     // Показываем выбор языка ТОЛЬКО совершенно новым пользователям (первый запуск)
     const isBrandNewUser = (Date.now() - new Date(user.createdAt).getTime() < 10000) && !user.languageSelected;
 
@@ -111,15 +173,6 @@ module.exports = (bot) => {
       const sent = await ctx.reply('🌐 Выберите язык / Choose language:', languageKeyboard());
       saveBotMessage(ctx, sent?.message_id);
       return;
-    }
-
-    // Проверка глубокой ссылки на товар: /start p_<id> или /start prod_<id>
-    const prodMatch = startPayload ? startPayload.match(/^(?:p_|prod_)([a-f0-9]{24})$/) : null;
-    const targetProductId = prodMatch ? prodMatch[1] : null;
-
-    if (targetProductId) {
-      ctx.session = ctx.session || {};
-      ctx.session.pendingProductId = targetProductId;
     }
 
     // Экран Оферты (ToS) на языке пользователя (если не принял)
@@ -140,6 +193,18 @@ module.exports = (bot) => {
       delete ctx.session.pendingProductId;
       const shopScene = require('../scenes/shop.scene');
       return shopScene.showProduct(ctx, targetProductId, 1);
+    }
+
+    // Deep link ?start=support — открываем панель саппорта (для сотрудников) или экран поддержки
+    if (ctx.session?.pendingSupportRedirect || isSupportDeepLink) {
+      if (ctx.session) delete ctx.session.pendingSupportRedirect;
+      if (isSupportOrAbove(user)) {
+        const supportPanelScene = require('../scenes/support_panel.scene');
+        return supportPanelScene.showSupportPanel(ctx, 'waiting', 1);
+      }
+      const sentSup = await renderSupportMenu(ctx);
+      if (sentSup?.message_id) saveBotMessage(ctx, sentSup.message_id);
+      return sentSup;
     }
 
     const sent = await renderMainMenu(ctx, 'welcome_back');
@@ -185,6 +250,15 @@ module.exports = (bot) => {
       return shopScene.showProduct(ctx, pId, 1);
     }
 
+    if (ctx.session?.pendingSupportRedirect) {
+      delete ctx.session.pendingSupportRedirect;
+      if (isSupportOrAbove(ctx.user)) {
+        const supportPanelScene = require('../scenes/support_panel.scene');
+        return supportPanelScene.showSupportPanel(ctx, 'waiting', 1);
+      }
+      return renderSupportMenu(ctx);
+    }
+
     await renderMainMenu(ctx, 'welcome_back');
   });
 
@@ -193,6 +267,14 @@ module.exports = (bot) => {
     const subCheck = await checkUserSubscriptions(ctx.telegram, ctx.from.id);
     if (!subCheck.isEnabled || subCheck.allSubscribed) {
       await ctx.answerCbQuery('✅ Отлично! Вы подписаны на все каналы. Добро пожаловать!');
+      if (ctx.session?.pendingSupportRedirect) {
+        delete ctx.session.pendingSupportRedirect;
+        if (isSupportOrAbove(ctx.user)) {
+          const supportPanelScene = require('../scenes/support_panel.scene');
+          return supportPanelScene.showSupportPanel(ctx, 'waiting', 1);
+        }
+        return renderSupportMenu(ctx);
+      }
       await renderMainMenu(ctx, 'welcome');
       return;
     }
@@ -575,25 +657,7 @@ module.exports = (bot) => {
     );
   });
 
-  bot.action('menu:support', async (ctx) => {
-    const t = ctx.t;
-    const lang = ctx.user?.language || 'ru';
-    const { TEXTS } = require('../constants/ux');
-    const supportLink = TEXTS.SUPPORT_URL;
-    const btnLabel = lang === 'en' ? '✉️ Write to Support' : '✉️ Написать поддержке';
-
-    await safeEdit(
-      ctx,
-      t('support_text'),
-      {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([
-          [Markup.button.url(btnLabel, supportLink)],
-          [Markup.button.callback(t('btn_back'), 'menu:main')],
-        ]),
-      }
-    );
-  });
+  bot.action('menu:support', renderSupportMenu);
 
   bot.action('menu:about', async (ctx) => {
     const t = ctx.t;

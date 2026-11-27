@@ -75,6 +75,21 @@ const settingsSchema = new mongoose.Schema({
   globalButtonsMode: { type: String, enum: ['by_user', 'force_rich', 'force_classic'], default: 'by_user' },
   // Формат кнопок по умолчанию для новых пользователей
   defaultButtonLayout: { type: String, enum: ['rich', 'classic'], default: 'rich' },
+  // Настройки системы поддержки (саппорты и тикеты)
+  supportChatId: { type: Number, default: null },
+  supportChatTitle: { type: String, default: '' },
+  supportMaxOpenPerUser: { type: Number, default: 3 },
+  supportSlaMinutes: { type: Number, default: 15 },
+  supportAutoCloseHours: { type: Number, default: 48 },
+  supportQuickReplies: {
+    type: [String],
+    default: () => [
+      'Здравствуйте! Уже проверяем ваш вопрос, скоро вернёмся с ответом.',
+      'Пожалуйста, отправьте номер заказа или скриншот оплаты для проверки.',
+      'Проблема решена, проверьте, пожалуйста. Если всё в порядке — можете закрыть обращение.',
+      'Передаю ваш вопрос старшему специалисту, он свяжется с вами в ближайшее время.',
+    ],
+  },
 }, {
   timestamps: true,
   toJSON: { getters: true },

@@ -8,7 +8,7 @@ const tokenCollectionScene = require('./scenes/token_collection.scene');
 // Middlewares
 const userMiddleware = require('./middlewares/user');
 const i18nMiddleware = require('./middlewares/i18n');
-const { authMiddleware } = require('./middlewares/auth');
+const { authMiddleware, isAdminOrAbove } = require('./middlewares/auth');
 const { tosMiddleware } = require('./middlewares/tos');
 const sessionClearMiddleware = require('./middlewares/sessionClear');
 
@@ -19,12 +19,14 @@ const referralScene = require('./scenes/referral.scene');
 
 // Services
 const notif = require('../services/notification.service');
+const supportNotify = require('../services/supportNotify.service');
 const digest = require('../services/notification-digest.service');
-const { getSettings } = require('../services/settingsCache.service');
+const { getSettings, invalidateCache } = require('../services/settingsCache.service');
 const { escapeHtml } = require('./utils/ui');
 
 // Models & Core
 const User = require('../models/User');
+const Settings = require('../models/Settings');
 const { createMongoSessionStore } = require('../models/TelegrafSession');
 
 const createBot = () => {
@@ -34,6 +36,7 @@ const createBot = () => {
 
   // Установка бота в notification service
   notif.setBot(bot);
+  supportNotify.setBot(bot);
   digest.setBot(bot);
 
   // Инициализация digest-режима из настроек БД (асинхронно, не блокируем запуск).
@@ -109,8 +112,14 @@ const createBot = () => {
   bot.use(async (ctx, next) => {
     if (!ctx.user) return next();
 
-    // 1. Admin sends message during taking over somebody
-    if (ctx.session && ctx.session.adminAction === 'takeover_chat' && ctx.user.role === 'admin' && ctx.message?.text) {
+    // 1. Admin sends message during taking over somebody (only in private chat)
+    if (
+      ctx.chat?.type === 'private' &&
+      ctx.session &&
+      ctx.session.adminAction === 'takeover_chat' &&
+      isAdminOrAbove(ctx.user) &&
+      ctx.message?.text
+    ) {
       const targetId = ctx.session.takeoverUserId;
       if (targetId) {
         try {
@@ -126,8 +135,8 @@ const createBot = () => {
       }
     }
 
-    // 2. User is being taken over by an admin
-    if (ctx.user.takeoverBy && ctx.message?.text) {
+    // 2. User is being taken over by an admin (only in private chat)
+    if (ctx.chat?.type === 'private' && ctx.user.takeoverBy && ctx.message?.text) {
       // Авто-отмена перехвата через 30 минут
       const TAKEOVER_TIMEOUT = 30 * 60 * 1000;
       if (ctx.user.takeoverAt && (Date.now() - new Date(ctx.user.takeoverAt).getTime() > TAKEOVER_TIMEOUT)) {
@@ -162,6 +171,7 @@ const createBot = () => {
   cronHandles.push(require('../cron/retryActivation.cron').start(bot));
   cronHandles.push(require('../cron/referralReconcile.cron').start());
   cronHandles.push(require('../cron/bybitUidPoller.cron').start(bot));
+  cronHandles.push(require('../cron/supportSla.cron').start(bot));
 
   require('./routes/admin_catalog.routes')(bot);
 
@@ -179,12 +189,43 @@ const createBot = () => {
     } catch (_) {}
   };
 
+  // Миграция группового чата саппортов в супергруппу (group -> supergroup)
+  bot.on('migrate_to_chat_id', async (ctx, next) => {
+    try {
+      const oldChatId = ctx.chat?.id;
+      const newChatId = ctx.message?.migrate_to_chat_id;
+      if (oldChatId && newChatId) {
+        const settings = await getSettings();
+        if (settings?.supportChatId && Number(settings.supportChatId) === Number(oldChatId)) {
+          const updated = await Settings.findOneAndUpdate(
+            { name: 'global' },
+            {
+              $set: {
+                supportChatId: Number(newChatId),
+                ...(ctx.chat?.title ? { supportChatTitle: ctx.chat.title } : {}),
+              },
+            },
+            { new: true }
+          );
+          if (updated) invalidateCache(updated);
+          else invalidateCache();
+          logger.info(`[Bot] Чат саппортов мигрировал в супергруппу: ${oldChatId} -> ${newChatId}`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`[Bot] migrate_to_chat_id handler error: ${err.message}`);
+    }
+    return next();
+  });
+
   // ─────────────────── МАРШРУТЫ (вынесены в модули) ───────────────────
   // Порядок подключения повторяет прежний порядок регистрации хендлеров.
   require('./routes/core.routes')(bot);
   require('./routes/shop.routes')(bot);
   require('./routes/profile.routes')(bot);
   require('./routes/admin.routes')(bot);
+  require('./routes/support.routes')(bot);
+  require('./routes/support_admin.routes')(bot);
   require('./handlers/activation.handler')(bot);
   require('./routes/input.routes')(bot);
   require('./routes/webAuth.routes').registerWebAuthRoutes(bot);
@@ -194,8 +235,21 @@ const createBot = () => {
       try {
         require('../api/routes/auth.routes').setBotUsername(botInfo.username);
       } catch (_) {}
+      try {
+        supportNotify.setBotUsername(botInfo.username);
+      } catch (_) {}
     }
   }).catch(() => {});
+
+  if (typeof bot.telegram?.setMyCommands === 'function') {
+    bot.telegram.setMyCommands([
+      { command: 'start', description: '🏠 Главное меню' },
+      { command: 'menu', description: '📋 Открыть меню' },
+      { command: 'support', description: '🎧 Поддержка / Панель саппорта' },
+      { command: 'code', description: '🔐 Код входа на сайт' },
+      { command: 'seller', description: '🏪 Кабинет продавца' },
+    ]).catch(() => {});
+  }
 
   // Ошибки
   bot.catch((err, ctx) => {

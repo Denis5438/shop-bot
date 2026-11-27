@@ -34,6 +34,7 @@ const tosGateText = (t) =>
 const tosMiddleware = async (ctx, next) => {
   const user = ctx.user;
   if (!user) return next();
+  if (ctx.chat?.type && ctx.chat.type !== 'private') return next();
   if (user.acceptedToS) return next();
 
   // /start - пропускаем, чтобы bot.start обработал и показал гейт.

@@ -2,6 +2,7 @@ const User = require('../../models/User');
 const Seller = require('../../models/Seller');
 const config = require('../../config');
 const logger = require('../../config/logger');
+const { isSupportOrAbove } = require('./auth');
 
 // ─── Кэш пользователей ────────────────────────────────────────────────────────
 // Раньше КАЖДЫЙ апдейт любого пользователя делал 2 запроса к БД (User.findOne
@@ -65,6 +66,21 @@ const clearUserCache = () => {
   userCache.clear();
 };
 
+// При тех. работах не отвечаем в групповых чатах, чтобы не спамить в чат саппортов
+const handleMaintenanceBlock = async (ctx) => {
+  if (ctx.callbackQuery) {
+    await ctx.answerCbQuery('🛠 Тех. обслуживание', { show_alert: true }).catch(() => {});
+  }
+  if (!ctx.chat || ctx.chat.type === 'private') {
+    await ctx.reply(
+      '🛠 <b>Магазин на техническом обслуживании.</b>\n' +
+      'Мы проводим профилактические работы, пожалуйста, подождите!\n\n' +
+      'Возвращайтесь немного позже.',
+      { parse_mode: 'HTML' }
+    );
+  }
+};
+
 // Middleware: загружает пользователя из БД, создаёт если нет
 const userMiddleware = async (ctx, next) => {
   try {
@@ -78,16 +94,8 @@ const userMiddleware = async (ctx, next) => {
       ctx.user = cached.user;
       ctx.isSeller = cached.isSeller;
 
-      if (global.MAINTENANCE_MODE && ctx.user.role !== 'admin' && ctx.user.role !== 'superadmin') {
-        if (ctx.callbackQuery) {
-          await ctx.answerCbQuery('🛠 Тех. обслуживание', { show_alert: true }).catch(() => {});
-        }
-        await ctx.reply(
-          '🛠 <b>Магазин на техническом обслуживании.</b>\n' +
-          'Мы проводим профилактические работы, пожалуйста, подождите!\n\n' +
-          'Возвращайтесь немного позже.',
-          { parse_mode: 'HTML' }
-        );
+      if (global.MAINTENANCE_MODE && !isSupportOrAbove(ctx.user)) {
+        await handleMaintenanceBlock(ctx);
         return;
       }
 
@@ -167,11 +175,13 @@ const userMiddleware = async (ctx, next) => {
         }
         if (user.role === 'admin') {
           // Если убран из ADMIN_IDS и не был назначен вручную через UI - отзываем права
-          if (!isConfigAdmin && !user.promotedBy) {
+          if (!isConfigAdmin && !user.promotedBy && !user.roleChangedBy) {
             user.role = 'user';
             changed = true;
             logger.warn(`[RBAC] Revoked admin role for ${telegramId} (not in ADMIN_IDS and no promotedBy)`);
           }
+        } else if (user.role === 'moderator' || user.role === 'support') {
+          // Роли moderator и support назначаются через UI/БД — не сбрасываем в user
         } else if (user.role === 'user' && isConfigAdmin) {
           user.role = 'admin';
           changed = true;
@@ -187,16 +197,8 @@ const userMiddleware = async (ctx, next) => {
     const entry = { user, isSeller: ctx.isSeller, ts: Date.now() };
     userCache.set(telegramId, entry);
 
-    if (global.MAINTENANCE_MODE && user.role !== 'admin' && user.role !== 'superadmin') {
-      if (ctx.callbackQuery) {
-        await ctx.answerCbQuery('🛠 Тех. обслуживание', { show_alert: true }).catch(() => {});
-      }
-      await ctx.reply(
-        '🛠 <b>Магазин на техническом обслуживании.</b>\n' +
-        'Мы проводим профилактические работы, пожалуйста, подождите!\n\n' +
-        'Возвращайтесь немного позже.',
-        { parse_mode: 'HTML' }
-      );
+    if (global.MAINTENANCE_MODE && !isSupportOrAbove(user)) {
+      await handleMaintenanceBlock(ctx);
       return;
     }
 

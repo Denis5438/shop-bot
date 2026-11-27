@@ -73,6 +73,9 @@ const connectDB = async () => {
     const BybitInvoice = require('../models/BybitInvoice');
     const ChannelVerification = require('../models/ChannelVerification');
     const { TelegrafSession } = require('../models/TelegrafSession');
+    const SupportTicket = require('../models/SupportTicket');
+    const SupportMessage = require('../models/SupportMessage');
+    const StaffAuditLog = require('../models/StaffAuditLog');
     // Ошибка построения индекса (например, дубликаты в данных под unique)
     // НЕ должна валить старт бота - логируем и продолжаем.
     try {
@@ -96,6 +99,9 @@ const connectDB = async () => {
         BybitInvoice.syncIndexes(),
         ChannelVerification.syncIndexes(),
         TelegrafSession.syncIndexes(),
+        SupportTicket.syncIndexes(),
+        SupportMessage.syncIndexes(),
+        StaffAuditLog.syncIndexes(),
       ]);
       logger.info('Индексы моделей синхронизированы');
     } catch (idxErr) {
