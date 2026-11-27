@@ -44,14 +44,22 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const role = user?.role;
+  const isStaff = ['support', 'moderator', 'admin', 'superadmin'].includes(role);
+  const isModerator = ['moderator', 'admin', 'superadmin'].includes(role);
+  const isAdmin = role === 'admin' || role === 'superadmin';
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isLoading,
         isAuthenticated: Boolean(user),
-        isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
-        isSuperAdmin: user?.role === 'superadmin',
+        isSupport: isStaff,
+        isModerator,
+        isStaff,
+        isAdmin,
+        isSuperAdmin: role === 'superadmin',
         refreshUser,
         setAuthenticatedUser,
         logout,

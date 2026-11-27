@@ -59,20 +59,21 @@ Product.find = (filter) => {
   if (filter?.categoryId) {
     list = list.filter((p) => String(p.categoryId) === String(filter.categoryId));
   }
-  return {
-    populate: () => ({
-      sort: () => ({
-        skip: () => ({
-          limit: () => ({
-            lean: async () => list.map((p) => ({
-              ...p,
-              categoryId: categories.find((c) => String(c._id) === String(p.categoryId)) || null,
-            })),
-          }),
-        }),
-      }),
-    }),
+  let shouldPopulate = false;
+  const q = {
+    populate() { shouldPopulate = true; return q; },
+    sort() { return q; },
+    select() { return q; },
+    skip() { return q; },
+    limit() { return q; },
+    lean: async () => list.map((p) => ({
+      ...p,
+      categoryId: shouldPopulate
+        ? (categories.find((c) => String(c._id) === String(p.categoryId)) || null)
+        : p.categoryId,
+    })),
   };
+  return q;
 };
 
 Product.countDocuments = async (filter) => {
@@ -109,6 +110,21 @@ Product.updateOne = async (filter, update) => {
 // Key stubs
 Key.countDocuments = async (filter) => {
   return keys.filter((k) => String(k.productId) === String(filter.productId) && k.isUsed === filter.isUsed).length;
+};
+
+Key.aggregate = async () => {
+  const groups = new Map();
+  for (const k of keys) {
+    if (k.isUsed) continue;
+    const pid = String(k.productId);
+    const prov = k.provider || null;
+    const gKey = `${pid}:${prov || '__null__'}`;
+    if (!groups.has(gKey)) {
+      groups.set(gKey, { _id: { productId: k.productId, provider: prov }, count: 0 });
+    }
+    groups.get(gKey).count += 1;
+  }
+  return Array.from(groups.values());
 };
 
 Key.findOneAndUpdate = async (filter, update) => {

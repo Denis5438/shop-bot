@@ -31,6 +31,8 @@ const { grantReferralBonusForFirstCompletedOrder } = require('../../services/ref
 const supplierManager = require('../../services/supplierManager.service');
 const supplierLiveSync = require('../../services/supplierLiveSync.service');
 const bulkService = require('../../services/bulkOperations.service');
+const supportService = require('../../services/support.service');
+const supportNotify = require('../../services/supportNotify.service');
 const { invalidateUserCache, clearUserCache } = require('../../bot/middlewares/user');
 const { notifyManualCompletion } = require('../../bot/scenes/admin/orders.scene');
 const { escapeHtml, formatDigitalItem } = require('../../bot/utils/ui');
@@ -1759,6 +1761,9 @@ router.get('/users', async (req, res) => {
     if (filterKey === 'with_balance') conditions.push({ balance: { $gt: 0 } });
     else if (filterKey === 'banned') conditions.push({ isBanned: true });
     else if (filterKey === 'admins') conditions.push({ role: { $in: ['admin', 'superadmin'] } });
+    else if (filterKey === 'support') conditions.push({ role: 'support' });
+    else if (filterKey === 'moderator') conditions.push({ role: 'moderator' });
+    else if (filterKey === 'staff') conditions.push({ role: { $in: ['support', 'moderator', 'admin', 'superadmin'] } });
 
     if (search) {
       if (mongoose.isValidObjectId(search) && /^[0-9a-fA-F]{24}$/.test(search)) {
@@ -2033,7 +2038,9 @@ router.patch('/users/:id', async (req, res) => {
       });
     }
 
-    const { isBanned, role } = req.body || {};
+    const { isBanned, role, reason } = req.body || {};
+
+    let updatedTarget = target;
 
     if (role !== undefined) {
       if (req.user.role !== 'superadmin') {
@@ -2043,33 +2050,57 @@ router.patch('/users/:id', async (req, res) => {
           message: 'Изменение ролей доступно только главному администратору (superadmin)',
         });
       }
-      if (!['user', 'admin'].includes(role)) {
+      if (!['user', 'support', 'moderator', 'admin'].includes(role)) {
         return res.status(400).json({
           success: false,
           error: 'INVALID_ROLE',
-          message: 'Допустимые роли: user | admin',
+          message: 'Допустимые роли: user | support | moderator | admin',
         });
       }
-      target.role = role;
-      target.promotedBy = role === 'admin' ? req.user.telegramId : null;
+      const roleRes = await supportService.assignStaffRole({
+        actorUser: req.user,
+        targetUser: target,
+        newRole: role,
+        reason: typeof reason === 'string' ? reason.trim().slice(0, 300) : '',
+      });
+      if (!roleRes.ok) {
+        const status = roleRes.error === 'CANNOT_ESCALATE_ROLE' || roleRes.error === 'FORBIDDEN' ? 403 : 400;
+        return res.status(status).json({
+          success: false,
+          error: roleRes.error || 'ROLE_UPDATE_FAILED',
+          message: 'Не удалось изменить роль пользователя',
+        });
+      }
+      updatedTarget = roleRes.user || target;
+      if (roleRes.changed) {
+        await supportNotify.notifyOwnerRoleChange({
+          actorUser: req.user,
+          targetUser: updatedTarget,
+          oldRole: roleRes.oldRole,
+          newRole: roleRes.newRole,
+          reason: typeof reason === 'string' ? reason.trim() : '',
+        }).catch(() => {});
+      }
     }
 
     if (isBanned !== undefined) {
-      target.isBanned = Boolean(isBanned);
+      updatedTarget = await User.findByIdAndUpdate(
+        target._id,
+        { $set: { isBanned: Boolean(isBanned) } },
+        { new: true }
+      ) || updatedTarget;
+      invalidateUserCache(target.telegramId);
     }
-
-    await target.save();
-    invalidateUserCache(target.telegramId);
 
     return res.json({
       success: true,
       user: {
-        id: target._id,
-        telegramId: target.telegramId,
-        username: target.username || null,
-        firstName: target.firstName || '',
-        role: target.role,
-        isBanned: Boolean(target.isBanned),
+        id: updatedTarget._id,
+        telegramId: updatedTarget.telegramId,
+        username: updatedTarget.username || null,
+        firstName: updatedTarget.firstName || '',
+        role: updatedTarget.role,
+        isBanned: Boolean(updatedTarget.isBanned),
       },
     });
   } catch (err) {

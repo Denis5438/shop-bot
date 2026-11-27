@@ -13,7 +13,7 @@ export default function Footer() {
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-white">
                 <Zap className="h-4 w-4 fill-current" />
               </span>
-              ShopBot Web Platform
+              TIG MARKET Web Platform
             </div>
             <p className="text-slate-400 leading-relaxed">
               Независимая цифровая витрина с моментальной выдачей лицензий и аккаунтов.
@@ -92,7 +92,7 @@ export default function Footer() {
         </div>
 
         <div className="border-t border-dark-border/60 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-500">
-          <p>© {new Date().getFullYear()} ShopBot. Все права защищены. Работает независимо от правил мессенджеров.</p>
+          <p>© {new Date().getFullYear()} TIG MARKET. Все права защищены. Работает независимо от правил мессенджеров.</p>
           <div className="flex items-center gap-4">
             <span>Безопасный вход через 6-значный код</span>
           </div>

@@ -83,6 +83,38 @@ const optionalAuth = async (req, res, next) => {
   }
 };
 
+const isSupportOrAbove = (user) => Boolean(
+  user && ['support', 'moderator', 'admin', 'superadmin'].includes(user.role)
+);
+
+const isModeratorOrAbove = (user) => Boolean(
+  user && ['moderator', 'admin', 'superadmin'].includes(user.role)
+);
+
+const isAdminOrAbove = (user) => Boolean(
+  user && ['admin', 'superadmin'].includes(user.role)
+);
+
+/**
+ * Middleware для защиты эндпоинтов поддержки (support, moderator, admin, superadmin).
+ */
+const requireSupport = (req, res, next) => {
+  if (!isSupportOrAbove(req.user)) {
+    return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Недостаточно прав сотрудника поддержки' });
+  }
+  next();
+};
+
+/**
+ * Middleware для защиты эндпоинтов модерации (moderator, admin, superadmin).
+ */
+const requireModerator = (req, res, next) => {
+  if (!isModeratorOrAbove(req.user)) {
+    return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Недостаточно прав модератора' });
+  }
+  next();
+};
+
 /**
  * Middleware для защиты админских эндпоинтов (role: admin или superadmin).
  */
@@ -127,6 +159,11 @@ module.exports = {
   JWT_SECRET: EFFECTIVE_JWT_SECRET,
   authenticateToken,
   optionalAuth,
+  isSupportOrAbove,
+  isModeratorOrAbove,
+  isAdminOrAbove,
+  requireSupport,
+  requireModerator,
   requireAdmin,
   requireSuperAdmin,
   signUserToken,

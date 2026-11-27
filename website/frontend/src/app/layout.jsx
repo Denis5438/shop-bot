@@ -2,12 +2,13 @@ import './globals.css';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import CartDrawer from '../components/CartDrawer';
+import SupportWidget from '../components/SupportWidget';
 import { AuthProvider } from '../context/AuthContext';
 import { CartProvider } from '../context/CartContext';
 import { ToastProvider } from '../context/ToastContext';
 
 export const metadata = {
-  title: 'ShopBot — Цифровые товары, аккаунты и ключи',
+  title: 'TIG MARKET — Цифровые товары, аккаунты и ключи',
   description: 'Независимая цифровая платформа с моментальной выдачей лицензий и подписок. Прямая оплата без ограничений.',
 };
 
@@ -22,6 +23,7 @@ export default function RootLayout({ children }) {
               <main className="flex-1">{children}</main>
               <CartDrawer />
               <Footer />
+              <SupportWidget />
             </CartProvider>
           </AuthProvider>
         </ToastProvider>

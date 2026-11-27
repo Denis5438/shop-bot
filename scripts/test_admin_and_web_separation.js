@@ -16,6 +16,7 @@ const SellerWithdrawal = require('../src/models/SellerWithdrawal');
 const Seller = require('../src/models/Seller');
 const Transaction = require('../src/models/Transaction');
 const BybitInvoice = require('../src/models/BybitInvoice');
+const StaffAuditLog = require('../src/models/StaffAuditLog');
 
 // Services & Middlewares
 const settingsCache = require('../src/services/settingsCache.service');
@@ -25,6 +26,7 @@ const bybitUidService = require('../src/services/bybitUidPayment.service');
 const supplierManager = require('../src/services/supplierManager.service');
 const supplierLiveSync = require('../src/services/supplierLiveSync.service');
 const notif = require('../src/services/notification.service');
+const supportNotify = require('../src/services/supportNotify.service');
 const referralService = require('../src/services/referral.service');
 const { signUserToken, requireAdmin, requireSuperAdmin } = require('../src/api/middlewares/auth.middleware');
 
@@ -189,6 +191,8 @@ function setupStubs() {
   notif.notifyUserTopupRejected = async () => {};
   notif.notifySellerWithdrawalResult = async () => {};
   notif.notifyWaitlist = async (prod) => { waitlistNotifiedProducts.push(String(prod._id)); };
+  supportNotify.notifyOwnerRoleChange = async () => {};
+  StaffAuditLog.create = async (data) => ({ _id: new mongoose.Types.ObjectId(), createdAt: new Date(), ...data });
   referralService.grantReferralBonusForFirstCompletedOrder = async () => ({ granted: false });
 
   // Bybit / Platega / Suppliers

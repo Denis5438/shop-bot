@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 
 export default function Header() {
-  const { user, isAuthenticated, isAdmin, logout } = useAuth();
+  const { user, isAuthenticated, isAdmin, isSupport, isModerator, logout } = useAuth();
   const { cart, toggleCart } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -21,7 +21,7 @@ export default function Header() {
               <Zap className="h-5 w-5 fill-current" />
             </span>
             <span className="bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-              ShopBot
+              TIG MARKET
             </span>
           </Link>
 
@@ -35,6 +35,14 @@ export default function Header() {
             <Link href="/orders" className="hover:text-white transition-colors">
               Мои заказы
             </Link>
+            {isSupport && !isAdmin && (
+              <Link
+                href="/support"
+                className="flex items-center gap-1.5 rounded-lg bg-sky-500/10 border border-sky-500/25 px-2.5 py-1 text-xs font-semibold text-sky-400 hover:bg-sky-500/20 transition-colors"
+              >
+                <span>{isModerator ? '🛡 Модер-панель' : '🎧 Саппорт-панель'}</span>
+              </Link>
+            )}
             {isAdmin && (
               <Link
                 href="/admin"
@@ -152,6 +160,15 @@ export default function Header() {
           >
             Мои заказы
           </Link>
+          {isSupport && !isAdmin && (
+            <Link
+              href="/support"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block text-sm font-semibold text-sky-400 hover:text-sky-300"
+            >
+              {isModerator ? '🛡 Модер-панель' : '🎧 Саппорт-панель'}
+            </Link>
+          )}
           {isAdmin && (
             <Link
               href="/admin"

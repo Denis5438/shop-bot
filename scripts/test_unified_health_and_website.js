@@ -43,6 +43,7 @@ async function runTests() {
   const outDir = path.resolve(__dirname, '../website/frontend/out');
   assert(fs.existsSync(path.join(outDir, 'index.html')), 'out/index.html should exist');
   assert(fs.existsSync(path.join(outDir, 'auth/signin/index.html')), 'out/auth/signin/index.html should exist');
+  assert(fs.existsSync(path.join(outDir, 'support/index.html')), 'out/support/index.html should exist');
   console.log('✓ Next.js static export files verified in website/frontend/out');
 
   const { startHealthServer } = require('../src/bot/health-server');
@@ -63,31 +64,49 @@ async function runTests() {
   const rootRes = await simulate(server, 'GET', '/');
   assert.strictEqual(rootRes.statusCode, 200);
   assert(rootRes.body.includes('<!DOCTYPE html>'), 'Root response should be HTML document');
-  console.log('✓ GET / serves storefront HTML (length:', rootRes.body.length, 'bytes)');
+  assert(rootRes.body.includes('TIG MARKET'), 'Root HTML should contain TIG MARKET branding');
+  assert(!/ShopBot/i.test(rootRes.body), 'Root HTML should NOT contain old ShopBot branding');
+  console.log('✓ GET / serves TIG MARKET storefront HTML (length:', rootRes.body.length, 'bytes)');
 
   // 4. GET /auth/signin/ (Telegram Code Auth page)
   const signinRes = await simulate(server, 'GET', '/auth/signin/');
   assert.strictEqual(signinRes.statusCode, 200);
   assert(signinRes.body.includes('<!DOCTYPE html>'), 'Signin response should be HTML document');
+  assert(signinRes.body.includes('TIG MARKET'), 'Signin HTML should contain TIG MARKET branding');
+  assert(!/ShopBot/i.test(signinRes.body), 'Signin HTML should NOT contain old ShopBot branding');
   console.log('✓ GET /auth/signin/ serves auth page HTML (length:', signinRes.body.length, 'bytes)');
 
   // 5. GET /orders/
   const ordersRes = await simulate(server, 'GET', '/orders/');
   assert.strictEqual(ordersRes.statusCode, 200);
   assert(ordersRes.body.includes('<!DOCTYPE html>'));
+  assert(ordersRes.body.includes('TIG MARKET'), 'Orders HTML should contain TIG MARKET branding');
+  assert(!/ShopBot/i.test(ordersRes.body), 'Orders HTML should NOT contain old ShopBot branding');
   console.log('✓ GET /orders/ serves orders page HTML');
 
   // 6. GET /topup/
   const topupRes = await simulate(server, 'GET', '/topup/');
   assert.strictEqual(topupRes.statusCode, 200);
   assert(topupRes.body.includes('<!DOCTYPE html>'));
+  assert(topupRes.body.includes('TIG MARKET'), 'Topup HTML should contain TIG MARKET branding');
+  assert(!/ShopBot/i.test(topupRes.body), 'Topup HTML should NOT contain old ShopBot branding');
   console.log('✓ GET /topup/ serves topup page HTML');
 
   // 6b. GET /admin/
   const adminRes = await simulate(server, 'GET', '/admin/');
   assert.strictEqual(adminRes.statusCode, 200);
   assert(adminRes.body.includes('<!DOCTYPE html>'), 'Admin response should be HTML document');
+  assert(adminRes.body.includes('TIG MARKET'), 'Admin HTML should contain TIG MARKET branding');
+  assert(!/ShopBot/i.test(adminRes.body), 'Admin HTML should NOT contain old ShopBot branding');
   console.log('✓ GET /admin/ serves admin dashboard HTML');
+
+  // 6b2. GET /support/
+  const supportRes = await simulate(server, 'GET', '/support/');
+  assert.strictEqual(supportRes.statusCode, 200);
+  assert(supportRes.body.includes('<!DOCTYPE html>'), 'Support response should be HTML document');
+  assert(supportRes.body.includes('TIG MARKET'), 'Support HTML should contain TIG MARKET branding');
+  assert(!/ShopBot/i.test(supportRes.body), 'Support HTML should NOT contain old ShopBot branding');
+  console.log('✓ GET /support/ serves support panel HTML');
 
   // 6c. GET /icons/brands/*.svg (Real downloaded brand icons)
   const spotifyRes = await simulate(server, 'GET', '/icons/brands/spotify.svg');
@@ -102,7 +121,9 @@ async function runTests() {
   const apiHealthRes = await simulate(server, 'GET', '/api/v1/health');
   assert.strictEqual(apiHealthRes.statusCode, 200);
   assert(apiHealthRes.body.includes('"status":"ok"'));
-  console.log('✓ GET /api/v1/health returns REST API status ok');
+  assert(apiHealthRes.body.includes('TIG MARKET Web API v1'), 'API health should return TIG MARKET Web API v1');
+  assert(!/ShopBot/i.test(apiHealthRes.body), 'API health should NOT contain ShopBot');
+  console.log('✓ GET /api/v1/health returns REST API status ok (TIG MARKET Web API v1)');
 
   // 8. GET /api/v1/unknown-endpoint
   const unknownApiRes = await simulate(server, 'GET', '/api/v1/unknown-endpoint');

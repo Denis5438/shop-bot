@@ -81,7 +81,7 @@ export function ToastProvider({ children }) {
       {/* Контейнер всплывающих уведомлений в правом нижнем углу */}
       <div
         aria-live="polite"
-        className="pointer-events-none fixed bottom-5 right-5 z-[100] flex w-[calc(100vw-2.5rem)] max-w-sm flex-col gap-2.5"
+        className="pointer-events-none fixed bottom-24 right-5 z-[100] flex w-[calc(100vw-2.5rem)] max-w-sm flex-col gap-2.5"
       >
         {toasts.map((item) => {
           const style = TYPE_STYLES[item.type] || TYPE_STYLES.info;

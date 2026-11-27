@@ -173,20 +173,38 @@ const buildStaffCard = (ticket, buyerUser = null, firstMessage = null, botUserna
   return { text, keyboard: Markup.inlineKeyboard(rows) };
 };
 
-const sendMediaMessage = async (bot, chatId, mediaType, mediaFileId, text, extra = {}) => {
-  if (!mediaType || !mediaFileId) {
+const MAX_MEDIA_DATA_BYTES = 700 * 1024;
+
+const parseMediaDataUrl = (dataUrl) => {
+  if (typeof dataUrl !== 'string') return null;
+  const match = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\r\n]+)$/i);
+  if (!match) return null;
+  try {
+    const buffer = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
+    if (!buffer.length || buffer.length > MAX_MEDIA_DATA_BYTES) return null;
+    return buffer;
+  } catch (_) {
+    return null;
+  }
+};
+
+const sendMediaMessage = async (bot, chatId, mediaType, mediaFileId, text, extra = {}, mediaDataUrl = null) => {
+  const dataBuffer = !mediaFileId && mediaDataUrl ? parseMediaDataUrl(mediaDataUrl) : null;
+  const mediaInput = mediaFileId || (dataBuffer ? { source: dataBuffer, filename: 'screenshot.jpg' } : null);
+
+  if (!mediaType || !mediaInput) {
     return bot.telegram.sendMessage(chatId, text, { parse_mode: 'HTML', ...extra });
   }
   const caption = text && text.length <= 950 ? text : undefined;
   const mediaOpts = { parse_mode: 'HTML', ...(caption ? { caption } : {}), ...extra };
 
   let sent = null;
-  if (mediaType === 'photo') {
-    sent = await bot.telegram.sendPhoto(chatId, mediaFileId, mediaOpts);
+  if (mediaType === 'photo' || (!mediaFileId && dataBuffer)) {
+    sent = await bot.telegram.sendPhoto(chatId, mediaInput, mediaOpts);
   } else if (mediaType === 'video') {
-    sent = await bot.telegram.sendVideo(chatId, mediaFileId, mediaOpts);
+    sent = await bot.telegram.sendVideo(chatId, mediaInput, mediaOpts);
   } else if (mediaType === 'document') {
-    sent = await bot.telegram.sendDocument(chatId, mediaFileId, mediaOpts);
+    sent = await bot.telegram.sendDocument(chatId, mediaInput, mediaOpts);
   } else {
     return bot.telegram.sendMessage(chatId, text, { parse_mode: 'HTML', ...extra });
   }
@@ -245,14 +263,15 @@ const notifyNewTicket = async (ticket, buyerUser = null, firstMessage = null) =>
         { _id: ticket._id },
         { $set: { groupChatId: targetChatId, groupMessageId: sent.message_id } }
       );
-      if (firstMessage?.mediaType && firstMessage?.mediaFileId) {
+      if (firstMessage?.mediaType && (firstMessage?.mediaFileId || firstMessage?.mediaDataUrl)) {
         await sendMediaMessage(
           bot,
           targetChatId,
           firstMessage.mediaType,
           firstMessage.mediaFileId,
           `📎 Вложение к обращению #${escapeHtml(ticket.ticketNumber)}`,
-          { reply_to_message_id: sent.message_id }
+          { reply_to_message_id: sent.message_id },
+          firstMessage?.mediaDataUrl || null
         ).catch(() => {});
       }
       return { ok: true, mode: 'group', chatId: targetChatId, messageId: sent.message_id };
@@ -288,14 +307,15 @@ const notifyNewTicket = async (ticket, buyerUser = null, firstMessage = null) =>
         ...keyboard,
       });
       staffNotifyMessages.push({ chatId, messageId: sent.message_id });
-      if (firstMessage?.mediaType && firstMessage?.mediaFileId) {
+      if (firstMessage?.mediaType && (firstMessage?.mediaFileId || firstMessage?.mediaDataUrl)) {
         await sendMediaMessage(
           bot,
           chatId,
           firstMessage.mediaType,
           firstMessage.mediaFileId,
           `📎 Вложение к #${escapeHtml(ticket.ticketNumber)}`,
-          { reply_to_message_id: sent.message_id }
+          { reply_to_message_id: sent.message_id },
+          firstMessage?.mediaDataUrl || null
         ).catch(() => {});
       }
     } catch (err) {
@@ -390,7 +410,15 @@ const notifyBuyerStaffReply = async (ticket, staffUser, msg) => {
   ]);
 
   try {
-    await sendMediaMessage(bot, buyerChatId, msg?.mediaType, msg?.mediaFileId, text, keyboard);
+    await sendMediaMessage(
+      bot,
+      buyerChatId,
+      msg?.mediaType,
+      msg?.mediaFileId,
+      text,
+      keyboard,
+      msg?.mediaDataUrl || null
+    );
   } catch (err) {
     logger.warn(`[supportNotify] notifyBuyerStaffReply error (${buyerChatId}): ${err.message}`);
   }
@@ -419,7 +447,15 @@ const notifyStaffBuyerReply = async (ticket, buyerUser, msg) => {
 
   if (ticket.assignedTelegramId) {
     try {
-      await sendMediaMessage(bot, ticket.assignedTelegramId, msg?.mediaType, msg?.mediaFileId, text, keyboard);
+      await sendMediaMessage(
+        bot,
+        ticket.assignedTelegramId,
+        msg?.mediaType,
+        msg?.mediaFileId,
+        text,
+        keyboard,
+        msg?.mediaDataUrl || null
+      );
       return;
     } catch (err) {
       logger.warn(`[supportNotify] notifyStaffBuyerReply DM error: ${err.message}`);
@@ -430,17 +466,33 @@ const notifyStaffBuyerReply = async (ticket, buyerUser, msg) => {
   if (settings?.supportChatId) {
     const groupChatId = Number(settings.supportChatId);
     try {
-      await sendMediaMessage(bot, groupChatId, msg?.mediaType, msg?.mediaFileId, text, {
-        ...keyboard,
-        ...(ticket.groupMessageId ? { reply_to_message_id: ticket.groupMessageId } : {}),
-      });
+      await sendMediaMessage(
+        bot,
+        groupChatId,
+        msg?.mediaType,
+        msg?.mediaFileId,
+        text,
+        {
+          ...keyboard,
+          ...(ticket.groupMessageId ? { reply_to_message_id: ticket.groupMessageId } : {}),
+        },
+        msg?.mediaDataUrl || null
+      );
       return;
     } catch (err) {
       const migratedId = extractMigrateToChatId(err);
       if (migratedId) {
         await persistMigratedSupportChat(groupChatId, migratedId);
         try {
-          await sendMediaMessage(bot, migratedId, msg?.mediaType, msg?.mediaFileId, text, keyboard);
+          await sendMediaMessage(
+            bot,
+            migratedId,
+            msg?.mediaType,
+            msg?.mediaFileId,
+            text,
+            keyboard,
+            msg?.mediaDataUrl || null
+          );
           return;
         } catch (retryErr) {
           logger.warn(`[supportNotify] notifyStaffBuyerReply migrated group error: ${retryErr.message}`);
@@ -454,7 +506,15 @@ const notifyStaffBuyerReply = async (ticket, buyerUser, msg) => {
   const recipients = await findFallbackStaffRecipients();
   for (const chatId of recipients) {
     try {
-      await sendMediaMessage(bot, chatId, msg?.mediaType, msg?.mediaFileId, text, keyboard);
+      await sendMediaMessage(
+        bot,
+        chatId,
+        msg?.mediaType,
+        msg?.mediaFileId,
+        text,
+        keyboard,
+        msg?.mediaDataUrl || null
+      );
     } catch (_) {}
   }
 };

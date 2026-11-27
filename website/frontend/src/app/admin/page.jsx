@@ -11,10 +11,11 @@ import {
   TicketPercent,
   PlugZap,
   Wallet,
+  Headphones,
   Layers,
   Settings,
 } from 'lucide-react';
-import { adminApi } from '../../lib/api';
+import { adminApi, supportApi } from '../../lib/api';
 import AdminOverview from '../../components/admin/AdminOverview';
 import AdminProducts from '../../components/admin/AdminProducts';
 import AdminCategories from '../../components/admin/AdminCategories';
@@ -24,6 +25,7 @@ import AdminUsers from '../../components/admin/AdminUsers';
 import AdminPromos from '../../components/admin/AdminPromos';
 import AdminSuppliers from '../../components/admin/AdminSuppliers';
 import AdminRequests from '../../components/admin/AdminRequests';
+import SupportDashboard from '../../components/support/SupportDashboard';
 import AdminBulk from '../../components/admin/AdminBulk';
 import AdminSettings from '../../components/admin/AdminSettings';
 
@@ -37,6 +39,7 @@ const TABS = [
   { id: 'promos', label: 'Промокоды', Icon: TicketPercent },
   { id: 'suppliers', label: 'Поставщики', Icon: PlugZap },
   { id: 'requests', label: 'Заявки и выводы', Icon: Wallet },
+  { id: 'support', label: 'Саппорты', Icon: Headphones },
   { id: 'bulk', label: 'Массовые', Icon: Layers },
   { id: 'settings', label: 'Настройки', Icon: Settings },
 ];
@@ -48,18 +51,26 @@ export default function AdminDashboardPage() {
   const [badges, setBadges] = useState({
     orders: 0,
     requests: 0,
+    support: 0,
   });
 
   const refreshBadges = useCallback(async () => {
     try {
-      const res = await adminApi.getStats('month');
-      if (res?.success && res.stats) {
-        const s = res.stats;
-        setBadges({
-          orders: (s.pendingOrders || 0) + (s.disputedOrders || 0) + (s.pendingWarranties || 0),
-          requests: (s.pendingTopups || 0) + (s.pendingWithdrawals || 0),
-        });
-      }
+      const [statsRes, queuesRes] = await Promise.all([
+        adminApi.getStats('month').catch(() => null),
+        typeof supportApi?.getQueues === 'function'
+          ? supportApi.getQueues({ tab: 'waiting', page: 1 }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const s = statsRes?.success && statsRes.stats ? statsRes.stats : null;
+      const counts = queuesRes?.counts || null;
+      setBadges((prev) => ({
+        orders: s
+          ? (s.pendingOrders || 0) + (s.disputedOrders || 0) + (s.pendingWarranties || 0)
+          : prev.orders,
+        requests: s ? (s.pendingTopups || 0) + (s.pendingWithdrawals || 0) : prev.requests,
+        support: counts ? (counts.waiting || 0) + (counts.escalated || 0) : prev.support,
+      }));
     } catch (_) {}
   }, []);
 
@@ -84,7 +95,14 @@ export default function AdminDashboardPage() {
         <nav className="flex lg:flex-col gap-1.5 overflow-x-auto no-scrollbar pb-2 lg:pb-0 lg:sticky lg:top-24 rounded-2xl lg:bg-dark-card lg:border lg:border-dark-border lg:p-2.5">
           {TABS.map(({ id, label, Icon }) => {
             const active = activeTab === id;
-            const badgeCount = id === 'orders' ? badges.orders : id === 'requests' ? badges.requests : 0;
+            const badgeCount =
+              id === 'orders'
+                ? badges.orders
+                : id === 'requests'
+                ? badges.requests
+                : id === 'support'
+                ? badges.support
+                : 0;
 
             return (
               <button
@@ -131,6 +149,7 @@ export default function AdminDashboardPage() {
         {activeTab === 'requests' && (
           <AdminRequests initialSubTab={requestsInitialTab} onUpdated={refreshBadges} />
         )}
+        {activeTab === 'support' && <SupportDashboard mode="admin_embedded" />}
         {activeTab === 'bulk' && <AdminBulk />}
         {activeTab === 'settings' && <AdminSettings />}
       </section>

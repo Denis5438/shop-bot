@@ -16,6 +16,7 @@ const supportMessageSchema = new mongoose.Schema({
     default: null,
   },
   mediaFileId: { type: String, default: null },
+  mediaDataUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 

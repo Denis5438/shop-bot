@@ -13,7 +13,6 @@ import {
   ChevronRight,
   Loader2,
   Shield,
-  Crown,
 } from 'lucide-react';
 import { adminApi } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -23,7 +22,40 @@ const USER_FILTERS = [
   { id: 'all', label: 'Все' },
   { id: 'with_balance', label: 'С балансом' },
   { id: 'banned', label: 'Заблокированные' },
+  { id: 'support', label: 'Саппорты' },
+  { id: 'moderator', label: 'Модераторы' },
+  { id: 'staff', label: 'Персонал' },
   { id: 'admins', label: 'Админы' },
+];
+
+const ROLE_BADGES = {
+  superadmin: {
+    label: '👑 SuperAdmin',
+    cls: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+  },
+  admin: {
+    label: '🔧 Админ',
+    cls: 'bg-sky-500/15 text-sky-300 border border-sky-500/30',
+  },
+  moderator: {
+    label: '🛡 Модератор',
+    cls: 'bg-purple-500/15 text-purple-300 border border-purple-500/30',
+  },
+  support: {
+    label: '🎧 Саппорт',
+    cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
+  },
+  user: {
+    label: '👤 Клиент',
+    cls: 'bg-slate-800 text-slate-400 border border-slate-700/60',
+  },
+};
+
+const ROLE_ASSIGN_OPTIONS = [
+  { id: 'user', label: '👤 User', activeCls: 'bg-brand border-brand text-white' },
+  { id: 'support', label: '🎧 Саппорт', activeCls: 'bg-emerald-600 border-emerald-500 text-white' },
+  { id: 'moderator', label: '🛡 Модератор', activeCls: 'bg-purple-600 border-purple-500 text-white' },
+  { id: 'admin', label: '🔧 Admin', activeCls: 'bg-sky-500 border-sky-500 text-white' },
 ];
 
 export default function AdminUsers() {
@@ -277,18 +309,16 @@ export default function AdminUsers() {
                       {Number(u.totalSpent || 0).toFixed(2)} USDT
                     </td>
                     <td className="p-3.5 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${
-                          u.role === 'superadmin'
-                            ? 'bg-amber-500/15 text-amber-300'
-                            : u.role === 'admin'
-                            ? 'bg-sky-500/15 text-sky-300'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}
-                      >
-                        {u.role === 'superadmin' && <Crown className="h-3 w-3" />}
-                        {u.role}
-                      </span>
+                      {(() => {
+                        const badge = ROLE_BADGES[u.role] || ROLE_BADGES.user;
+                        return (
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${badge.cls}`}
+                          >
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-3.5 whitespace-nowrap">
                       {u.isBanned ? (
@@ -497,29 +527,21 @@ export default function AdminUsers() {
                 {isSuperAdmin &&
                 targetUser.role !== 'superadmin' &&
                 String(targetUser.telegramId) !== String(currentUser?.telegramId) ? (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleChangeRole('user')}
-                      className={`flex-1 rounded-xl py-2 font-bold border ${
-                        targetUser.role === 'user'
-                          ? 'bg-brand border-brand text-white'
-                          : 'bg-dark-card border-dark-border text-slate-300'
-                      }`}
-                    >
-                      User
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleChangeRole('admin')}
-                      className={`flex-1 rounded-xl py-2 font-bold border ${
-                        targetUser.role === 'admin'
-                          ? 'bg-sky-500 border-sky-500 text-white'
-                          : 'bg-dark-card border-dark-border text-slate-300'
-                      }`}
-                    >
-                      Admin
-                    </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ROLE_ASSIGN_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleChangeRole(opt.id)}
+                        className={`rounded-xl py-2 px-2 text-[11px] font-bold border transition-all ${
+                          targetUser.role === opt.id
+                            ? opt.activeCls
+                            : 'bg-dark-card border-dark-border text-slate-300 hover:border-slate-500'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 ) : (
                   <div className="text-slate-400 py-2">

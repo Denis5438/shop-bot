@@ -71,6 +71,10 @@ export const catalogApi = {
       type: params.type,
       origin: params.origin,
       inStock: params.inStock ? 'true' : undefined,
+      minPrice: params.minPrice,
+      maxPrice: params.maxPrice,
+      instantOnly: params.instantOnly ? 'true' : undefined,
+      flashOnly: params.flashOnly ? 'true' : undefined,
       sort: params.sort,
       page: params.page,
       limit: params.limit,
@@ -404,5 +408,97 @@ export const adminApi = {
   refreshCurrencyRate: () =>
     request('/admin/settings/refresh-rate', {
       method: 'POST',
+    }),
+};
+
+// ─── Единый Центр Поддержки (/api/v1/support) ───────────────────────
+export const supportApi = {
+  getMeta: () => request('/support/meta'),
+
+  getTickets: (params = {}) =>
+    request(`/support/tickets${buildQuery(params)}`),
+
+  createTicket: (payload) =>
+    request('/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getTicket: (id) => request(`/support/tickets/${id}`),
+
+  replyTicket: (id, payload) =>
+    request(`/support/tickets/${id}/reply`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  closeTicket: (id) =>
+    request(`/support/tickets/${id}/close`, {
+      method: 'POST',
+    }),
+
+  rateTicket: (id, rating) =>
+    request(`/support/tickets/${id}/rate`, {
+      method: 'POST',
+      body: JSON.stringify({ rating }),
+    }),
+
+  getMediaUrl: (ticketId, msgId) =>
+    `/api/v1/support/tickets/${ticketId}/media/${msgId}`,
+
+  // Сотрудники (support / moderator / admin)
+  toggleDuty: () =>
+    request('/support/staff/duty', {
+      method: 'POST',
+    }),
+
+  getQueues: (params = {}) =>
+    request(`/support/staff/queues${buildQuery(params)}`),
+
+  getQuickReplies: () => request('/support/staff/quick-replies'),
+
+  takeTicket: (id) =>
+    request(`/support/staff/tickets/${id}/take`, {
+      method: 'POST',
+    }),
+
+  staffReply: (id, payload) =>
+    request(`/support/staff/tickets/${id}/reply`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  staffEscalate: (id, reason = '') =>
+    request(`/support/staff/tickets/${id}/escalate`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  staffClose: (id) =>
+    request(`/support/staff/tickets/${id}/close`, {
+      method: 'POST',
+    }),
+
+  // Модерация команды и настройки
+  getTeam: () => request('/support/mod/team'),
+
+  getStaffStats: (id, period = '30d') =>
+    request(`/support/mod/staff/${id}/stats${buildQuery({ period })}`),
+
+  assignRole: (payload) =>
+    request('/support/mod/staff/role', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getAuditLogs: (params = {}) =>
+    request(`/support/mod/audit-logs${buildQuery(params)}`),
+
+  getSupportSettings: () => request('/support/mod/settings'),
+
+  updateSupportSettings: (payload) =>
+    request('/support/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
     }),
 };

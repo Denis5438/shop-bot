@@ -9,6 +9,7 @@ const { cartRouter } = require('./routes/cart.routes');
 const { ordersRouter } = require('./routes/orders.routes');
 const { paymentsRouter } = require('./routes/payments.routes');
 const { adminRouter } = require('./routes/admin.routes');
+const { supportRouter } = require('./routes/support.routes');
 const { optionalAuth } = require('./middlewares/auth.middleware');
 const logger = require('../config/logger');
 
@@ -71,7 +72,7 @@ const applyRateLimit = (windowMs = 60000, maxRequests = 60) => (req, res, next) 
 
 // Health check для API
 app.get('/api/v1/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ShopBot Web API v1', time: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'TIG MARKET Web API v1', time: new Date().toISOString() });
 });
 
 // 1. Авторизация (сессии, Telegram-код, 1-клик, MiniApp initData)
@@ -98,6 +99,9 @@ app.use('/api/v1/payments', applyRateLimit(60000, 120), paymentsRouter);
 
 // 6. Админ-панель веб-сайта (180 req/min)
 app.use('/api/v1/admin', applyRateLimit(60000, 180), adminRouter);
+
+// 7. Система поддержки (180 req/min)
+app.use('/api/v1/support', applyRateLimit(60000, 180), supportRouter);
 
 // Обработчик 404 для неизвестных эндпоинтов API
 app.use('/api', (req, res) => {

@@ -1886,12 +1886,12 @@ async function runTests() {
     stores.users = stores.users.filter((u) => u !== legacyStaff && u !== bannedStaff);
   }
 
-  // ── 10. Check website/ is completely untouched ────────────────────────────
-  console.log('\n10. Checking website/ directory is untouched:');
+  // ── 10. Check src/bot/ is completely untouched ────────────────────────────
+  console.log('\n10. Checking src/bot/ directory is untouched:');
   {
     const rootDir = path.resolve(__dirname, '..');
-    const diffOut = execSync('git status --porcelain -- website/', { cwd: rootDir, encoding: 'utf8' }).trim();
-    check(diffOut === '', 'git status --porcelain -- website/ is empty (website/ untouched)');
+    const diffOut = execSync('git status --porcelain -- src/bot/', { cwd: rootDir, encoding: 'utf8' }).trim();
+    check(diffOut === '', 'git status --porcelain -- src/bot/ is empty (src/bot/ untouched)');
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────
